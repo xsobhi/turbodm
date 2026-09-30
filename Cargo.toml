@@ -1,0 +1,31 @@
+[package]
+name = "turbodm"
+version = "1.0.0"
+edition = "2024"
+description = "Fast multi-connection download manager for Linux with browser integration"
+license = "MIT"
+repository = "https://github.com/xsobhi/turbodm"
+keywords = ["download", "manager", "accelerator", "gtk4"]
+categories = ["network-programming"]
+
+[dependencies]
+async-channel = "2.5.0"
+dirs = "7.0.0"
+futures-util = "0.3.34"
+gtk = { version = "0.11.5", package = "gtk4", features = ["v4_12"] }
+ksni = "0.3.6"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util", "signal"] }
+tokio-util = "0.7.19"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+strip = true
+
+[dev-dependencies]
+sha2 = "0.11.0"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time", "io-util"] }

@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icons/icon-32.png" alt="" width="24" height="24" />
+      <h1>TurboDM</h1>
+    </header>
+    <p id="status" class="status">Checking…</p>
+    <label class="row">
+      <input type="checkbox" id="enabled" />
+      <span>Send browser downloads to TurboDM</span>
+    </label>
+    <label class="field">
+      <span>Only files larger than (KB, 0 = all)</span>
+      <input type="number" id="minSizeKB" min="0" step="1" />
+    </label>
+    <label class="field">
+      <span>Never catch downloads from these sites</span>
+      <textarea id="skipHosts" rows="2" placeholder="example.com, drive.google.com"></textarea>
+    </label>
+    <button id="open">Open TurboDM</button>
+    <script src="popup.js"></script>
+  </body>
+</html>

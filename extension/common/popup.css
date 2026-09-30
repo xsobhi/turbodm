@@ -1,0 +1,59 @@
+:root {
+  color-scheme: light dark;
+  --accent: #3584e4;
+}
+body {
+  width: 300px;
+  margin: 0;
+  padding: 12px 14px;
+  font: 13px system-ui, sans-serif;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+h1 {
+  font-size: 16px;
+  margin: 0;
+}
+.status {
+  margin: 10px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.15);
+}
+.status.ok {
+  background: rgba(46, 194, 126, 0.18);
+}
+.status.error {
+  background: rgba(224, 27, 36, 0.18);
+}
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0;
+}
+input[type="number"],
+textarea {
+  font: inherit;
+  padding: 4px 6px;
+}
+button {
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px;
+  font: inherit;
+  color: white;
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
