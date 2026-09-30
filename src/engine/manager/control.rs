@@ -74,6 +74,14 @@ impl Manager {
         });
     }
 
+    /// Speed limit for one download (KiB/s, 0 = unlimited); applies immediately.
+    pub fn set_speed_limit(&self, id: &str, kib: u64) {
+        let Some(task) = self.find(id) else { return };
+        task.info.lock().unwrap().speed_limit_kib = kib;
+        task.limiter.set_rate(kib * 1024);
+        self.dirty.store(true, Ordering::Relaxed);
+    }
+
     pub(super) async fn stop_and_wait(&self, task: &Task) {
         task.pause();
         let handle = task.runner.lock().unwrap().take();

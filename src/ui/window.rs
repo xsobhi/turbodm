@@ -141,7 +141,8 @@ fn refresh(ctx: &Ctx) {
         if queued > 0 { format!(" · {queued} queued") } else { String::new() },
         if speed.is_empty() { String::new() } else { format!(" · {speed}") }
     ));
-    for window in ctx.progress.borrow().values() {
-        window.refresh(&ctx.manager);
-    }
+    // close windows of removed downloads after the loop (closing edits ctx.progress)
+    let gone: Vec<gtk::Window> = ctx.progress.borrow().values()
+        .filter(|p| !p.refresh(&ctx.manager)).map(|p| p.window.clone()).collect();
+    gone.iter().for_each(|w| w.close());
 }

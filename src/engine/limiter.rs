@@ -1,4 +1,4 @@
-//! Global download speed limit shared by every connection (token bucket).
+//! Download speed limit shared by connections (token bucket): one for all downloads, one per download.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};

@@ -7,9 +7,9 @@ logged in keep working.
 
 ![Main window](docs/main-window.png)
 
-| Add download | Progress (one bar segment per connection) |
+| Per-download window (opens when a download starts) | Add download / Download complete |
 |---|---|
-| ![Add download dialog](docs/add-dialog.png) | ![Progress window](docs/progress-window.png) |
+| ![Progress window](docs/progress-window.png) | ![Add download dialog](docs/add-dialog.png) ![Download complete dialog](docs/complete-dialog.png) |
 
 ## Features
 
@@ -33,7 +33,11 @@ logged in keep working.
 - **Queue** with a limit on simultaneous downloads, and a **global speed limit**.
 - **Categories**: Video, Music, Documents, Compressed, Programs and Images go to their own sub-folders.
 - **Refresh download address** for expired links, keeping the progress.
-- Per-download **progress window** with a live map of every connection's segment.
+- **A window per download, like IDM's**, opening when a download starts or resumes (from the
+  browser or the app): *Download status* with a live map of every connection's segment and a
+  per-connection list, a *Speed limiter* for just that download, and *Options on completion* —
+  open the file, or put the computer to sleep / shut it down (after a 30-second countdown you can
+  cancel). It ends with a **Download complete** dialog: *Open*, *Open with…*, *Open folder*.
 - Optional **clipboard catching** of download links, **desktop notifications**, **tray icon**
   (when your panel has a tray; otherwise closing the window minimizes it while downloading).
 - Servers that reject a browser user-agent (anti-bot checks comparing it with the TLS fingerprint)

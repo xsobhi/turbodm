@@ -65,7 +65,7 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
     if ctx.win.window.is_visible() {
         dialog.set_transient_for(Some(&ctx.win.window)); // centred over the main window
     } else {
-        center::as_dialog(&dialog); // started by the browser: centred on screen
+        center::on_screen(&dialog, false); // started by the browser: centred on screen
     }
     update_folder_label(&form);
 

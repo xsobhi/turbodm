@@ -1,6 +1,7 @@
 //! A download: persistent info, live segment map, speed meter and pause control.
 
 use super::http::Headers;
+use super::limiter::RateLimiter;
 use super::segments::SegmentMap;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -54,6 +55,8 @@ pub struct TaskInfo {
     pub added: u64,
     pub completed: Option<u64>,
     pub category_base: Option<PathBuf>, // choose the category folder once the name is known
+    #[serde(default)]
+    pub speed_limit_kib: u64, // this download only, 0 = unlimited
 }
 
 pub fn unix_now() -> u64 {
@@ -79,6 +82,7 @@ impl TaskInfo {
             added: unix_now(),
             completed: None,
             category_base: None,
+            speed_limit_kib: 0,
         }
     }
 
@@ -101,6 +105,7 @@ pub struct Task {
     pub segments: Mutex<Option<Arc<SegmentMap>>>,
     pub cancel: Mutex<CancellationToken>,
     pub runner: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    pub limiter: Arc<RateLimiter>,
     samples: Mutex<VecDeque<(Instant, u64)>>,
     speed: Mutex<f64>,
 }
@@ -109,6 +114,7 @@ impl Task {
     pub fn new(id: String, info: TaskInfo, segments: Option<SegmentMap>) -> Arc<Self> {
         Arc::new(Task {
             id,
+            limiter: Arc::new(RateLimiter::new(info.speed_limit_kib * 1024)),
             info: Mutex::new(info),
             segments: Mutex::new(segments.map(Arc::new)),
             cancel: Mutex::new(CancellationToken::new()),

@@ -20,7 +20,7 @@ pub struct WorkerCtx {
     pub headers: Headers,
     pub resumable: bool,
     pub retries: u32,
-    pub limiter: Arc<RateLimiter>,
+    pub limiters: [Arc<RateLimiter>; 2], // all downloads, this download
     pub cancel: CancellationToken,
     pub live: AtomicUsize, // connections still running
 }
@@ -150,7 +150,9 @@ async fn stream(ctx: &WorkerCtx, index: usize, resp: reqwest::Response) -> Resul
                 .write_all_at(&bytes[..allowed], offset)
                 .map_err(|e| StreamError::Write(format!("Cannot write the file: {e}")))?;
             ctx.segments.commit(index, allowed);
-            ctx.limiter.consume(allowed).await;
+            for limiter in &ctx.limiters {
+                limiter.consume(allowed).await;
+            }
         }
         if allowed < bytes.len() || ctx.segments.get(index).finished() {
             return Ok(true); // reached our (possibly shortened) end

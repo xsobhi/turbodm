@@ -4,10 +4,11 @@ mod actions;
 mod add_dialog;
 mod center;
 mod clipboard;
+mod finish;
 mod item;
 mod list;
+mod power;
 mod progress;
-mod segment_bar;
 mod settings;
 mod tray;
 mod window;
@@ -19,7 +20,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 use turbodm::config::{self, Settings, APP_ID};
-use turbodm::engine::{AddRequest, Manager, Snapshot, Status};
+use turbodm::engine::{AddRequest, Manager, Snapshot};
 use turbodm::ipc::{self, Message};
 
 /// Shared by every part of the UI (GTK thread only).
@@ -29,6 +30,7 @@ pub struct Ctx {
     pub rt: tokio::runtime::Handle,
     pub win: window::MainWindow,
     pub progress: RefCell<HashMap<String, progress::ProgressWindow>>,
+    pub on_done: RefCell<HashMap<String, finish::OnDone>>, // downloads with a progress window
     pub tray: Cell<bool>, // a tray icon is showing (else closing minimizes)
 }
 
@@ -89,6 +91,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
             rt: rt.clone(),
             win: window::MainWindow::new(app),
             progress: RefCell::new(HashMap::new()),
+            on_done: RefCell::new(HashMap::new()),
             tray: Cell::new(false),
         });
         window::setup(&ctx);
@@ -133,31 +136,12 @@ fn listen_ipc(ctx: &Rc<Ctx>, rx: async_channel::Receiver<Message>) {
     });
 }
 
-/// Desktop notifications when downloads finish or fail.
+/// Downloads finishing or failing: complete dialog, completion options, notifications.
 fn listen_events(ctx: &Rc<Ctx>, rx: async_channel::Receiver<Snapshot>) {
     let ctx = ctx.clone();
     glib::spawn_future_local(async move {
         while let Ok(snap) = rx.recv().await {
-            if !ctx.manager.settings().notify_complete {
-                continue;
-            }
-            let notification = match snap.status {
-                Status::Completed => {
-                    let n = gio::Notification::new("Download complete");
-                    n.set_body(Some(&snap.filename));
-                    n.add_button_with_target_value("Open", "app.open-file", Some(&snap.id.to_variant()));
-                    n.add_button_with_target_value("Show in folder", "app.open-folder", Some(&snap.id.to_variant()));
-                    n
-                }
-                Status::Error => {
-                    let n = gio::Notification::new("Download failed");
-                    n.set_body(Some(&format!("{}\n{}", snap.filename, snap.error.unwrap_or_default())));
-                    n
-                }
-                _ => continue,
-            };
-            notification.set_icon(&gio::ThemedIcon::new("folder-download"));
-            ctx.app.send_notification(Some(&format!("tdm-{}", snap.id)), &notification);
+            finish::on_status(&ctx, snap);
         }
     });
 }

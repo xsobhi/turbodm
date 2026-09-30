@@ -162,3 +162,18 @@ fn saves_progress_periodically_while_downloading() {
     assert!(saved.contains(&id), "download missing from saved state: {saved}");
     assert!(saved.contains("\"done\""), "segment progress not saved");
 }
+
+#[test]
+fn per_download_speed_limit() {
+    let env = Env::new("speedlimit");
+    let data = random_bytes(3 << 20);
+    let server = start(&env.rt, data.clone(), Options { ranges: true, no_length: false, max_conns: 0 }, 0);
+    let manager = env.manager(4);
+    let started = Instant::now();
+    let id = add(&manager, &server.url);
+    manager.set_speed_limit(&id, 1024); // 1 MiB/s: 3 MiB takes about 3 s
+    let snap = wait_for(&manager, &id, finished);
+    assert_file(&snap, &data);
+    assert_eq!(snap.speed_limit_kib, 1024);
+    assert!(started.elapsed() > Duration::from_secs(2), "not limited: {:?}", started.elapsed());
+}

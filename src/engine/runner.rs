@@ -98,7 +98,7 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
         headers: info.headers(),
         resumable: info.resumable,
         retries: settings.retries,
-        limiter: shared.limiter.clone(),
+        limiters: [shared.limiter.clone(), task.limiter.clone()],
         cancel: cancel.clone(),
         live: std::sync::atomic::AtomicUsize::new(count),
     });

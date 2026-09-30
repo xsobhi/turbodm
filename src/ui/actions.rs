@@ -30,7 +30,7 @@ fn add(ctx: &Rc<Ctx>, map: &impl IsA<gio::ActionMap>, name: &str, f: impl Fn(&Rc
 pub fn install(ctx: &Rc<Ctx>) {
     let win = &ctx.win.window;
     add(ctx, win, "add", |ctx| add_dialog::open(ctx, AddRequest::default()));
-    add(ctx, win, "resume", |ctx| selected(ctx).iter().for_each(|id| ctx.manager.resume(id)));
+    add(ctx, win, "resume", |ctx| selected(ctx).iter().for_each(|id| resume(ctx, id)));
     add(ctx, win, "pause", |ctx| selected(ctx).iter().for_each(|id| ctx.manager.pause(id)));
     add(ctx, win, "resume-all", |ctx| ctx.manager.resume_all());
     add(ctx, win, "pause-all", |ctx| ctx.manager.pause_all());
@@ -61,6 +61,14 @@ pub fn install(ctx: &Rc<Ctx>) {
                             ("win.remove", "Delete"), ("win.settings", "<Ctrl>comma"),
                             ("win.details", "<Ctrl>i"), ("app.quit", "<Ctrl>q")] {
         ctx.app.set_accels_for_action(action, &[accel]);
+    }
+}
+
+/// Resume and, like IDM, show the download's progress window.
+fn resume(ctx: &Rc<Ctx>, id: &str) {
+    ctx.manager.resume(id);
+    if ctx.manager.settings().show_progress_window {
+        progress::open(ctx, id);
     }
 }
 

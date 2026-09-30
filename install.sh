@@ -41,7 +41,7 @@ for pair in google-chrome:google-chrome google-chrome-beta:google-chrome-beta ch
 done
 
 tools/build-extension.sh
-rm -rf "$DATA/turbodm/extension"
+rm -rf "$DATA/turbodm/extension/firefox" "$DATA/turbodm/extension/chrome" # keeps signed .xpi files
 mkdir -p "$DATA/turbodm/extension"
 cp -r dist/firefox dist/chrome "$DATA/turbodm/extension/"
 command -v update-desktop-database >/dev/null && update-desktop-database "$DATA/applications" || true

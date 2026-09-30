@@ -51,7 +51,8 @@ pub struct Settings {
     pub timeout_secs: u64,         // no data for this long -> reconnect
     pub min_split_kib: u64,        // smallest piece worth another connection
     pub show_add_dialog: bool,     // confirm downloads caught from the browser
-    pub show_progress_window: bool,
+    pub show_progress_window: bool, // IDM's per-download window, opened on start/resume
+    pub show_complete_dialog: bool,
     pub notify_complete: bool,
     pub clipboard_monitor: bool,
     pub auto_resume: bool,         // resume unfinished downloads at start
@@ -69,7 +70,8 @@ impl Default for Settings {
             timeout_secs: 30,
             min_split_kib: 1024,
             show_add_dialog: true,
-            show_progress_window: false,
+            show_progress_window: true,
+            show_complete_dialog: true,
             notify_complete: true,
             clipboard_monitor: false,
             auto_resume: false,
