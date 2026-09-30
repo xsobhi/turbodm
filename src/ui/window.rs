@@ -4,7 +4,7 @@ use super::{list, progress, Ctx};
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use turbodm::engine::Status;
 use turbodm::util::human_speed;
 
@@ -93,11 +93,15 @@ fn context_menu() -> gio::Menu {
 pub fn setup(ctx: &Rc<Ctx>) {
     refresh(ctx);
     let weak = Rc::downgrade(ctx);
+    let started = Instant::now();
     glib::timeout_add_local(Duration::from_millis(500), move || {
         let Some(ctx) = weak.upgrade() else { return glib::ControlFlow::Break };
         refresh(&ctx);
-        // started hidden by the browser, or closed while downloading: quit when idle
-        if !ctx.win.window.is_visible() && !ctx.manager.busy() && ctx.progress.borrow().is_empty() {
+        // started hidden by the browser, or closed while downloading: quit when idle. Any open
+        // window (add dialog, progress, preferences…) counts, and the browser gets a few
+        // seconds to deliver the download it started us for.
+        let any_window = gtk::Window::list_toplevels().iter().any(|w| w.is_visible());
+        if !any_window && !ctx.manager.busy() && started.elapsed() > Duration::from_secs(5) {
             ctx.app.quit();
         }
         glib::ControlFlow::Continue

@@ -1,6 +1,6 @@
 //! "Download file info" dialog: probe the link, pick name/folder/connections, start.
 
-use super::{progress, Ctx};
+use super::{center, progress, Ctx};
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use std::cell::{Cell, RefCell};
@@ -61,8 +61,12 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
         .margin_top(18).margin_bottom(18).margin_start(18).margin_end(18).build();
     body.append(&grid);
     body.append(&buttons);
-    let dialog = gtk::Window::builder().title("Download file info").default_width(620)
-        .transient_for(&ctx.win.window).child(&body).build();
+    let dialog = gtk::Window::builder().title("Download file info").default_width(620).child(&body).build();
+    if ctx.win.window.is_visible() {
+        dialog.set_transient_for(Some(&ctx.win.window)); // centred over the main window
+    } else {
+        center::as_dialog(&dialog); // started by the browser: centred on screen
+    }
     update_folder_label(&form);
 
     let (f, c, r) = (form.clone(), ctx.clone(), req.clone());

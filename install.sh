@@ -2,6 +2,7 @@
 # Build and install TurboDM for the current user (no root needed, nothing autostarts).
 set -eu
 cd "$(dirname "$0")"
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env" # rustup installs outside PATH for scripts
 command -v cargo >/dev/null 2>&1 || { echo "Rust is needed: https://rustup.rs"; exit 1; }
 pkg-config --exists gtk4 || { echo "GTK4 development files are needed: sudo apt install libgtk-4-dev"; exit 1; }
 

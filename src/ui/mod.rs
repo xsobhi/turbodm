@@ -2,6 +2,7 @@
 
 mod actions;
 mod add_dialog;
+mod center;
 mod clipboard;
 mod item;
 mod list;

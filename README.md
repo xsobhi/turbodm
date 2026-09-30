@@ -23,9 +23,13 @@ logged in keep working.
 - **Pause / resume that survives restarts and reboots.** Progress is saved continuously; resuming
   checks the server still has the same file (size / ETag) before continuing.
 - **Browser integration** (Firefox, Chrome, Brave, Chromium): catches downloads and passes the
-  page's **cookies, referrer and user-agent**, adds *Download with TurboDM* to the right-click menu,
-  and lets the browser keep the download if TurboDM can't be reached. Talks through the browsers'
-  native-messaging channel and a user-only Unix socket — no network port is opened.
+  **exact cookies, referrer and user-agent** the browser used (private windows and containers
+  included), adds *Download with TurboDM* to the right-click menu, and lets the browser keep the
+  download if TurboDM can't be reached. In Firefox, downloads are recognised from the server's
+  response headers and taken over *before* Firefox saves anything — no half-finished copy, no
+  entry in its download list, and tabs opened just for the download close themselves. Talks
+  through the browsers' native-messaging channel and a user-only Unix socket — no network port is
+  opened.
 - **Queue** with a limit on simultaneous downloads, and a **global speed limit**.
 - **Categories**: Video, Music, Documents, Compressed, Programs and Images go to their own sub-folders.
 - **Refresh download address** for expired links, keeping the progress.

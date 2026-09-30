@@ -31,10 +31,11 @@ function basename(path) {
   return (path || "").split(/[\\/]/).pop();
 }
 
-// Cookies for the URL as a "Cookie:" header value (the app sends it with every connection)
-async function cookieHeader(url) {
+// Cookies for the URL as a "Cookie:" header value (the app sends it with every connection).
+// storeId picks the private-window / container cookie jar in Firefox.
+async function cookieHeader(url, storeId) {
   try {
-    const cookies = await api.cookies.getAll({ url });
+    const cookies = await api.cookies.getAll(storeId ? { url, storeId } : { url });
     return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
   } catch {
     return "";
@@ -45,14 +46,14 @@ function sendNative(message) {
   return api.runtime.sendNativeMessage(HOST, message);
 }
 
-async function handOff({ url, filename, referrer, fileSize }) {
+async function handOff({ url, filename, referrer, fileSize, cookies, userAgent, storeId }) {
   const reply = await sendNative({
     type: "download",
     url,
     filename: filename || null,
     referrer: referrer || null,
-    cookies: (await cookieHeader(url)) || null,
-    userAgent: navigator.userAgent,
+    cookies: (cookies ?? (await cookieHeader(url, storeId))) || null,
+    userAgent: userAgent || navigator.userAgent,
     fileSize: fileSize > 0 ? fileSize : null,
   });
   return Boolean(reply && reply.ok);
@@ -60,6 +61,7 @@ async function handOff({ url, filename, referrer, fileSize }) {
 
 // Catch browser downloads: pause, hand to TurboDM, and only then cancel the browser's
 // copy. If TurboDM can't be reached, the browser simply continues the download.
+// (Firefox catches most downloads earlier, from the response headers: see intercept.js.)
 api.downloads.onCreated.addListener(async (item) => {
   const url = item.finalUrl || item.url;
   const settings = await getSettings();
@@ -78,6 +80,7 @@ api.downloads.onCreated.addListener(async (item) => {
       filename: basename(item.filename),
       referrer: item.referrer,
       fileSize: item.totalBytes || item.fileSize,
+      storeId: item.cookieStoreId,
     });
   } catch (err) {
     console.warn("TurboDM is not reachable, keeping the browser download:", err);

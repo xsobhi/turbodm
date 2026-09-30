@@ -8,7 +8,7 @@ for browser in firefox chrome; do
     mkdir -p "$out/icons"
     cp extension/common/* "$out/"
     cp extension/icons/*.png "$out/icons/"
-    cp "extension/$browser/manifest.json" "$out/"
+    cp "extension/$browser/"* "$out/" # manifest + browser-only scripts
 done
 if command -v zip >/dev/null 2>&1; then
     (cd dist/firefox && rm -f ../turbodm-firefox.xpi && zip -qr ../turbodm-firefox.xpi .)
