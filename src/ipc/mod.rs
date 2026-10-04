@@ -5,6 +5,7 @@ pub mod native_host;
 pub mod server;
 
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Messages from the browser extension (and from `turbodm URL` on the command line).
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -17,6 +18,8 @@ pub enum Message {
         url: String,
         #[serde(default)]
         filename: Option<String>,
+        #[serde(default)]
+        directory: Option<PathBuf>, // where the browser was saving it (e.g. picked in "Save As")
         #[serde(default)]
         referrer: Option<String>,
         #[serde(default)]
@@ -58,10 +61,16 @@ mod tests {
     fn parses_extension_json() {
         let json = r#"{"type":"download","url":"https://x/y.zip","userAgent":"UA","cookies":"a=1"}"#;
         match serde_json::from_str::<Message>(json).unwrap() {
-            Message::Download { url, user_agent, cookies, silent, .. } => {
+            Message::Download { url, user_agent, cookies, silent, directory, .. } => {
                 assert_eq!((url.as_str(), user_agent.as_deref(), cookies.as_deref(), silent),
                            ("https://x/y.zip", Some("UA"), Some("a=1"), false));
+                assert_eq!(directory, None);
             }
+            other => panic!("wrong message {other:?}"),
+        }
+        let json = r#"{"type":"download","url":"https://x/c.jpg","directory":"/home/me/Pictures"}"#;
+        match serde_json::from_str::<Message>(json).unwrap() {
+            Message::Download { directory, .. } => assert_eq!(directory, Some("/home/me/Pictures".into())),
             other => panic!("wrong message {other:?}"),
         }
         assert!(matches!(serde_json::from_str::<Message>(r#"{"type":"ping"}"#), Ok(Message::Ping)));

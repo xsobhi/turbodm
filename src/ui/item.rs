@@ -4,6 +4,7 @@ use gtk::glib;
 use gtk::glib::subclass::prelude::*;
 use gtk::prelude::*;
 use std::cell::{Cell, RefCell};
+use super::sidebar::state_of;
 use turbodm::categories::icon_for;
 use turbodm::engine::{Snapshot, Status};
 use turbodm::util::{human_eta, human_size, human_speed};
@@ -32,6 +33,15 @@ mod imp {
         pub eta: RefCell<String>,
         #[property(get, set)]
         pub added: RefCell<String>,
+        // for the sidebar filter and column sorting
+        #[property(get, set)]
+        pub category: RefCell<String>,
+        #[property(get, set)]
+        pub state: RefCell<String>,
+        #[property(get, set)]
+        pub bytes: Cell<u64>,
+        #[property(get, set)]
+        pub added_at: Cell<u64>,
     }
 
     #[glib::object_subclass]
@@ -67,13 +77,15 @@ fn format_time(secs: u64) -> String {
 
 impl DownloadItem {
     pub fn new(snap: &Snapshot) -> Self {
-        let item: Self = glib::Object::builder().property("id", &snap.id).build();
+        let item: Self = glib::Object::builder().property("id", &snap.id)
+            .property("added", format_time(snap.added)).property("added-at", snap.added).build();
         item.update(snap);
         item
     }
 
-    /// Copy a snapshot in, touching only properties that changed (cheap redraws).
-    pub fn update(&self, snap: &Snapshot) {
+    /// Copy a snapshot in, touching only properties that changed (cheap redraws). True when
+    /// it moved to another sidebar view (another state or category).
+    pub fn update(&self, snap: &Snapshot) -> bool {
         let set = |name: &str, value: String| {
             if self.property::<String>(name) != value {
                 self.set_property(name, value);
@@ -85,10 +97,18 @@ impl DownloadItem {
         set("status", status_text(snap));
         set("speed", human_speed(snap.speed));
         set("eta", human_eta(snap.eta));
-        set("added", format_time(snap.added));
         let progress = snap.progress.unwrap_or(0.0).clamp(0.0, 1.0);
         if (self.progress() - progress).abs() > 1e-4 {
             self.set_progress(progress);
         }
+        if self.bytes() != snap.size.unwrap_or(0) {
+            self.set_bytes(snap.size.unwrap_or(0));
+        }
+        let moved = self.category() != snap.category || self.state() != state_of(snap.status);
+        if moved {
+            self.set_category(snap.category);
+            self.set_state(state_of(snap.status));
+        }
+        moved
     }
 }

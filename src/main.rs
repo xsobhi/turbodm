@@ -42,6 +42,7 @@ fn main() {
                     .map(|url| Message::Download {
                         url: url.clone(),
                         filename: None,
+                        directory: None,
                         referrer: None,
                         cookies: None,
                         user_agent: None,

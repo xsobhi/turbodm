@@ -1,6 +1,7 @@
 //! When a download finishes or fails: IDM's "Download complete" dialog, the per-download
 //! "on completion" options, or a desktop notification for downloads nobody was watching.
 
+use super::launch::{launch, Launch};
 use super::power::{self, Power};
 use super::{actions, center, progress, Ctx};
 use gtk::prelude::*;
@@ -117,12 +118,8 @@ fn complete_dialog(ctx: &Rc<Ctx>, snap: &Snapshot) {
     };
     let (c, id) = (ctx.clone(), snap.id.clone());
     open.connect_clicked(then_close(&window, Box::new(move || actions::open_file(&c, &id))));
-    let path = snap.path.clone();
-    with.connect_clicked(then_close(&window, Box::new(move || {
-        let launcher = gtk::FileLauncher::new(Some(&gio::File::for_path(&path)));
-        launcher.set_always_ask(true); // the "Open with" chooser
-        launcher.launch(None::<&gtk::Window>, gio::Cancellable::NONE, |_| {});
-    })));
+    let (c, path) = (ctx.clone(), snap.path.clone());
+    with.connect_clicked(then_close(&window, Box::new(move || launch(&c, &path, Launch::OpenWith))));
     let (c, id) = (ctx.clone(), snap.id.clone());
     folder.connect_clicked(then_close(&window, Box::new(move || actions::open_folder(&c, &id))));
     close.connect_clicked(then_close(&window, Box::new(|| {})));

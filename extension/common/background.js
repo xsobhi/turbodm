@@ -31,6 +31,12 @@ function basename(path) {
   return (path || "").split(/[\\/]/).pop();
 }
 
+// "/home/me/Pictures/cat.jpg" → "/home/me/Pictures" (null unless it's a full path)
+function dirname(path) {
+  const cut = (path || "").lastIndexOf("/");
+  return path && path.startsWith("/") && cut > 0 ? path.slice(0, cut) : null;
+}
+
 // Cookies for the URL as a "Cookie:" header value (the app sends it with every connection).
 // storeId picks the private-window / container cookie jar in Firefox.
 async function cookieHeader(url, storeId) {
@@ -46,11 +52,12 @@ function sendNative(message) {
   return api.runtime.sendNativeMessage(HOST, message);
 }
 
-async function handOff({ url, filename, referrer, fileSize, cookies, userAgent, storeId }) {
+async function handOff({ url, filename, directory, referrer, fileSize, cookies, userAgent, storeId }) {
   const reply = await sendNative({
     type: "download",
     url,
     filename: filename || null,
+    directory: directory || null,
     referrer: referrer || null,
     cookies: (cookies ?? (await cookieHeader(url, storeId))) || null,
     userAgent: userAgent || navigator.userAgent,
@@ -78,6 +85,8 @@ api.downloads.onCreated.addListener(async (item) => {
     accepted = await handOff({
       url,
       filename: basename(item.filename),
+      // the folder picked in the browser's "Save As" dialog (or its own download folder)
+      directory: dirname(item.filename),
       referrer: item.referrer,
       fileSize: item.totalBytes || item.fileSize,
       storeId: item.cookieStoreId,

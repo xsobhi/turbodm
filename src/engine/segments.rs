@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Segment {
     pub start: u64,
     pub end: Option<u64>, // one past the last byte (exclusive); None while size unknown

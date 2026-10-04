@@ -19,7 +19,7 @@ pub struct SegmentBar {
 impl SegmentBar {
     pub fn new() -> Self {
         let data = Rc::new(RefCell::new(Data::default()));
-        let area = gtk::DrawingArea::builder().content_height(28).hexpand(true).build();
+        let area = gtk::DrawingArea::builder().content_height(14).hexpand(true).build();
         let d = data.clone();
         area.set_draw_func(move |_, cr, width, height| {
             let data = d.borrow();
@@ -49,7 +49,10 @@ impl SegmentBar {
     }
 
     pub fn set(&self, size: Option<u64>, segments: Vec<Segment>) {
-        *self.data.borrow_mut() = Data { size, segments };
-        self.area.queue_draw();
+        let mut data = self.data.borrow_mut();
+        if data.size != size || data.segments != segments {
+            *data = Data { size, segments };
+            self.area.queue_draw();
+        }
     }
 }

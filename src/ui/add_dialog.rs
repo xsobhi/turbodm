@@ -1,4 +1,6 @@
-//! "Download file info" dialog: probe the link, pick name/folder/connections, start.
+//! "Download file info" dialog: probe the link, pick name/folder/connections, start. Like IDM,
+//! the download quietly starts on one connection while the dialog is open (hidden from the
+//! list), so pressing Start feels instant; Cancel throws away what was downloaded.
 
 use super::{center, progress, Ctx};
 use gtk::prelude::*;
@@ -6,10 +8,12 @@ use gtk::{gio, glib};
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::time::Duration;
 use turbodm::categories::target_dir;
 use turbodm::config::MAX_CONNECTIONS;
 use turbodm::engine::http::{self, Headers};
-use turbodm::engine::AddRequest;
+use turbodm::engine::manager::Confirm;
+use turbodm::engine::{AddRequest, Status};
 use turbodm::util::human_size;
 
 struct Form {
@@ -22,6 +26,19 @@ struct Form {
     dir_chosen: Cell<bool>,  // user picked a folder: stop auto-categorizing
     name_edited: Cell<bool>, // user typed a name: don't overwrite it
     probe_id: Cell<u64>,     // ignore results of outdated probes
+    early: RefCell<Option<(String, String)>>, // (url, id) of the download started early
+}
+
+impl Form {
+    /// The download started early for `url`, if there is one; any other is thrown away.
+    fn take_early(&self, ctx: &Ctx, url: Option<&str>) -> Option<String> {
+        let (early_url, id) = self.early.take()?;
+        if Some(early_url.as_str()) == url {
+            return Some(id);
+        }
+        ctx.manager.remove(&id, true);
+        None
+    }
 }
 
 fn row(grid: &gtk::Grid, y: i32, label: &str, widget: &impl IsA<gtk::Widget>) {
@@ -37,10 +54,11 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
         folder: gtk::Button::new(),
         info: gtk::Label::builder().xalign(0.0).label("Enter a link").build(),
         connections: gtk::SpinButton::with_range(1.0, MAX_CONNECTIONS as f64, 1.0),
-        dir: RefCell::new(settings.download_dir.clone()),
-        dir_chosen: Cell::new(false),
+        dir: RefCell::new(req.directory.clone().unwrap_or_else(|| settings.download_dir.clone())),
+        dir_chosen: Cell::new(req.directory.is_some()), // e.g. picked in the browser's "Save As"
         name_edited: Cell::new(req.filename.is_some()),
         probe_id: Cell::new(0),
+        early: RefCell::new(None),
     });
     form.connections.set_value(settings.connections as f64);
     let grid = gtk::Grid::builder().row_spacing(10).column_spacing(12).build();
@@ -70,7 +88,17 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
     update_folder_label(&form);
 
     let (f, c, r) = (form.clone(), ctx.clone(), req.clone());
-    form.url.connect_changed(move |_| probe(&c, &f, &r));
+    form.url.connect_changed(move |_| {
+        // wait for a pause in typing: every new address starts a download
+        let id = f.probe_id.get() + 1;
+        f.probe_id.set(id);
+        let (f, c, r) = (f.clone(), c.clone(), r.clone());
+        glib::timeout_add_local_once(Duration::from_millis(350), move || {
+            if f.probe_id.get() == id {
+                check(&c, &f, &r);
+            }
+        });
+    });
     let f = form.clone();
     form.name.connect_changed(move |e| {
         f.name_edited.set(e.has_focus());
@@ -85,14 +113,22 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
                 return;
             }
             let name = form.name.text().trim().to_string();
-            let id = ctx.manager.add(AddRequest {
-                url,
-                filename: (!name.is_empty()).then_some(name),
-                directory: Some(form.dir.borrow().clone()),
-                connections: Some(form.connections.value() as usize),
-                start: start_now,
-                ..req.clone()
-            });
+            let filename = (!name.is_empty()).then_some(name);
+            let (directory, connections) = (form.dir.borrow().clone(), form.connections.value() as usize);
+            let id = match form.take_early(&ctx, Some(&url)) {
+                Some(id) => {
+                    ctx.manager.confirm(&id, Confirm { filename, directory, connections, start: start_now });
+                    id
+                }
+                None => ctx.manager.add(AddRequest {
+                    url,
+                    filename,
+                    directory: Some(directory),
+                    connections: Some(connections),
+                    start: start_now,
+                    ..req.clone()
+                }),
+            };
             if start_now && ctx.manager.settings().show_progress_window {
                 progress::open(&ctx, &id);
             }
@@ -103,13 +139,68 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
     later.connect_clicked(submit(false, form.clone(), ctx.clone(), dialog.clone(), req.clone()));
     let d = dialog.clone();
     cancel.connect_clicked(move |_| d.close());
+    let (f, c) = (form.clone(), ctx.clone());
+    dialog.connect_close_request(move |_| {
+        f.take_early(&c, None); // cancelled: delete what was downloaded early
+        glib::Propagation::Proceed
+    });
     dialog.set_default_widget(Some(&start));
     dialog.present();
     if req.url.is_empty() {
         paste_from_clipboard(&form, &dialog);
     } else {
-        probe(ctx, &form, &req);
+        check(ctx, &form, &req);
     }
+}
+
+/// A new address: start downloading it right away, or just ask the server about it.
+fn check(ctx: &Rc<Ctx>, form: &Rc<Form>, req: &AddRequest) {
+    let url = form.url.text().trim().to_string();
+    form.take_early(ctx, None);
+    if !url.starts_with("http") {
+        return;
+    }
+    if !ctx.manager.settings().predownload {
+        return probe(ctx, form, req);
+    }
+    let id = ctx.manager.prefetch(AddRequest {
+        url: url.clone(),
+        filename: form.name_edited.get().then(|| form.name.text().trim().to_string()).filter(|n| !n.is_empty()),
+        directory: form.dir_chosen.get().then(|| form.dir.borrow().clone()),
+        connections: Some(form.connections.value() as usize),
+        ..req.clone()
+    });
+    *form.early.borrow_mut() = Some((url, id.clone()));
+    form.info.set_text("Checking link…"); // it's downloading, quietly: nothing to show yet
+    let (ctx, form, mut filled) = (ctx.clone(), form.clone(), false);
+    glib::timeout_add_local(Duration::from_millis(150), move || {
+        if form.early.borrow().as_ref().is_none_or(|(_, early)| *early != id) {
+            return glib::ControlFlow::Break; // started, cancelled, or another address
+        }
+        let Some(s) = ctx.manager.get(&id) else { return glib::ControlFlow::Break };
+        let text = match s.status {
+            Status::Connecting | Status::Queued => "Checking link…".to_string(),
+            Status::Error => format!("Couldn't check the link: {}", s.error.as_deref().unwrap_or("unknown error")),
+            _ => {
+                if !filled {
+                    filled = true;
+                    if !form.name_edited.get() {
+                        form.name.set_text(&s.filename);
+                    }
+                    if !form.dir_chosen.get() {
+                        *form.dir.borrow_mut() = s.directory.clone();
+                        update_folder_label(&form);
+                    }
+                }
+                let resume = if s.resumable { "yes" } else { "no (single connection)" };
+                format!("Size: {}   ·   Resume support: {resume}", human_size(s.size))
+            }
+        };
+        if form.info.text() != text {
+            form.info.set_text(&text);
+        }
+        glib::ControlFlow::Continue
+    });
 }
 
 fn update_folder_label(form: &Form) {
@@ -145,9 +236,6 @@ fn paste_from_clipboard(form: &Rc<Form>, dialog: &gtk::Window) {
 /// Ask the server for name, size and resume support (runs on the tokio runtime).
 fn probe(ctx: &Rc<Ctx>, form: &Rc<Form>, req: &AddRequest) {
     let url = form.url.text().trim().to_string();
-    if !url.starts_with("http") {
-        return;
-    }
     let id = form.probe_id.get() + 1;
     form.probe_id.set(id);
     form.info.set_text("Checking link…");

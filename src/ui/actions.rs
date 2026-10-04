@@ -1,10 +1,11 @@
 //! Actions behind the toolbar, context menu, shortcuts and notification buttons.
 
+use super::launch::{launch, Launch};
 use super::{add_dialog, list, progress, settings, Ctx};
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use std::rc::Rc;
-use turbodm::engine::AddRequest;
+use turbodm::engine::{AddRequest, Status};
 
 type IdAction = fn(&Rc<Ctx>, &str);
 
@@ -38,6 +39,24 @@ pub fn install(ctx: &Rc<Ctx>) {
     add(ctx, win, "delete-file", confirm_delete);
     add(ctx, win, "open", |ctx| if let Some(id) = first(ctx) { open_file(ctx, &id) });
     add(ctx, win, "open-folder", |ctx| if let Some(id) = first(ctx) { open_folder(ctx, &id) });
+    add(ctx, win, "open-with", |ctx| {
+        if let Some(snap) = first(ctx).and_then(|id| ctx.manager.get(&id)) {
+            launch(ctx, &snap.path, Launch::OpenWith);
+        }
+    });
+    add(ctx, win, "delete-completed", |ctx| {
+        // from the list only: the files stay
+        ctx.manager.snapshot().iter().filter(|s| s.status == Status::Completed)
+            .for_each(|s| ctx.manager.remove(&s.id, false));
+    });
+    add(ctx, win, "open-download-folder", |ctx| {
+        let dir = ctx.manager.settings().download_dir;
+        let _ = std::fs::create_dir_all(&dir);
+        launch(ctx, &dir, Launch::Open);
+    });
+    add(ctx, win, "find", |ctx| {
+        ctx.win.search.grab_focus();
+    });
     add(ctx, win, "details", |ctx| if let Some(id) = first(ctx) { progress::open(ctx, &id) });
     add(ctx, win, "copy-url", copy_url);
     add(ctx, win, "refresh", refresh_address);
@@ -59,7 +78,7 @@ pub fn install(ctx: &Rc<Ctx>) {
     }
     for (action, accel) in [("win.add", "<Ctrl>n"), ("win.resume", "<Ctrl>r"), ("win.pause", "<Ctrl>p"),
                             ("win.remove", "Delete"), ("win.settings", "<Ctrl>comma"),
-                            ("win.details", "<Ctrl>i"), ("app.quit", "<Ctrl>q")] {
+                            ("win.details", "<Ctrl>i"), ("win.find", "<Ctrl>f"), ("app.quit", "<Ctrl>q")] {
         ctx.app.set_accels_for_action(action, &[accel]);
     }
 }
@@ -74,15 +93,16 @@ fn resume(ctx: &Rc<Ctx>, id: &str) {
 
 pub fn open_file(ctx: &Rc<Ctx>, id: &str) {
     let Some(snap) = ctx.manager.get(id) else { return };
-    let launcher = gtk::FileLauncher::new(Some(&gio::File::for_path(&snap.path)));
-    launcher.launch(Some(&ctx.win.window), gio::Cancellable::NONE, |_| {});
+    launch(ctx, &snap.path, Launch::Open);
 }
 
 pub fn open_folder(ctx: &Rc<Ctx>, id: &str) {
     let Some(snap) = ctx.manager.get(id) else { return };
-    let target = if snap.path.exists() { snap.path } else { snap.directory };
-    let launcher = gtk::FileLauncher::new(Some(&gio::File::for_path(target)));
-    launcher.open_containing_folder(Some(&ctx.win.window), gio::Cancellable::NONE, |_| {});
+    if snap.path.exists() {
+        launch(ctx, &snap.path, Launch::ShowInFolder);
+    } else {
+        launch(ctx, &snap.directory, Launch::Open); // file gone: just open the folder
+    }
 }
 
 fn copy_url(ctx: &Rc<Ctx>) {

@@ -27,11 +27,20 @@ logged in keep working.
   included), adds *Download with TurboDM* to the right-click menu, and lets the browser keep the
   download if TurboDM can't be reached. In Firefox, downloads are recognised from the server's
   response headers and taken over *before* Firefox saves anything — no half-finished copy, no
-  entry in its download list, and tabs opened just for the download close themselves. Talks
+  entry in its download list, and tabs opened just for the download close themselves. Files saved
+  with the browser's *Save … As* go to the folder you picked there. Talks
   through the browsers' native-messaging channel and a user-only Unix socket — no network port is
   opened.
+- **Starts before you click Start**, like IDM: while the *Download file info* dialog is open the
+  download quietly begins on a single connection, so it's already connected when you press
+  *Start* — then every connection joins in without reconnecting. *Cancel* deletes what was
+  fetched; you can turn this off in Preferences.
 - **Queue** with a limit on simultaneous downloads, and a **global speed limit**.
 - **Categories**: Video, Music, Documents, Compressed, Programs and Images go to their own sub-folders.
+- **Main window with a sidebar**: downloads by state (all, downloading, unfinished, completed) and
+  by category, with counts and the free space on the download disk; a toolbar for resume/pause
+  (all), clearing finished downloads and opening the download folder; search (Ctrl+F) and sortable
+  columns.
 - **Refresh download address** for expired links, keeping the progress.
 - **A window per download, like IDM's**, opening when a download starts or resumes (from the
   browser or the app): *Download status* with a live map of every connection's segment and a

@@ -75,18 +75,19 @@ async fn prepare(task: &Task, shared: &Shared, cancel: &CancellationToken) -> Re
 }
 
 async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken) -> Result<bool, String> {
-    let (path, info) = {
+    let (info, file) = {
+        // locked while opening: the add dialog may move the file to another name or folder
         let info = task.info.lock().unwrap();
-        (info.path(), info.clone())
+        let part = part_path(&info.path());
+        std::fs::create_dir_all(&info.directory).map_err(|e| format!("Cannot create folder: {e}"))?;
+        let is_new = !part.exists();
+        let file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(&part)
+            .map_err(|e| format!("Cannot open the file: {e}"))?;
+        if let (true, Some(size)) = (is_new, info.size) {
+            file.set_len(size).map_err(|e| format!("Cannot reserve disk space: {e}"))?;
+        }
+        (info.clone(), file)
     };
-    let part = part_path(&path);
-    std::fs::create_dir_all(&info.directory).map_err(|e| format!("Cannot create folder: {e}"))?;
-    let is_new = !part.exists();
-    let file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(&part)
-        .map_err(|e| format!("Cannot open the file: {e}"))?;
-    if let (true, Some(size)) = (is_new, info.size) {
-        file.set_len(size).map_err(|e| format!("Cannot reserve disk space: {e}"))?;
-    }
     let segments = task.segments.lock().unwrap().clone().expect("prepared");
     let settings = shared.settings();
     let count = if info.resumable { info.connections } else { 1 };
@@ -103,12 +104,30 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
         live: std::sync::atomic::AtomicUsize::new(count),
     });
     task.set_status(Status::Downloading);
-    let workers: Vec<_> = (0..count).map(|_| tokio::spawn(connection_loop(ctx.clone()))).collect();
-    for worker in workers {
-        match worker.await {
-            Ok(Err(msg)) => task.fail(&msg),
-            Err(join_err) => task.fail(&format!("internal error: {join_err}")),
-            Ok(Ok(())) => {}
+    let mut workers = tokio::task::JoinSet::new();
+    let mut spawned = 0;
+    let mut want = count;
+    loop {
+        while spawned < want {
+            workers.spawn(connection_loop(ctx.clone()));
+            spawned += 1;
+        }
+        tokio::select! {
+            done = workers.join_next() => match done {
+                None => break,
+                Some(Ok(Err(msg))) => task.fail(&msg),
+                Some(Err(join_err)) => task.fail(&format!("internal error: {join_err}")),
+                Some(Ok(Ok(()))) => {}
+            },
+            // more connections asked for (the add dialog's early single connection was confirmed):
+            // they split the busy parts, nothing reconnects
+            _ = task.grow.notified(), if info.resumable => {
+                let target = task.info.lock().unwrap().connections;
+                if target > want && !cancel.is_cancelled() {
+                    ctx.live.fetch_add(target - want, std::sync::atomic::Ordering::SeqCst);
+                    want = target;
+                }
+            }
         }
     }
     if cancel.is_cancelled() {
@@ -117,9 +136,10 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
     if !segments.all_finished() {
         return Err("Download stopped unexpectedly".into());
     }
-    let final_path = if path.exists() { unique_path(&path) } else { path };
-    std::fs::rename(&part, &final_path).map_err(|e| format!("Cannot rename the file: {e}"))?;
-    let mut info = task.info.lock().unwrap();
+    let mut info = task.info.lock().unwrap(); // its name/folder now, not when it started
+    let path = info.path();
+    let final_path = if path.exists() { unique_path(&path) } else { path.clone() };
+    std::fs::rename(part_path(&path), &final_path).map_err(|e| format!("Cannot rename the file: {e}"))?;
     info.filename = final_path.file_name().map(|n| n.to_string_lossy().into_owned());
     if info.size.is_none() {
         info.size = Some(segments.total_done());

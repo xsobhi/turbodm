@@ -6,10 +6,12 @@ mod center;
 mod clipboard;
 mod finish;
 mod item;
+mod launch;
 mod list;
 mod power;
 mod progress;
 mod settings;
+mod sidebar;
 mod tray;
 mod window;
 
@@ -32,11 +34,13 @@ pub struct Ctx {
     pub progress: RefCell<HashMap<String, progress::ProgressWindow>>,
     pub on_done: RefCell<HashMap<String, finish::OnDone>>, // downloads with a progress window
     pub tray: Cell<bool>, // a tray icon is showing (else closing minimizes)
+    pub launching: Cell<usize>, // files being handed to the desktop: don't quit yet
 }
 
 impl Ctx {
     pub fn show(&self) {
         self.win.window.present();
+        window::refresh(self); // the list isn't kept up to date while hidden
     }
 
     /// A download request from the browser, the clipboard, or the command line.
@@ -93,6 +97,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
             progress: RefCell::new(HashMap::new()),
             on_done: RefCell::new(HashMap::new()),
             tray: Cell::new(false),
+            launching: Cell::new(0),
         });
         window::setup(&ctx);
         actions::install(&ctx);
@@ -127,8 +132,9 @@ fn listen_ipc(ctx: &Rc<Ctx>, rx: async_channel::Receiver<Message>) {
                 Message::Ping => {}
                 Message::Show => ctx.show(),
                 Message::Quit => ctx.app.quit(),
-                Message::Download { url, filename, referrer, cookies, user_agent, silent, .. } => {
-                    let req = AddRequest { url, filename, referrer, cookies, user_agent, ..Default::default() };
+                Message::Download { url, filename, directory, referrer, cookies, user_agent, silent, .. } => {
+                    let directory = directory.filter(|d| d.is_absolute());
+                    let req = AddRequest { url, filename, directory, referrer, cookies, user_agent, ..Default::default() };
                     ctx.handle_download(req, silent);
                 }
             }

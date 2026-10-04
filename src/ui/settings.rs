@@ -28,6 +28,7 @@ pub fn open(ctx: &Rc<Ctx>) {
     let retries = spin(0.0, 100.0, s.retries as f64);
     let timeout = spin(5.0, 300.0, s.timeout_secs as f64);
     let confirm = switch(s.show_add_dialog);
+    let early = switch(s.predownload);
     let progress = switch(s.show_progress_window);
     let complete = switch(s.show_complete_dialog);
     let notify = switch(s.notify_complete);
@@ -36,7 +37,7 @@ pub fn open(ctx: &Rc<Ctx>) {
 
     let grid = gtk::Grid::builder().row_spacing(10).column_spacing(16)
         .margin_top(18).margin_bottom(18).margin_start(18).margin_end(18).build();
-    let rows: [(&str, &gtk::Widget); 13] = [
+    let rows: [(&str, &gtk::Widget); 14] = [
         ("Download folder", folder_btn.upcast_ref()),
         ("Sort into category folders", categories.upcast_ref()),
         ("Connections per download (servers may limit this)", connections.upcast_ref()),
@@ -45,6 +46,7 @@ pub fn open(ctx: &Rc<Ctx>) {
         ("Retries per connection", retries.upcast_ref()),
         ("Reconnect after no data for (seconds)", timeout.upcast_ref()),
         ("Confirm downloads from the browser", confirm.upcast_ref()),
+        ("Start downloading while the confirm dialog is open", early.upcast_ref()),
         ("Open a progress window when a download starts", progress.upcast_ref()),
         ("Show the download complete dialog", complete.upcast_ref()),
         ("Notify when downloads finish", notify.upcast_ref()),
@@ -81,6 +83,7 @@ pub fn open(ctx: &Rc<Ctx>) {
         s.retries = retries.value() as u32;
         s.timeout_secs = timeout.value() as u64;
         s.show_add_dialog = confirm.is_active();
+        s.predownload = early.is_active();
         s.show_progress_window = progress.is_active();
         s.show_complete_dialog = complete.is_active();
         s.notify_complete = notify.is_active();

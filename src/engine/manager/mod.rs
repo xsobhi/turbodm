@@ -2,6 +2,8 @@
 
 mod control;
 
+pub use control::Confirm;
+
 use super::state::{self, Snapshot};
 use super::task::{Status, Task, TaskInfo};
 use super::{runner, Shared};
@@ -63,6 +65,21 @@ impl Manager {
     }
 
     pub fn add(self: &Arc<Self>, req: AddRequest) -> String {
+        self.insert(req, false)
+    }
+
+    /// Start downloading behind the add dialog while the user looks at it, like IDM: on one
+    /// connection, so it's already connected and under way when they press Start, without
+    /// using much bandwidth. Hidden until `confirm`; `remove(id, true)` throws it away.
+    pub fn prefetch(self: &Arc<Self>, req: AddRequest) -> String {
+        let id = self.insert(AddRequest { start: false, connections: Some(1), ..req }, true);
+        if let Some(task) = self.find(&id) {
+            self.start_task(&task); // not queued: the user is waiting for it
+        }
+        id
+    }
+
+    fn insert(self: &Arc<Self>, req: AddRequest, pending: bool) -> String {
         let s = self.shared.settings();
         let name = req.filename.as_deref().filter(|n| !n.is_empty()).map(sanitize_filename);
         let auto_dir = req.directory.is_none();
@@ -80,7 +97,9 @@ impl Manager {
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
         let id = format!("{:x}{:x}", nanos.as_nanos(), self.next_id.fetch_add(1, Ordering::Relaxed));
         self.statuses.lock().unwrap().insert(id.clone(), info.status);
-        self.tasks.lock().unwrap().push(Task::new(id.clone(), info, None));
+        let task = Task::new(id.clone(), info, None);
+        task.pending.store(pending, Ordering::Relaxed);
+        self.tasks.lock().unwrap().push(task);
         self.dirty.store(true, Ordering::Relaxed);
         self.schedule();
         id
@@ -107,7 +126,7 @@ impl Manager {
     }
 
     pub fn save(&self) {
-        let _ = state::save(&self.store, &self.all());
+        let _ = state::save(&self.store, &self.listed());
         self.dirty.store(false, Ordering::Relaxed);
     }
 
@@ -120,6 +139,9 @@ impl Manager {
             if let Some(handle) = handle {
                 let wait = async move { tokio::time::timeout(Duration::from_secs(10), handle).await };
                 let _ = self.rt.block_on(wait);
+            }
+            if task.pending.load(Ordering::Relaxed) {
+                state::remove_files(&task); // its dialog never confirmed it
             }
         }
         self.save();
@@ -134,8 +156,9 @@ impl Manager {
         }
     }
 
+    /// Speeds, status-change events (completion dialog, queue) and autosave, 10 times a second.
     async fn monitor(self: Arc<Self>) {
-        let mut interval = tokio::time::interval(Duration::from_millis(500));
+        let mut interval = tokio::time::interval(Duration::from_millis(100));
         let mut last_save = Instant::now();
         while !self.stopped.load(Ordering::Relaxed) {
             interval.tick().await;
@@ -143,6 +166,9 @@ impl Manager {
             let mut changed = vec![];
             for task in self.all() {
                 task.tick(now);
+                if task.pending.load(Ordering::Relaxed) {
+                    continue; // changes are reported once it's confirmed
+                }
                 let status = task.status();
                 if self.statuses.lock().unwrap().insert(task.id.clone(), status) != Some(status) {
                     changed.push(state::snapshot(&task));

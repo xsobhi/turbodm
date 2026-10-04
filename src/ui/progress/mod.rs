@@ -57,10 +57,10 @@ pub fn open(ctx: &Rc<Ctx>, id: &str) {
     ctx.on_done.borrow_mut().entry(id.to_string()).or_default(); // being watched: say when it's done
     let (grid, rows) = status_tab();
     let overall = gtk::ProgressBar::builder().show_text(true).build();
-    let details = Details::new();
+    let details = Details::new(snap.connections);
     let status_page = page(&grid);
     status_page.append(&overall);
-    status_page.append(&details.revealer);
+    status_page.append(&details.widget);
     let notebook = gtk::Notebook::new();
     notebook.append_page(&status_page, Some(&gtk::Label::new(Some("Download status"))));
     notebook.append_page(&page(&options::speed_limiter(ctx, &snap)), Some(&gtk::Label::new(Some("Speed limiter"))));
@@ -82,14 +82,12 @@ pub fn open(ctx: &Rc<Ctx>, id: &str) {
 
     let m = more.clone();
     notebook.connect_switch_page(move |_, _, page| m.set_visible(page == 0)); // details: status tab only
-    let (r, w) = (details.revealer.clone(), window.clone());
+    let (d, w) = (details.widget.clone(), window.clone());
     more.connect_clicked(move |b| {
-        let show = !r.reveals_child();
-        r.set_reveal_child(show);
+        let show = !d.is_visible();
+        d.set_visible(show);
         b.set_label(if show { "Hide details" } else { "Show details" });
-        if !show {
-            w.set_default_size(w.width(), -1); // shrink back to fit
-        }
+        center::fit_height(&w); // no empty space where the connections were, room when they're back
     });
     let (c, i) = (ctx.clone(), id.to_string());
     toggle.connect_clicked(move |_| match c.manager.get(&i).map(|s| s.status) {
@@ -160,7 +158,10 @@ impl ProgressWindow {
         if self.window.title().as_deref() != Some(title.as_str()) {
             self.window.set_title(Some(&title));
         }
-        self.overall.set_fraction(s.progress.unwrap_or(0.0));
+        let fraction = s.progress.unwrap_or(0.0);
+        if self.overall.fraction() != fraction {
+            self.overall.set_fraction(fraction);
+        }
         self.overall.set_text(Some(&status_text(&s)));
         self.details.update(&s);
         let running = s.status.is_active() || s.status == Status::Queued;

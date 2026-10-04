@@ -6,6 +6,7 @@ use super::segments::SegmentMap;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio_util::sync::CancellationToken;
@@ -106,6 +107,11 @@ pub struct Task {
     pub cancel: Mutex<CancellationToken>,
     pub runner: Mutex<Option<tokio::task::JoinHandle<()>>>,
     pub limiter: Arc<RateLimiter>,
+    /// Started while its "Download file info" dialog is still open (like IDM): not listed,
+    /// not saved, no events, until the dialog confirms it.
+    pub pending: AtomicBool,
+    /// Wakes the running download to add connections up to `info.connections`.
+    pub grow: tokio::sync::Notify,
     samples: Mutex<VecDeque<(Instant, u64)>>,
     speed: Mutex<f64>,
 }
@@ -119,6 +125,8 @@ impl Task {
             segments: Mutex::new(segments.map(Arc::new)),
             cancel: Mutex::new(CancellationToken::new()),
             runner: Mutex::new(None),
+            pending: AtomicBool::new(false),
+            grow: tokio::sync::Notify::new(),
             samples: Mutex::new(VecDeque::new()),
             speed: Mutex::new(0.0),
         })
@@ -146,12 +154,12 @@ impl Task {
         *self.speed.lock().unwrap()
     }
 
-    /// Update the speed from a 3-second sliding window (called twice a second).
+    /// Update the speed from a 2-second sliding window (called 10 times a second).
     pub fn tick(&self, now: Instant) {
         let total = self.downloaded();
         let mut samples = self.samples.lock().unwrap();
         samples.push_back((now, total));
-        while samples.len() > 2 && now.duration_since(samples[0].0).as_secs_f64() > 3.0 {
+        while samples.len() > 2 && now.duration_since(samples[0].0).as_secs_f64() > 2.0 {
             samples.pop_front();
         }
         let (t0, b0) = samples[0];

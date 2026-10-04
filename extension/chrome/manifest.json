@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TurboDM Integration",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Send browser downloads to TurboDM, a fast multi-connection download manager, with cookies and referrer so protected links work.",
   "icons": {
     "16": "icons/icon-16.png",
