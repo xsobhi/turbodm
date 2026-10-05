@@ -73,3 +73,17 @@ Filename: "{app}\bin\turbodm.exe"; Parameters: "--unregister-system"; Flags: run
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\native-messaging"
+
+[Code]
+// TurboDM 1.4.0 installed per user (in AppData): remove that copy so only this one is left.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Uninstaller: String;
+  Code: Integer;
+begin
+  Result := '';
+  if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6B0C7A52-3E0B-4B7E-9C1D-7A4D2F1B9E21}_is1',
+                         'UninstallString', Uninstaller) then
+    Exec(RemoveQuotes(Uninstaller), '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE,
+         ewWaitUntilTerminated, Code);
+end;
