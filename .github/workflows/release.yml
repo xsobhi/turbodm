@@ -179,6 +179,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag=${GITHUB_REF_NAME}
+          git fetch --force origin "refs/tags/$tag:refs/tags/$tag" # checkout drops the tag's message
           {
             git tag -l --format='%(contents:body)' "$tag"
             echo

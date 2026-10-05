@@ -2,7 +2,7 @@
 
 | System | Download |
 |---|---|
-| **Windows 10/11** | `TurboDM-…-windows-x64-setup.exe` (installer) or `…-portable.zip` |
+| **Windows 10/11** | `TurboDM-…-windows-x64-setup.exe` (installs for all users and updates itself) or `…-portable.zip` |
 | **Ubuntu 24.04+, Linux Mint 22+, Debian 13+** | `turbodm_…_amd64.deb` (or `arm64`) — also adds the apt repository, so updates come with your system updates |
 | **Fedora 40+, openSUSE Tumbleweed** | `turbodm-…x86_64.rpm` (or `aarch64`) |
 
