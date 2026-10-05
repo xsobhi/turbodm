@@ -78,10 +78,10 @@ mod platform {
 #[cfg(windows)]
 mod platform {
     use super::*;
-    use winreg::enums::HKEY_CURRENT_USER;
-    use winreg::RegKey;
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::{HKEY, RegKey};
 
-    /// Registry keys browsers look up hosts under (HKCU), and whether it's Firefox.
+    /// Registry keys browsers look up hosts under (in HKCU or HKLM), and whether it's Firefox.
     const KEYS: [(&str, bool); 6] = [
         (r"Software\Mozilla\NativeMessagingHosts", true),
         (r"Software\Google\Chrome\NativeMessagingHosts", false),
@@ -91,20 +91,36 @@ mod platform {
         (r"Software\Vivaldi\NativeMessagingHosts", false),
     ];
 
-    fn manifest_file(firefox: bool) -> PathBuf {
-        let dir = dirs::data_local_dir().unwrap_or_default().join("TurboDM");
-        dir.join(if firefox { "native-host-firefox.json" } else { "native-host-chrome.json" })
+    /// Where the registration lives: for this user, or (installer, as admin) for everyone,
+    /// with the manifests next to the installed program.
+    struct Scope {
+        hive: HKEY,
+        dir: PathBuf,
     }
 
-    pub fn register() -> std::io::Result<()> {
+    fn user() -> Scope {
+        Scope { hive: HKEY_CURRENT_USER, dir: dirs::data_local_dir().unwrap_or_default().join("TurboDM") }
+    }
+
+    fn system() -> std::io::Result<Scope> {
+        let program = program()?;
+        let install = program.parent().and_then(Path::parent).unwrap_or(Path::new("."));
+        Ok(Scope { hive: HKEY_LOCAL_MACHINE, dir: install.join("native-messaging") })
+    }
+
+    fn manifest_file(scope: &Scope, firefox: bool) -> PathBuf {
+        scope.dir.join(if firefox { "native-host-firefox.json" } else { "native-host-chrome.json" })
+    }
+
+    fn add(scope: &Scope) -> std::io::Result<()> {
         let program = program()?;
         for firefox in [true, false] {
-            write_if_changed(&manifest_file(firefox), &manifest(&program, firefox))?;
+            write_if_changed(&manifest_file(scope, firefox), &manifest(&program, firefox))?;
         }
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let hive = RegKey::predef(scope.hive);
         for (key, firefox) in KEYS {
-            let (host, _) = hkcu.create_subkey(format!(r"{key}\{NATIVE_HOST}"))?;
-            let file = manifest_file(firefox).to_string_lossy().into_owned();
+            let (host, _) = hive.create_subkey(format!(r"{key}\{NATIVE_HOST}"))?;
+            let file = manifest_file(scope, firefox).to_string_lossy().into_owned();
             if host.get_value::<String, _>("").ok().as_deref() != Some(file.as_str()) {
                 host.set_value("", &file)?;
             }
@@ -112,19 +128,54 @@ mod platform {
         Ok(())
     }
 
-    pub fn unregister() -> std::io::Result<()> {
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    fn remove(scope: &Scope) {
+        let hive = RegKey::predef(scope.hive);
         for (key, _) in KEYS {
-            let _ = hkcu.delete_subkey_all(format!(r"{key}\{NATIVE_HOST}"));
+            let _ = hive.delete_subkey_all(format!(r"{key}\{NATIVE_HOST}"));
         }
         for firefox in [true, false] {
-            let _ = std::fs::remove_file(manifest_file(firefox));
+            let _ = std::fs::remove_file(manifest_file(scope, firefox));
         }
+    }
+
+    /// Installed for everyone (by the installer) as this very program?
+    fn installed_for_everyone() -> bool {
+        let Ok(scope) = system() else { return false };
+        let key = format!(r"{}\{NATIVE_HOST}", KEYS[0].0);
+        let registered = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(key)
+            .and_then(|k| k.get_value::<String, _>("")).ok();
+        registered.is_some_and(|file| Path::new(&file) == manifest_file(&scope, true) && Path::new(&file).exists())
+    }
+
+    pub fn register() -> std::io::Result<()> {
+        if installed_for_everyone() {
+            remove(&user()); // the installer's registration covers everyone: nothing per user
+            return Ok(());
+        }
+        add(&user())
+    }
+
+    pub fn unregister() -> std::io::Result<()> {
+        remove(&user());
+        Ok(())
+    }
+
+    pub fn register_system() -> std::io::Result<()> {
+        add(&system()?)
+    }
+
+    pub fn unregister_system() -> std::io::Result<()> {
+        remove(&system()?);
         Ok(())
     }
 }
 
+/// Linux reads per-user manifests (packages install system-wide ones themselves).
+#[cfg(not(windows))]
+pub use platform::{register as register_system, unregister as unregister_system};
 pub use platform::{register, unregister};
+#[cfg(windows)]
+pub use platform::{register_system, unregister_system};
 
 #[cfg(test)]
 mod tests {

@@ -44,8 +44,14 @@ fn main() {
     } else {
         match args.first().map(String::as_str) {
             Some("get") => cli::get(&args[1..]),
-            Some(flag @ ("--register" | "--unregister")) => {
-                let result = if flag == "--register" { turbodm::register::register() } else { turbodm::register::unregister() };
+            Some(flag @ ("--register" | "--unregister" | "--register-system" | "--unregister-system")) => {
+                use turbodm::register::*;
+                let result = match flag {
+                    "--register" => register(),
+                    "--unregister" => unregister(),
+                    "--register-system" => register_system(), // the installer, for all users
+                    _ => unregister_system(),
+                };
                 match result {
                     Ok(()) => 0,
                     Err(err) => {

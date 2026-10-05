@@ -108,24 +108,44 @@ jobs:
           [System.Drawing.Graphics]::FromImage($image).CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
           $image.Save("$PWD\windows-screenshot.png")
           Stop-Process -Name turbodm
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: windows-screenshot
-          path: windows-screenshot.png
       - name: Installer (Inno Setup)
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
           $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DVersion=$version" "/DArch=${{ matrix.arch }}" packaging\windows\turbodm.iss
+          if ($LASTEXITCODE) { throw "installer build failed" }
           Compress-Archive -Path dist\windows\TurboDM -DestinationPath "dist\windows\TurboDM-$version-windows-${{ matrix.arch }}-portable.zip"
+      - name: Install test (silent install for all users, then the installer's first page)
+        shell: pwsh
+        run: |
+          $setup = Get-Item dist\windows\*-setup.exe
+          Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+          if (-not (Test-Path "$env:ProgramFiles\TurboDM\bin\turbodm.exe")) { throw "not installed in Program Files" }
+          reg query "HKLM\Software\Mozilla\NativeMessagingHosts\com.xsobhi.turbodm"
+          if ($LASTEXITCODE) { throw "browser connector not registered for all users" }
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          function Shot($file) {
+            $image = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
+            [System.Drawing.Graphics]::FromImage($image).CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+            $image.Save("$PWD\$file")
+          }
+          $wizard = Start-Process $setup -PassThru
+          Start-Sleep 6
+          Shot "installer-welcome.png"
+          $wizard | Stop-Process -Force
       - uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}
           path: |
             dist/windows/*.exe
             dist/windows/*.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-screenshots
+          path: "*.png"
 
   release:
     name: GitHub release
