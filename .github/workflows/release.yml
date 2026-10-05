@@ -20,7 +20,7 @@ jobs:
           - { runner: ubuntu-24.04-arm, arch: arm64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev pkg-config zip
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -59,15 +59,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # 64-bit only: MSYS2 no longer builds Rust or GTK 4 for 32-bit Windows
           - { msystem: UCRT64, arch: x64 }
-          - { msystem: MINGW32, arch: x86 } # 32-bit: shipped only if MSYS2 still builds GTK 4 for it
     runs-on: windows-latest
-    continue-on-error: ${{ matrix.arch == 'x86' }}
     defaults:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: msys2/setup-msys2@v2
         with:
           msystem: ${{ matrix.msystem }}
@@ -77,8 +76,31 @@ jobs:
       - run: tools/build-extension.sh
       - run: cargo build --release
       - run: packaging/windows/bundle.sh
-      - name: Smoke test
-        run: dist/windows/TurboDM/bin/turbodm.exe --version
+      - name: Smoke test (app, browser connector, single instance)
+        shell: pwsh
+        run: |
+          $exe = "dist\windows\TurboDM\bin\turbodm.exe"
+          Start-Process $exe
+          Start-Sleep 8
+          if (-not (Get-Process turbodm -ErrorAction SilentlyContinue)) { throw "TurboDM didn't stay running" }
+          python packaging/windows/smoke_test.py $exe
+          if ($LASTEXITCODE) { throw "native host test failed" }
+          reg query "HKCU\Software\Google\Chrome\NativeMessagingHosts\com.xsobhi.turbodm"
+          if ($LASTEXITCODE) { throw "not registered for Chrome" }
+          Start-Process $exe -ArgumentList "https://github.com/xsobhi/turbodm/archive/refs/heads/main.zip"
+          Start-Sleep 6
+          if ((Get-Process turbodm).Count -ne 1) { throw "a second instance kept running" }
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $image = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
+          [System.Drawing.Graphics]::FromImage($image).CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+          $image.Save("$PWD\windows-screenshot.png")
+          Stop-Process -Name turbodm
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-screenshot
+          path: windows-screenshot.png
       - name: Installer (Inno Setup)
         shell: pwsh
         run: |
@@ -99,7 +121,7 @@ jobs:
     if: ${{ !cancelled() && needs.linux.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - uses: actions/download-artifact@v4
@@ -124,7 +146,7 @@ jobs:
     needs: release
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
           path: artifacts

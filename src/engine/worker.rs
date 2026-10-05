@@ -28,7 +28,14 @@ impl WorkerCtx {
     /// Let this connection bow out (the server limits connections per IP), but only
     /// while another one keeps going - the last connection always stays and retries.
     fn try_retire(&self) -> bool {
-        self.live.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| (n > 1).then(|| n - 1)).is_ok()
+        let mut live = self.live.load(Ordering::SeqCst);
+        while live > 1 {
+            match self.live.compare_exchange_weak(live, live - 1, Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => return true,
+                Err(now) => live = now,
+            }
+        }
+        false
     }
 }
 
