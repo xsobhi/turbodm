@@ -170,9 +170,11 @@ fn per_download_speed_limit() {
     let data = random_bytes(3 << 20);
     let server = start(&env.rt, data.clone(), Options { ranges: true, no_length: false, max_conns: 0 }, 0);
     let manager = env.manager(4);
-    let started = Instant::now();
-    let id = add(&manager, &server.url);
+    // limit first, then start: a fast machine finishes 3 MiB from localhost in no time
+    let id = manager.add(AddRequest { url: server.url.clone(), start: false, ..Default::default() });
     manager.set_speed_limit(&id, 1024); // 1 MiB/s: 3 MiB takes about 3 s
+    let started = Instant::now();
+    manager.resume(&id);
     let snap = wait_for(&manager, &id, finished);
     assert_file(&snap, &data);
     assert_eq!(snap.speed_limit_kib, 1024);
