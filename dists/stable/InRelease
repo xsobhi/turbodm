@@ -1,0 +1,42 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Architectures: amd64 arm64
+Codename: stable
+Components: main
+Date: Mon, 05 Oct 2026 10:11:40 +0000
+Description: TurboDM download manager
+Label: TurboDM
+Origin: TurboDM
+Suite: stable
+MD5Sum:
+ f72d54906bdcf657090943f1be174fcb              182 Release
+ f05e647c9aff164f8b6f59bb8bfd465f             1090 main/binary-amd64/Packages
+ 356cf3826b5226be499c65db34df5869              709 main/binary-amd64/Packages.gz
+ ccad90c06ee97a30a9d0918ae16f35f4             1089 main/binary-arm64/Packages
+ 3502f388d3688a4ae5bd18140024c2e8              708 main/binary-arm64/Packages.gz
+SHA1:
+ 94302a177f30d9565b16b598fc5dd66b9c4100d5              182 Release
+ 5b2a88666e5c83389b1cdcd4f19fd6c7de7c51e4             1090 main/binary-amd64/Packages
+ d69c8e667831c00f2f42576a30a90b68b4df4290              709 main/binary-amd64/Packages.gz
+ 3a3eab5340a5f539f9a206093bebcb7f9ef484c4             1089 main/binary-arm64/Packages
+ 755141540e7038e7435d20c2fcb79c8d43336fdf              708 main/binary-arm64/Packages.gz
+SHA256:
+ cc815c0e0d66a532ad62f8f2016a5908521cebdb95128be82205f2249aa12769              182 Release
+ 4e4d3d22783eacd141aa6b2d7751fc2c605489cf63588b17c7d1de5d5a7e9968             1090 main/binary-amd64/Packages
+ 5d321e5c3d4c05306f88be318e7918d2f68ae768e22852df962076ca6fcc1c28              709 main/binary-amd64/Packages.gz
+ b5f3595cefd12e6189bffacc98fb45ee31ba3dea13b335938e176b6989e0deec             1089 main/binary-arm64/Packages
+ c9ed59abc953d6b93a3a80b3cb3a93721683bcc3f5856ef04b7b5f640fbc6950              708 main/binary-arm64/Packages.gz
+SHA512:
+ 8705502b7281c40814b6df6ce3b5eecd830013b13922fd90535104d80cb1defca3f295fc5904355414222169704916a9558b87ce7db9958251154e6ea38170c8              182 Release
+ 9e6f5f5df67afe77ec6737e7ed75ca5c4cb74b5c0c1531cac4a189206563eefce242da5fd440f5db741b38716ec239bd51aaf62ecc09e40b61cd214a92b34809             1090 main/binary-amd64/Packages
+ d92ecae12607104ed9e48df1709ed22ab142d15092be7558f3632932d278fae9bd61d951ad639cfaac86fe19bf14fd9f6e5aa854403177441fca79760145892f              709 main/binary-amd64/Packages.gz
+ 60f69009148612554f48b3ef66e67dad01e8feac8294db1525fe4f88be0dcf3475abce0dc133925cd833b5e0f5b475f2a59ecdddd9d9a743238ec4756f8e0624             1089 main/binary-arm64/Packages
+ 837d3524bce900d0b8784a50405826f7158c0ddd28de821d4a8f6c02b62a5ed4ca9500861a7ded8932a0df8a2b0f5920122ca9e7cfd34d88436b4e864271a390              708 main/binary-arm64/Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQQksdX3z29KVO3pp+5LTpJfM98LcwUCasN33AAKCRBLTpJfM98L
+cwccAP9L0qGYKsYCPu+iNRACsYfYqTCBloWQ4eZaO0eRBQTPywEA1EHglyQmHBE1
+FrTGFHwqr1cXC/izDtjhvAsomdblbQg=
+=NDca
+-----END PGP SIGNATURE-----
