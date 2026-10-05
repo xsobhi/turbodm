@@ -66,6 +66,8 @@ pub struct Settings {
     pub notify_complete: bool,
     pub clipboard_monitor: bool,
     pub auto_resume: bool,         // resume unfinished downloads at start
+    pub check_updates: bool,       // ask GitHub for a newer release, at start and daily
+    pub skipped_update: String,    // "Skip this version" in the update dialog
 }
 
 impl Default for Settings {
@@ -86,6 +88,8 @@ impl Default for Settings {
             notify_complete: true,
             clipboard_monitor: false,
             auto_resume: false,
+            check_updates: true,
+            skipped_update: String::new(),
         }
     }
 }

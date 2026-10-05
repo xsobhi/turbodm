@@ -67,7 +67,7 @@ Download the latest version from the [releases page](https://github.com/xsobhi/t
 
 | System | File |
 |---|---|
-| **Windows 10/11** (64-bit) | `TurboDM-…-windows-x64-setup.exe` — installer, no admin rights needed. Or the `-portable.zip`. |
+| **Windows 10/11** (64-bit) | `TurboDM-…-windows-x64-setup.exe` — installs for all users and updates itself. Or the `-portable.zip`. |
 | **Ubuntu 24.04+, Linux Mint 22+, Debian 13+** | `turbodm_…_amd64.deb` (`arm64` for ARM). Double-click it, or `sudo apt install ./turbodm_…_amd64.deb`. |
 | **Fedora 40+, openSUSE Tumbleweed** | `turbodm-…x86_64.rpm` (`aarch64` for ARM): `sudo dnf install ./turbodm-….rpm` |
 
@@ -135,7 +135,8 @@ Debug connection behaviour with `TURBODM_DEBUG=1 turbodm get URL`.
 ## Privacy
 
 Cookies from the browser are only sent to the server of the download they came with. TurboDM has no
-telemetry and makes no network requests other than your downloads.
+telemetry. Besides your downloads, it only asks GitHub for the latest release (at start and once a
+day) to tell you about updates; turn *Check for updates* off in Preferences to stop that.
 
 ## Development
 

@@ -34,10 +34,11 @@ pub fn open(ctx: &Rc<Ctx>) {
     let notify = switch(s.notify_complete);
     let clipboard = switch(s.clipboard_monitor);
     let resume = switch(s.auto_resume);
+    let updates = switch(s.check_updates);
 
     let grid = gtk::Grid::builder().row_spacing(10).column_spacing(16)
         .margin_top(18).margin_bottom(18).margin_start(18).margin_end(18).build();
-    let rows: [(&str, &gtk::Widget); 14] = [
+    let rows: [(&str, &gtk::Widget); 15] = [
         ("Download folder", folder_btn.upcast_ref()),
         ("Sort into category folders", categories.upcast_ref()),
         ("Connections per download (servers may limit this)", connections.upcast_ref()),
@@ -52,6 +53,7 @@ pub fn open(ctx: &Rc<Ctx>) {
         ("Notify when downloads finish", notify.upcast_ref()),
         ("Catch download links copied to the clipboard", clipboard.upcast_ref()),
         ("Resume unfinished downloads at start", resume.upcast_ref()),
+        ("Check for updates", updates.upcast_ref()),
     ];
     for (y, (label, widget)) in rows.iter().enumerate() {
         grid.attach(&gtk::Label::builder().label(*label).xalign(0.0).hexpand(true).build(), 0, y as i32, 1, 1);
@@ -89,6 +91,7 @@ pub fn open(ctx: &Rc<Ctx>) {
         s.notify_complete = notify.is_active();
         s.clipboard_monitor = clipboard.is_active();
         s.auto_resume = resume.is_active();
+        s.check_updates = updates.is_active();
         c.manager.update_settings(s.clamp());
         glib::Propagation::Proceed
     });

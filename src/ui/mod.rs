@@ -26,6 +26,7 @@ mod tray {
     /// No tray icon here: closing the window while downloading minimizes it.
     pub fn start(_ctx: &std::rc::Rc<super::Ctx>) {}
 }
+mod update;
 mod window;
 
 use gtk::prelude::*;
@@ -48,12 +49,19 @@ pub struct Ctx {
     pub on_done: RefCell<HashMap<String, finish::OnDone>>, // downloads with a progress window
     pub tray: Cell<bool>, // a tray icon is showing (else closing minimizes)
     pub launching: Cell<usize>, // files being handed to the desktop: don't quit yet
+    pub update: RefCell<Option<turbodm::update::Release>>, // found while hidden: shown on show()
 }
 
 impl Ctx {
     pub fn show(&self) {
         self.win.window.present();
         window::refresh(self); // the list isn't kept up to date while hidden
+    }
+
+    /// Show the main window, and a newer version if one was found meanwhile.
+    pub fn show_all(self: &Rc<Self>) {
+        self.show();
+        update::show_pending(self);
     }
 
     /// A download request from the browser, the clipboard, or the command line.
@@ -117,15 +125,17 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
             on_done: RefCell::new(HashMap::new()),
             tray: Cell::new(false),
             launching: Cell::new(0),
+            update: RefCell::new(None),
         });
         window::setup(&ctx);
         actions::install(&ctx);
         tray::start(&ctx);
         clipboard::start(&ctx);
+        update::start(&ctx);
         listen_ipc(&ctx, from_ipc.clone());
         listen_events(&ctx, events.clone());
         if !background {
-            ctx.show();
+            ctx.show_all();
         }
     });
     // logout/shutdown/kill send SIGTERM: quit properly so downloads are paused and saved
@@ -156,7 +166,7 @@ fn listen_ipc(ctx: &Rc<Ctx>, rx: async_channel::Receiver<Message>) {
         while let Ok(message) = rx.recv().await {
             match message {
                 Message::Ping => {}
-                Message::Show => ctx.show(),
+                Message::Show => ctx.show_all(),
                 Message::Quit => ctx.app.quit(),
                 Message::Download { url, filename, directory, referrer, cookies, user_agent, silent, .. } => {
                     let directory = directory.filter(|d| d.is_absolute());

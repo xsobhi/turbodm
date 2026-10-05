@@ -131,10 +131,20 @@ jobs:
             [System.Drawing.Graphics]::FromImage($image).CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
             $image.Save("$PWD\$file")
           }
+          # click through the wizard (installed already, so: welcome → installing → finish)
+          Stop-Process -Name turbodm -ErrorAction SilentlyContinue
           $wizard = Start-Process $setup -PassThru
+          $shell = New-Object -ComObject WScript.Shell
           Start-Sleep 6
-          Shot "installer-welcome.png"
-          $wizard | Stop-Process -Force
+          Shot "installer-1-welcome.png"
+          $null = $shell.AppActivate($wizard.Id); $shell.SendKeys("{ENTER}")
+          Start-Sleep 15
+          Shot "installer-2-finished.png"
+          $null = $shell.AppActivate($wizard.Id); $shell.SendKeys("{ENTER}")
+          if (-not $wizard.WaitForExit(20000)) { $wizard | Stop-Process -Force; throw "the wizard didn't finish" }
+          Start-Sleep 4
+          Shot "installer-3-opened-app.png"
+          Stop-Process -Name turbodm -ErrorAction SilentlyContinue
       - uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}

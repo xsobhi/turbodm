@@ -74,7 +74,7 @@ pub fn start(ctx: &Rc<Ctx>) {
         while let Ok(cmd) = rx.recv().await {
             match cmd {
                 Cmd::Available(ok) => ctx.tray.set(ok),
-                Cmd::Show => ctx.show(),
+                Cmd::Show => ctx.show_all(),
                 Cmd::PauseAll => ctx.manager.pause_all(),
                 Cmd::ResumeAll => ctx.manager.resume_all(),
                 Cmd::Quit => ctx.app.quit(),

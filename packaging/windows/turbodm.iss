@@ -1,7 +1,7 @@
 ; TurboDM installer (Inno Setup 6.6+). Built by .github/workflows/release.yml:
 ;   iscc /DVersion=1.4.1 /DArch=x64 packaging\windows\turbodm.iss
-; Like most apps: one admin prompt, installed for everyone in Program Files, no questions
-; beyond the folder and a desktop shortcut. Light or dark, following Windows.
+; Like most apps: one admin prompt, installed for everyone in Program Files, and only the
+; folder to choose (first install). Light or dark, following Windows.
 
 #ifndef Version
   #define Version "0.0.0"
@@ -24,6 +24,7 @@ VersionInfoVersion={#Version}
 VersionInfoDescription=TurboDM Setup
 DefaultDirName={autopf}\TurboDM
 PrivilegesRequired=admin
+DisableWelcomePage=no
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
 DisableDirPage=auto
@@ -31,6 +32,7 @@ ShowLanguageDialog=no
 WizardStyle=modern dynamic
 WizardImageFile={#Art("wizard")}
 WizardSmallImageFile={#Art("wizard-small")}
+WizardImageAlphaFormat=defined
 SetupIconFile=..\..\data\turbodm.ico
 UninstallDisplayIcon={app}\bin\turbodm.exe
 UninstallDisplayName=TurboDM
@@ -51,21 +53,20 @@ FinishedHeadingLabel=TurboDM is ready
 FinishedLabel=TurboDM is installed. To catch downloads from your browser, add the TurboDM extension (its folder can be opened below).
 ClickFinish=
 
-[Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"
-
 [Files]
 Source: "..\..\dist\windows\TurboDM\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
 Name: "{autoprograms}\TurboDM"; Filename: "{app}\bin\turbodm.exe"
-Name: "{autodesktop}\TurboDM"; Filename: "{app}\bin\turbodm.exe"; Tasks: desktopicon
+Name: "{autodesktop}\TurboDM"; Filename: "{app}\bin\turbodm.exe"
 
 [Run]
 ; connect the browser extension for every user of this PC
 Filename: "{app}\bin\turbodm.exe"; Parameters: "--register-system"; Flags: runhidden
 Filename: "{app}\bin\turbodm.exe"; Description: "Open TurboDM"; Flags: nowait postinstall skipifsilent runasoriginaluser
 Filename: "{app}\extension"; Description: "Show the browser extension folder"; Flags: postinstall shellexec skipifsilent unchecked
+; updating from inside TurboDM runs this installer with /SILENT: open the new version afterwards
+Filename: "{app}\bin\turbodm.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
 Filename: "{app}\bin\turbodm.exe"; Parameters: "--unregister-system"; Flags: runhidden; RunOnceId: "Unregister"

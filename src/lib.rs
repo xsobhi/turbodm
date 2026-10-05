@@ -5,4 +5,5 @@ pub mod config;
 pub mod engine;
 pub mod ipc;
 pub mod register;
+pub mod update;
 pub mod util;

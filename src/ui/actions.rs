@@ -62,8 +62,9 @@ pub fn install(ctx: &Rc<Ctx>) {
     add(ctx, win, "refresh", refresh_address);
     add(ctx, win, "settings", settings::open);
     add(ctx, win, "about", about);
+    add(ctx, win, "check-updates", |ctx| super::update::check(ctx, true));
     add(ctx, &ctx.app, "quit", |ctx| ctx.app.quit());
-    add(ctx, &ctx.app, "show", |ctx| ctx.show());
+    add(ctx, &ctx.app, "show", |ctx| ctx.show_all());
     // Targeted actions used by notification buttons: app.open-file('<id>')
     let targeted: [(&str, IdAction); 2] = [("open-file", open_file), ("open-folder", open_folder)];
     for (name, f) in targeted {

@@ -59,6 +59,7 @@ pub fn app_menu() -> gio::Menu {
     app_menu.append_section(None, &section);
     let section = gio::Menu::new();
     section.append(Some("Preferences"), Some("win.settings"));
+    section.append(Some("Check for updates"), Some("win.check-updates"));
     section.append(Some("About TurboDM"), Some("win.about"));
     section.append(Some("Quit"), Some("app.quit"));
     app_menu.append_section(None, &section);
