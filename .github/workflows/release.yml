@@ -120,7 +120,11 @@ jobs:
         shell: pwsh
         run: |
           $setup = Get-Item dist\windows\*-setup.exe
-          Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+          # (not -Wait: that also waits for TurboDM, which a silent install opens afterwards)
+          $silent = Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru
+          if (-not $silent.WaitForExit(300000)) { throw "the silent install didn't finish" }
+          Start-Sleep 5
+          if (-not (Get-Process turbodm -ErrorAction SilentlyContinue)) { throw "TurboDM wasn't reopened after the update" }
           if (-not (Test-Path "$env:ProgramFiles\TurboDM\bin\turbodm.exe")) { throw "not installed in Program Files" }
           reg query "HKLM\Software\Mozilla\NativeMessagingHosts\com.xsobhi.turbodm"
           if ($LASTEXITCODE) { throw "browser connector not registered for all users" }
