@@ -5,7 +5,7 @@
 //! connection stays busy until the very end.
 
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::sync::{atomic::{AtomicU64, Ordering}, Mutex};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Segment {
@@ -37,7 +37,11 @@ impl Segment {
 pub struct SegmentMap {
     segs: Mutex<Vec<Segment>>,
     min_split: Mutex<u64>,
+    speed_floor: AtomicU64, // what one connection gets through in SPLIT_SECONDS now
 }
+
+/// Like IDM, a free connection takes over half a part only if that still takes this long.
+pub const SPLIT_SECONDS: f64 = 2.0;
 
 impl SegmentMap {
     pub fn create(size: Option<u64>, parts: usize, min_split: u64) -> Self {
@@ -59,16 +63,21 @@ impl SegmentMap {
 
     pub fn from_segments(segs: Vec<Segment>, min_split: u64) -> Self {
         let segs = segs.into_iter().map(|s| Segment { active: false, ..s }).collect();
-        SegmentMap { segs: Mutex::new(segs), min_split: Mutex::new(min_split) }
+        SegmentMap { segs: Mutex::new(segs), min_split: Mutex::new(min_split), speed_floor: AtomicU64::new(0) }
     }
 
     pub fn set_min_split(&self, bytes: u64) {
         *self.min_split.lock().unwrap() = bytes;
     }
 
+    /// The download's speed per connection now (bytes/s).
+    pub fn set_speed(&self, per_connection: f64) {
+        self.speed_floor.store((per_connection * SPLIT_SECONDS) as u64, Ordering::Relaxed);
+    }
+
     /// Work for a connection: an idle segment, or half of the biggest busy one.
     pub fn claim(&self) -> Option<usize> {
-        let min_split = *self.min_split.lock().unwrap();
+        let min_split = (*self.min_split.lock().unwrap()).max(self.speed_floor.load(Ordering::Relaxed));
         let mut segs = self.segs.lock().unwrap();
         if let Some(i) = segs.iter().position(|s| !s.active && !s.finished()) {
             segs[i].active = true;
@@ -170,6 +179,16 @@ mod tests {
         map.release(i);
         assert!(map.all_finished());
         assert_eq!(map.total_done(), 0);
+    }
+
+    #[test]
+    fn no_split_when_the_rest_is_quick_at_this_speed() {
+        let map = SegmentMap::create(Some(40 * MB), 1, MB);
+        map.claim();
+        map.set_speed((10 * MB) as f64); // 10 MB/s per connection: 40 MB left is worth a split
+        assert!(map.claim().is_some());
+        map.set_speed((50 * MB) as f64); // 50 MB/s: halves of ~20 MB are done in under 2 s
+        assert!(map.claim().is_none());
     }
 
     #[test]

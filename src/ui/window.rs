@@ -1,7 +1,7 @@
-//! Main window: toolbar, downloads table, status bar, refresh loop, close-to-tray.
+//! Main window: toolbar, sidebar, downloads table, status bar, refresh loop, close-to-tray.
 
 use super::sidebar::{Sidebar, View};
-use super::{list, progress, Ctx};
+use super::{list, progress, toolbar, Ctx};
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use std::cell::Cell;
@@ -24,50 +24,6 @@ pub struct MainWindow {
     empty: gtk::Label,
 }
 
-/// A toolbar button like IDM's: icon over a label.
-fn tool_button(icon: &str, label: &str, tooltip: &str, action: &str) -> gtk::Button {
-    let content = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(3).build();
-    content.append(&gtk::Image::builder().icon_name(icon).pixel_size(20).build());
-    content.append(&gtk::Label::builder().label(label).css_classes(["caption"]).build());
-    gtk::Button::builder().child(&content).tooltip_text(tooltip).action_name(action)
-        .css_classes(["flat"]).width_request(76).build()
-}
-
-fn toolbar() -> gtk::Box {
-    let bar = gtk::Box::builder().spacing(2).margin_start(6).margin_end(6).margin_top(4).margin_bottom(4).build();
-    let groups: [&[(&str, &str, &str, &str)]; 4] = [
-        &[("list-add-symbolic", "Add URL", "Add a download (Ctrl+N)", "win.add")],
-        &[("media-playback-start-symbolic", "Resume", "Resume selected (Ctrl+R)", "win.resume"),
-          ("media-playback-pause-symbolic", "Pause", "Pause selected (Ctrl+P)", "win.pause"),
-          ("media-seek-forward-symbolic", "Resume all", "Resume every unfinished download", "win.resume-all"),
-          ("media-playback-stop-symbolic", "Pause all", "Pause every download", "win.pause-all")],
-        &[("user-trash-symbolic", "Delete", "Remove selected from the list (Delete)", "win.remove"),
-          ("edit-clear-all-symbolic", "Clear done", "Remove completed downloads from the list", "win.delete-completed")],
-        &[("folder-open-symbolic", "Folder", "Open the download folder", "win.open-download-folder"),
-          ("emblem-system-symbolic", "Options", "Preferences (Ctrl+,)", "win.settings")],
-    ];
-    for (i, group) in groups.iter().enumerate() {
-        if i > 0 {
-            bar.append(&gtk::Separator::builder().orientation(gtk::Orientation::Vertical)
-                .margin_start(4).margin_end(4).margin_top(6).margin_bottom(6).build());
-        }
-        for (icon, label, tip, action) in group.iter() {
-            bar.append(&tool_button(icon, label, tip, action));
-        }
-    }
-    bar
-}
-
-fn empty_page() -> (gtk::Box, gtk::Label) {
-    let text = gtk::Label::builder().css_classes(["dim-label"]).justify(gtk::Justification::Center).build();
-    let page = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(12)
-        .valign(gtk::Align::Center).halign(gtk::Align::Center).build();
-    page.append(&gtk::Image::builder().icon_name("folder-download-symbolic").pixel_size(64)
-        .css_classes(["dim-label"]).build());
-    page.append(&text);
-    (page, text)
-}
-
 impl MainWindow {
     pub fn new(app: &gtk::Application) -> Self {
         let store = gio::ListStore::new::<super::item::DownloadItem>();
@@ -85,7 +41,7 @@ impl MainWindow {
         let f = filter.clone();
         let sidebar = Sidebar::new(view_of, move || f.changed(gtk::FilterChange::Different));
 
-        let menu = gtk::PopoverMenu::from_model(Some(&context_menu()));
+        let menu = gtk::PopoverMenu::from_model(Some(&toolbar::context_menu()));
         menu.set_has_arrow(false);
         let menu_for_rows = menu.clone();
         let on_menu: list::MenuHandler = Rc::new(move |_pos, widget, x, y| {
@@ -100,26 +56,13 @@ impl MainWindow {
         menu.set_parent(&view);
 
         let header = gtk::HeaderBar::new();
-        let app_menu = gio::Menu::new();
-        let section = gio::Menu::new();
-        section.append(Some("Add URL…"), Some("win.add"));
-        section.append(Some("Resume all"), Some("win.resume-all"));
-        section.append(Some("Pause all"), Some("win.pause-all"));
-        section.append(Some("Remove completed from list"), Some("win.delete-completed"));
-        section.append(Some("Open download folder"), Some("win.open-download-folder"));
-        app_menu.append_section(None, &section);
-        let section = gio::Menu::new();
-        section.append(Some("Preferences"), Some("win.settings"));
-        section.append(Some("About TurboDM"), Some("win.about"));
-        section.append(Some("Quit"), Some("app.quit"));
-        app_menu.append_section(None, &section);
-        header.pack_end(&gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&app_menu).build());
+        header.pack_end(&gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&toolbar::app_menu()).build());
         header.pack_end(&search);
 
         let status = gtk::Label::builder().xalign(0.0).margin_start(10).margin_end(10)
             .margin_top(4).margin_bottom(4).build();
         let scroller = gtk::ScrolledWindow::builder().child(&view).vexpand(true).hexpand(true).build();
-        let (empty_box, empty) = empty_page();
+        let (empty_box, empty) = toolbar::empty_page();
         let pages = gtk::Stack::new();
         pages.add_named(&scroller, Some("list"));
         pages.add_named(&empty_box, Some("empty"));
@@ -127,7 +70,7 @@ impl MainWindow {
             .start_child(&sidebar.widget).end_child(&pages)
             .shrink_start_child(false).resize_start_child(false).position(210).vexpand(true).build();
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        content.append(&toolbar());
+        content.append(&toolbar::toolbar());
         content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         content.append(&paned);
         content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
@@ -138,27 +81,6 @@ impl MainWindow {
         window.set_titlebar(Some(&header));
         MainWindow { window, store, view, selection, status, search, sidebar, filter, pages, empty }
     }
-}
-
-fn context_menu() -> gio::Menu {
-    let menu = gio::Menu::new();
-    let open = gio::Menu::new();
-    open.append(Some("Open"), Some("win.open"));
-    open.append(Some("Open with…"), Some("win.open-with"));
-    open.append(Some("Open folder"), Some("win.open-folder"));
-    open.append(Some("Progress details"), Some("win.details"));
-    menu.append_section(None, &open);
-    let control = gio::Menu::new();
-    control.append(Some("Resume"), Some("win.resume"));
-    control.append(Some("Pause"), Some("win.pause"));
-    control.append(Some("Refresh download address…"), Some("win.refresh"));
-    control.append(Some("Copy address"), Some("win.copy-url"));
-    menu.append_section(None, &control);
-    let remove = gio::Menu::new();
-    remove.append(Some("Remove from list"), Some("win.remove"));
-    remove.append(Some("Delete with file"), Some("win.delete-file"));
-    menu.append_section(None, &remove);
-    menu
 }
 
 /// How often running downloads update (their rows, progress windows, status bar): often enough

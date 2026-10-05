@@ -2,7 +2,13 @@
 
 mod actions;
 mod add_dialog;
+#[cfg(target_os = "linux")]
 mod center;
+#[cfg(not(target_os = "linux"))]
+mod center {
+    /// Elsewhere the desktop places new windows itself.
+    pub fn on_screen(_window: &gtk::Window, _minimizable: bool) {}
+}
 mod clipboard;
 mod finish;
 mod item;
@@ -12,7 +18,14 @@ mod power;
 mod progress;
 mod settings;
 mod sidebar;
+mod toolbar;
+#[cfg(target_os = "linux")]
 mod tray;
+#[cfg(not(target_os = "linux"))]
+mod tray {
+    /// No tray icon here: closing the window while downloading minimizes it.
+    pub fn start(_ctx: &std::rc::Rc<super::Ctx>) {}
+}
 mod window;
 
 use gtk::prelude::*;
@@ -71,6 +84,12 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
             return 0; // another TurboDM is running and got our request
         }
     };
+    // keep the browser extension pointed at this copy of TurboDM, wherever it's installed
+    std::thread::spawn(|| {
+        if let Err(err) = turbodm::register::register() {
+            eprintln!("turbodm: connecting the browser extension: {err}");
+        }
+    });
     let (manager, events) = Manager::new(Settings::load(), config::downloads_file(), runtime.handle().clone());
     let (to_ui, from_ipc) = async_channel::unbounded::<Message>();
     runtime.spawn(ipc::server::serve(listener, to_ui.clone()));
@@ -112,10 +131,17 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
     // logout/shutdown/kill send SIGTERM: quit properly so downloads are paused and saved
     let quit = to_ui.clone();
     runtime.spawn(async move {
-        use tokio::signal::unix::{signal, SignalKind};
-        let (Ok(mut term), Ok(mut int)) = (signal(SignalKind::terminate()), signal(SignalKind::interrupt()))
-            else { return };
-        tokio::select! { _ = term.recv() => {}, _ = int.recv() => {} }
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{signal, SignalKind};
+            let (Ok(mut term), Ok(mut int)) = (signal(SignalKind::terminate()), signal(SignalKind::interrupt()))
+                else { return };
+            tokio::select! { _ = term.recv() => {}, _ = int.recv() => {} }
+        }
+        #[cfg(windows)]
+        if tokio::signal::ctrl_c().await.is_err() {
+            return;
+        }
         let _ = quit.send(Message::Quit).await;
     });
     let code = app.run_with_args(&["turbodm"]);

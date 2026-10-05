@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 pub const APP_ID: &str = "io.github.xsobhi.TurboDM";
 pub const NATIVE_HOST: &str = "com.xsobhi.turbodm";
+pub const FIREFOX_EXTENSION_ID: &str = "turbodm@xsobhi.github.io";
+pub const CHROME_EXTENSION_ID: &str = "edlkglikdjabdhlailjmdopnlocdegbe";
 pub const MAX_CONNECTIONS: usize = 32;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -28,6 +30,13 @@ pub fn downloads_file() -> PathBuf {
     data_dir().join("downloads.json")
 }
 
+/// Where the running app listens: a user-only Unix socket, or a named pipe on Windows.
+#[cfg(windows)]
+pub fn socket_path() -> PathBuf {
+    PathBuf::from(format!(r"\\.\pipe\turbodm-{}", user_name()))
+}
+
+#[cfg(unix)]
 pub fn socket_path() -> PathBuf {
     match dirs::runtime_dir() {
         Some(dir) => dir.join("turbodm").join("ipc.sock"),
@@ -36,7 +45,7 @@ pub fn socket_path() -> PathBuf {
 }
 
 fn user_name() -> String {
-    std::env::var("USER").unwrap_or_else(|_| "user".into())
+    std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "user".into())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

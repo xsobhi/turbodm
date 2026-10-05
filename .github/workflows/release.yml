@@ -1,0 +1,145 @@
+# Builds every package and publishes a GitHub release when a version tag is pushed:
+#   git tag v1.4.0 && git push origin v1.4.0
+# Run it by hand (Actions > Release > Run workflow) to just build the packages.
+name: Release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.arch }}
+    strategy:
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, arch: amd64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev pkg-config zip
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-deb cargo-generate-rpm --locked
+      - run: cargo test --release
+      - run: tools/build-extension.sh
+      - run: cargo build --release
+      - run: cargo deb --no-build
+      - run: cargo generate-rpm
+      - name: Install the .deb and run it
+        run: |
+          sudo apt-get install -y ./target/debian/*.deb
+          turbodm --version
+          test -f /etc/apt/sources.list.d/turbodm.sources
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            target/debian/*.deb
+            target/generate-rpm/*.rpm
+
+  rpm-test:
+    name: Fedora install test
+    needs: linux
+    runs-on: ubuntu-24.04
+    container: fedora:41
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-amd64
+      - run: dnf install -y ./generate-rpm/*.x86_64.rpm && turbodm --version
+
+  windows:
+    name: Windows ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { msystem: UCRT64, arch: x64 }
+          - { msystem: MINGW32, arch: x86 } # 32-bit: shipped only if MSYS2 still builds GTK 4 for it
+    runs-on: windows-latest
+    continue-on-error: ${{ matrix.arch == 'x86' }}
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          install: git zip
+          pacboy: gcc:p pkgconf:p rust:p gtk4:p librsvg:p nasm:p
+      - run: tools/build-extension.sh
+      - run: cargo build --release
+      - run: packaging/windows/bundle.sh
+      - name: Smoke test
+        run: dist/windows/TurboDM/bin/turbodm.exe --version
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DVersion=$version" "/DArch=${{ matrix.arch }}" packaging\windows\turbodm.iss
+          Compress-Archive -Path dist\windows\TurboDM -DestinationPath "dist\windows\TurboDM-$version-windows-${{ matrix.arch }}-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: |
+            dist/windows/*.exe
+            dist/windows/*.zip
+
+  release:
+    name: GitHub release
+    needs: [linux, rpm-test, windows]
+    if: ${{ !cancelled() && needs.linux.result == 'success' && startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=${GITHUB_REF_NAME}
+          {
+            git tag -l --format='%(contents:body)' "$tag"
+            echo
+            cat packaging/release-notes.md
+          } > notes.md
+          gh release create "$tag" --title "TurboDM ${tag#v}" --notes-file notes.md \
+            $(find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.exe' -o -name '*.zip' \))
+
+  apt:
+    name: apt repository
+    needs: release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - run: sudo apt-get update && sudo apt-get install -y apt-utils
+      - name: Import signing key
+        run: echo "${{ secrets.APT_SIGNING_KEY }}" | gpg --batch --import
+      - name: Update the repository on gh-pages
+        run: |
+          git fetch origin gh-pages && git worktree add repo origin/gh-pages || git worktree add --orphan -b gh-pages repo
+          packaging/apt/update-repo.sh repo $(find artifacts -name '*.deb')
+          cp packaging/apt/index.html packaging/linux/turbodm.sources repo/
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "apt repository: ${GITHUB_REF_NAME}"
+          git push origin HEAD:gh-pages

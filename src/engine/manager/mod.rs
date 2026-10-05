@@ -1,8 +1,9 @@
 //! The download manager: queue, parallel-download limit, persistence, events.
 
+mod confirm;
 mod control;
 
-pub use control::Confirm;
+pub use confirm::Confirm;
 
 use super::state::{self, Snapshot};
 use super::task::{Status, Task, TaskInfo};

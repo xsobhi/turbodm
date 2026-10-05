@@ -4,7 +4,10 @@
 //!   turbodm URL...              add downloads (to the running instance if any)
 //!   turbodm --background        start hidden in the tray (used by the browser)
 //!   turbodm --native-host       browser native-messaging host
+//!   turbodm --register          (re)connect the browser extension; --unregister undoes it
 //!   turbodm get URL [-c N] [-d DIR]   download in the terminal, no window
+
+#![cfg_attr(windows, windows_subsystem = "windows")] // no console window behind the app
 
 mod cli;
 mod ui;
@@ -18,19 +21,45 @@ fn is_native_host_call(args: &[String]) -> bool {
     })
 }
 
+/// Windows: print to the terminal we were started from (the app itself has no console).
+#[cfg(windows)]
+fn attach_console() {
+    unsafe extern "system" {
+        fn AttachConsole(process: u32) -> i32;
+    }
+    // SAFETY: plain Win32 call; failing (no parent console) is fine
+    unsafe { AttachConsole(u32::MAX) };
+}
+
+#[cfg(not(windows))]
+fn attach_console() {}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if matches!(args.first().map(String::as_str), Some("get" | "--version" | "-V" | "--help" | "-h")) {
+        attach_console();
+    }
     let code = if is_native_host_call(&args) {
         ipc::native_host::run()
     } else {
         match args.first().map(String::as_str) {
             Some("get") => cli::get(&args[1..]),
+            Some(flag @ ("--register" | "--unregister")) => {
+                let result = if flag == "--register" { turbodm::register::register() } else { turbodm::register::unregister() };
+                match result {
+                    Ok(()) => 0,
+                    Err(err) => {
+                        eprintln!("turbodm {flag}: {err}");
+                        1
+                    }
+                }
+            }
             Some("--version" | "-V") => {
                 println!("TurboDM {}", turbodm::config::VERSION);
                 0
             }
             Some("--help" | "-h") => {
-                println!("{}", include_str!("main.rs").lines().skip(2).take(6)
+                println!("{}", include_str!("main.rs").lines().skip(2).take(7)
                     .map(|l| l.trim_start_matches("//!")).collect::<Vec<_>>().join("\n"));
                 0
             }

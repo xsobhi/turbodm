@@ -1,0 +1,6 @@
+# TurboDM updates (added by the turbodm package; https://xsobhi.github.io/turbodm)
+Types: deb
+URIs: https://xsobhi.github.io/turbodm
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/turbodm-archive-keyring.gpg

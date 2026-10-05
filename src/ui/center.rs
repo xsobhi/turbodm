@@ -1,4 +1,4 @@
-//! Placing and sizing windows on X11. Open windows in the middle of the screen. GTK 4 can't position windows, so on X11 the window
+//! Open windows in the middle of the screen. GTK 4 can't position windows, so on X11 the window
 //! is moved there with Xlib once it's mapped. It's also announced as a dialog, which most window
 //! managers centre themselves (Cinnamon only does so for dialogs with a parent). Dialogs can't
 //! be minimized, so `minimizable` windows turn back into normal windows once placed. On Wayland
@@ -50,21 +50,6 @@ fn move_to_center(w: &gtk::Window, placed: (i32, i32)) -> (i32, i32) {
         }
     });
     size
-}
-
-/// Shrink or grow a shown window to the height its content needs at its current width. GTK 4
-/// only sizes windows when they first appear; this is what a user's resize would do.
-pub fn fit_height(window: &gtk::Window) {
-    let content = window.measure(gtk::Orientation::Vertical, window.width()).1;
-    with_x11(window, |x, dpy, xid, surface| {
-        let margins = surface.height() - window.height(); // client-side shadows
-        let scale = surface.scale_factor();
-        // SAFETY: GDK's own Xlib connection and window, used on the GTK thread
-        unsafe {
-            (x.XResizeWindow)(dpy, xid, (surface.width() * scale) as u32, ((content + margins) * scale) as u32);
-            (x.XFlush)(dpy);
-        }
-    });
 }
 
 pub fn on_screen(window: &gtk::Window, minimizable: bool) {

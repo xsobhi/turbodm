@@ -167,6 +167,9 @@ impl Task {
         let downloading = self.status() == Status::Downloading;
         let speed = if downloading && elapsed > 0.0 { (total - b0.min(total)) as f64 / elapsed } else { 0.0 };
         *self.speed.lock().unwrap() = speed;
+        if let Some(map) = self.segments.lock().unwrap().as_ref() {
+            map.set_speed(speed / map.active_count().max(1) as f64);
+        }
         if !downloading {
             samples.clear(); // start a fresh window when downloading resumes
         }

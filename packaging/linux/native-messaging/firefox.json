@@ -1,0 +1,7 @@
+{
+  "name": "com.xsobhi.turbodm",
+  "description": "TurboDM",
+  "path": "/usr/bin/turbodm",
+  "type": "stdio",
+  "allowed_extensions": ["turbodm@xsobhi.github.io"]
+}

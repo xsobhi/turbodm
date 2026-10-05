@@ -26,13 +26,7 @@ pub fn launch(ctx: &Rc<Ctx>, path: &Path, how: Launch) {
                 Err(_) => open_default(&file.parent().unwrap_or_else(|| file.clone())).await,
                 ok => ok,
             },
-            Launch::OpenWith => {
-                let launcher = gtk::FileLauncher::new(Some(&file));
-                launcher.set_always_ask(true); // the desktop portal's app chooser
-                // GTK 4.14 crashes on a parent that was never shown, like the main window when
-                // the browser started TurboDM in the background
-                launcher.launch_future(Some(&c.win.window).filter(|w| w.is_realized())).await
-            }
+            Launch::OpenWith => open_with(&c, &file).await,
         };
         c.launching.set(c.launching.get() - 1);
         match result {
@@ -51,7 +45,36 @@ async fn open_default(file: &gio::File) -> Result<(), glib::Error> {
     gio::AppInfo::launch_default_for_uri_future(&file.uri(), context.as_ref()).await
 }
 
+/// Open Explorer with the file selected.
+#[cfg(windows)]
+async fn show_in_folder(file: &gio::File) -> Result<(), glib::Error> {
+    let path = file.path().unwrap_or_default();
+    let mut arg = std::ffi::OsString::from("/select,");
+    arg.push(path.as_os_str());
+    std::process::Command::new("explorer.exe").arg(arg).spawn().map(|_| ())
+        .map_err(|e| glib::Error::new(gio::IOErrorEnum::Failed, &e.to_string()))
+}
+
+/// Windows' own "Open with" chooser.
+#[cfg(windows)]
+async fn open_with(_ctx: &Ctx, file: &gio::File) -> Result<(), glib::Error> {
+    let path = file.path().unwrap_or_default();
+    std::process::Command::new("rundll32.exe").arg("shell32.dll,OpenAs_RunDLL").arg(path).spawn()
+        .map(|_| ()).map_err(|e| glib::Error::new(gio::IOErrorEnum::Failed, &e.to_string()))
+}
+
+/// The desktop portal's app chooser.
+#[cfg(not(windows))]
+async fn open_with(ctx: &Ctx, file: &gio::File) -> Result<(), glib::Error> {
+    let launcher = gtk::FileLauncher::new(Some(file));
+    launcher.set_always_ask(true);
+    // GTK 4.14 crashes on a parent that was never shown, like the main window when
+    // the browser started TurboDM in the background
+    launcher.launch_future(Some(&ctx.win.window).filter(|w| w.is_realized())).await
+}
+
 /// Open the folder with the file selected (Nemo, Nautilus, Dolphin, Caja, Thunar…).
+#[cfg(not(windows))]
 async fn show_in_folder(file: &gio::File) -> Result<(), glib::Error> {
     let bus = gio::bus_get_future(gio::BusType::Session).await?;
     let args = (vec![file.uri().to_string()], "").to_variant(); // (uris, startup id)

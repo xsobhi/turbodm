@@ -1,6 +1,6 @@
 # TurboDM
 
-A fast, multi-connection download manager for Linux — in the spirit of Internet Download Manager —
+A fast, multi-connection download manager for Linux and Windows — in the spirit of Internet Download Manager —
 written in Rust with a native GTK4 interface, plus a browser extension that hands downloads over
 from Firefox, Chrome, Brave and Chromium **with their cookies**, so links that only work while you're
 logged in keep working.
@@ -15,7 +15,8 @@ logged in keep working.
 
 - **Up to 32 connections per download** with IDM-style **dynamic segmentation**: when a connection
   finishes its part it takes over half of the largest part still downloading, so every connection
-  stays busy until the very end.
+  stays busy. Like IDM, it only does so while that half is still worth a new connection at the
+  current speed (a couple of seconds of work); near the end the busy connections just finish up.
 - **Detects per-server connection limits.** Many servers refuse more than a few connections per IP
   (`HTTP 429`/`503`, or silently dropping them). Extra connections then retire and the working ones
   take over their parts — the download never stalls or fails because of it. Default is 8
@@ -48,7 +49,7 @@ logged in keep working.
   open the file, or put the computer to sleep / shut it down (after a 30-second countdown you can
   cancel). It ends with a **Download complete** dialog: *Open*, *Open with…*, *Open folder*.
 - Optional **clipboard catching** of download links, **desktop notifications**, **tray icon**
-  (when your panel has a tray; otherwise closing the window minimizes it while downloading).
+  (on Linux panels with a tray; otherwise closing the window minimizes it while downloading).
 - Servers that reject a browser user-agent (anti-bot checks comparing it with the TLS fingerprint)
   are retried with TurboDM's own honest one.
 - **Command line**: `turbodm get URL -c 16 -d ~/Downloads`.
@@ -61,6 +62,28 @@ logged in keep working.
 - ~9 MB binary; the window is on screen in about 0.1 s. Nothing starts at login.
 
 ## Install
+
+Download the latest version from the [releases page](https://github.com/xsobhi/turbodm/releases/latest):
+
+| System | File |
+|---|---|
+| **Windows 10/11** (64-bit) | `TurboDM-…-windows-x64-setup.exe` — installer, no admin rights needed. Or the `-portable.zip`. |
+| **Ubuntu 24.04+, Linux Mint 22+, Debian 13+** | `turbodm_…_amd64.deb` (`arm64` for ARM). Double-click it, or `sudo apt install ./turbodm_…_amd64.deb`. |
+| **Fedora 40+, openSUSE Tumbleweed** | `turbodm-…x86_64.rpm` (`aarch64` for ARM): `sudo dnf install ./turbodm-….rpm` |
+
+### With apt (Ubuntu, Mint, Debian)
+
+```sh
+sudo curl -fsSLo /usr/share/keyrings/turbodm-archive-keyring.gpg https://xsobhi.github.io/turbodm/turbodm-archive-keyring.gpg
+sudo curl -fsSLo /etc/apt/sources.list.d/turbodm.sources https://xsobhi.github.io/turbodm/turbodm.sources
+sudo apt update
+sudo apt install turbodm        # or: sudo apt install tdm
+```
+
+Updates then arrive with your system updates. (Installing the `.deb` from the releases page sets
+this up for you too, like Chrome and VS Code do.)
+
+### From source (Linux)
 
 Requirements: Rust ([rustup.rs](https://rustup.rs)), GTK4 development files and pkg-config
 (`sudo apt install libgtk-4-dev pkg-config build-essential` on Debian/Ubuntu/Mint).
@@ -75,13 +98,20 @@ Remove with `./uninstall.sh` (add `--purge` to also delete your download list an
 
 ### Browser extension
 
-`install.sh` builds the extension into `~/.local/share/turbodm/extension/`.
+The extension comes with TurboDM, in:
 
-- **Chrome / Brave / Chromium**: open `chrome://extensions` (or `brave://extensions`), turn on
-  *Developer mode*, click *Load unpacked* and pick `~/.local/share/turbodm/extension/chrome`.
+- `/usr/share/turbodm/extension/` with the `.deb`/`.rpm` packages
+- `~/.local/share/turbodm/extension/` with `install.sh`
+- on Windows, the `extension` folder where TurboDM is installed (Start menu → *TurboDM* →
+  *Browser extension folder*)
+
+TurboDM connects itself to the browsers when it starts (`turbodm --register` does it by hand).
+
+- **Chrome / Brave / Chromium / Edge**: open `chrome://extensions` (or `brave://extensions`), turn on
+  *Developer mode*, click *Load unpacked* and pick the `chrome` folder from above.
 - **Firefox**: release builds only install extensions signed by Mozilla. For a quick try, open
   `about:debugging#/runtime/this-firefox` → *Load Temporary Add-on* →
-  `~/.local/share/turbodm/extension/firefox/manifest.json` (removed when Firefox restarts).
+  `firefox/manifest.json` from the folder above (removed when Firefox restarts).
   For a permanent install, sign it for free as a self-distributed add-on with
   [web-ext](https://extensionworkshop.com/documentation/develop/web-ext-command-reference/#web-ext-sign):
   `npx web-ext sign --channel=unlisted --source-dir dist/firefox --api-key=… --api-secret=…`
@@ -115,12 +145,18 @@ cargo test --release     # unit tests + end-to-end engine tests against a local 
 
 ```
 src/engine/   segmentation, connections, task runner, manager, persistence (no GUI)
-src/ipc/      extension ↔ app: native-messaging host, Unix-socket client/server
+src/ipc/      extension ↔ app: native-messaging host, Unix socket / named pipe client/server
+src/register.rs  registers the native-messaging host (manifests; registry on Windows)
+packaging/    .deb/.rpm files, Windows installer (Inno Setup), apt repository script
 src/ui/       GTK4 interface
 extension/    shared JS + Firefox (MV2) and Chrome (MV3) manifests
 ```
 
 Every source file is kept under 200 lines.
+
+Releases are built by GitHub Actions (`.github/workflows/release.yml`) when a version tag is
+pushed: `git tag -a v1.4.0 -m "notes" && git push origin v1.4.0`. That builds the `.deb`, `.rpm`
+and Windows installer, publishes the release, and updates the apt repository on GitHub Pages.
 
 ## License
 

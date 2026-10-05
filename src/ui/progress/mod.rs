@@ -87,7 +87,7 @@ pub fn open(ctx: &Rc<Ctx>, id: &str) {
         let show = !d.is_visible();
         d.set_visible(show);
         b.set_label(if show { "Hide details" } else { "Show details" });
-        center::fit_height(&w); // no empty space where the connections were, room when they're back
+        fit_height(&w); // no empty space where the connections were, room when they're back
     });
     let (c, i) = (ctx.clone(), id.to_string());
     toggle.connect_clicked(move |_| match c.manager.get(&i).map(|s| s.status) {
@@ -112,6 +112,13 @@ pub fn open(ctx: &Rc<Ctx>, id: &str) {
     pw.refresh(&ctx.manager);
     pw.window.present();
     ctx.progress.borrow_mut().insert(id.to_string(), pw);
+}
+
+/// Shrink or grow the shown window to the height its content needs now (GTK otherwise keeps
+/// a window's size; the window manager resizes the frame to match).
+fn fit_height(window: &gtk::Window) {
+    let height = window.measure(gtk::Orientation::Vertical, window.width()).1;
+    window.set_default_size(window.width(), height);
 }
 
 /// Close a download's window (it finished or was removed). Safe to call from anywhere.

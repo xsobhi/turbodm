@@ -5,7 +5,6 @@ use super::limiter::RateLimiter;
 use super::segments::SegmentMap;
 use futures_util::StreamExt;
 use std::fs::File;
-use std::os::unix::fs::FileExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -146,8 +145,7 @@ async fn stream(ctx: &WorkerCtx, index: usize, resp: reqwest::Response) -> Resul
         };
         let (allowed, offset) = ctx.segments.reserve(index, bytes.len());
         if allowed > 0 {
-            ctx.file
-                .write_all_at(&bytes[..allowed], offset)
+            write_all_at(&ctx.file, &bytes[..allowed], offset)
                 .map_err(|e| StreamError::Write(format!("Cannot write the file: {e}")))?;
             ctx.segments.commit(index, allowed);
             for limiter in &ctx.limiters {
@@ -158,4 +156,23 @@ async fn stream(ctx: &WorkerCtx, index: usize, resp: reqwest::Response) -> Resul
             return Ok(true); // reached our (possibly shortened) end
         }
     }
+}
+
+/// Write `buf` at `offset` without moving a shared cursor: every connection writes into the
+/// same open file.
+#[cfg(unix)]
+fn write_all_at(file: &File, buf: &[u8], offset: u64) -> std::io::Result<()> {
+    std::os::unix::fs::FileExt::write_all_at(file, buf, offset)
+}
+
+#[cfg(windows)]
+fn write_all_at(file: &File, mut buf: &[u8], mut offset: u64) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    while !buf.is_empty() {
+        match file.seek_write(buf, offset)? {
+            0 => return Err(std::io::ErrorKind::WriteZero.into()),
+            n => (buf, offset) = (&buf[n..], offset + n as u64),
+        }
+    }
+    Ok(())
 }

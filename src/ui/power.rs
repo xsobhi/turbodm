@@ -25,9 +25,15 @@ impl Power {
 
     fn run(self) {
         // logind lets the active local session do this without a password
-        let verb = if self == Power::Sleep { "suspend" } else { "poweroff" };
-        if let Err(err) = std::process::Command::new("systemctl").arg(verb).spawn() {
-            eprintln!("turbodm: systemctl {verb}: {err}");
+        #[cfg(not(windows))]
+        let command = ("systemctl", vec![if self == Power::Sleep { "suspend" } else { "poweroff" }]);
+        #[cfg(windows)]
+        let command = match self {
+            Power::Sleep => ("rundll32.exe", vec!["powrprof.dll,SetSuspendState", "0,1,0"]),
+            _ => ("shutdown.exe", vec!["/s", "/t", "0"]),
+        };
+        if let Err(err) = std::process::Command::new(command.0).args(&command.1).spawn() {
+            eprintln!("turbodm: {}: {err}", command.0);
         }
     }
 }
