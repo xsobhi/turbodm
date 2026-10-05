@@ -181,6 +181,8 @@ jobs:
           tag=${GITHUB_REF_NAME}
           git fetch --force origin "refs/tags/$tag:refs/tags/$tag" # checkout drops the tag's message
           {
+            echo "## What's new"   # git drops '#' lines from tag messages
+            echo
             git tag -l --format='%(contents:body)' "$tag"
             echo
             cat packaging/release-notes.md

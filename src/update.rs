@@ -42,12 +42,11 @@ pub fn is_newer(candidate: &str, current: &str) -> bool {
     matches!((numbers(candidate), numbers(current)), (Some(a), Some(b)) if a > b)
 }
 
-/// The "What's new" part of release notes, without Markdown.
+/// The "What's new" part of release notes (before "## Install"), without Markdown.
 fn whats_new(body: &str) -> String {
     body.lines()
-        .skip_while(|l| !l.trim_start().starts_with("## What"))
-        .skip(1)
-        .take_while(|l| !l.starts_with("## "))
+        .take_while(|l| !l.starts_with("## ") || l.starts_with("## What"))
+        .filter(|l| !l.starts_with("## "))
         .map(|l| l.replace("**", "").replace('`', ""))
         .collect::<Vec<_>>()
         .join("\n")
@@ -90,7 +89,8 @@ mod tests {
     fn compares_versions_and_reads_notes() {
         assert!(is_newer("v1.10.0", "1.9.2") && is_newer("1.4.1", "1.4.0"));
         assert!(!is_newer("v1.4.0", "1.4.0") && !is_newer("1.3.9", "1.4.0") && !is_newer("nightly", "1.0.0"));
-        let body = "TurboDM 1.5\n\n## What's new\n\n- **Faster** `x`\n- More\n\n## Install\nstuff";
+        let body = "## What's new\n\n- **Faster** `x`\n- More\n\n## Install\nstuff";
         assert_eq!(whats_new(body), "- Faster x\n- More");
+        assert_eq!(whats_new("- Fixed\n\n## Install\nstuff"), "- Fixed");
     }
 }
