@@ -72,14 +72,26 @@ jobs:
           msystem: ${{ matrix.msystem }}
           update: true
           install: git zip
-          pacboy: gcc:p pkgconf:p rust:p gtk4:p librsvg:p nasm:p
+          pacboy: gcc:p pkgconf:p rust:p gtk4:p librsvg:p nasm:p vulkan-loader:p
       - run: tools/build-extension.sh
       - run: cargo build --release
       - run: packaging/windows/bundle.sh
+      - name: Hide the build machine's own Vulkan loader (PCs without a Vulkan driver lack it)
+        shell: pwsh
+        run: |
+          $dll = "$env:SystemRoot\System32\vulkan-1.dll"
+          if (Test-Path $dll) {
+            takeown /f $dll | Out-Null
+            icacls $dll /grant "*S-1-5-32-544:F" | Out-Null
+            Rename-Item $dll vulkan-1.dll.hidden
+          }
       - name: Smoke test (app, browser connector, single instance)
         shell: pwsh
         run: |
           $exe = "dist\windows\TurboDM\bin\turbodm.exe"
+          # a missing DLL shows an error box instead of failing: wait with a timeout
+          $check = Start-Process $exe -ArgumentList "--version" -PassThru
+          if (-not $check.WaitForExit(30000) -or $check.ExitCode -ne 0) { throw "turbodm.exe doesn't start (missing DLL?)" }
           Start-Process $exe
           Start-Sleep 8
           if (-not (Get-Process turbodm -ErrorAction SilentlyContinue)) { throw "TurboDM didn't stay running" }
