@@ -3,7 +3,7 @@
 
 use super::launch::{launch, Launch};
 use super::power::{self, Power};
-use super::{actions, center, progress, Ctx};
+use super::{actions, progress, Ctx};
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use std::rc::Rc;
@@ -97,7 +97,6 @@ fn complete_dialog(ctx: &Rc<Ctx>, snap: &Snapshot) {
     body.append(&again);
     body.append(&buttons);
     let window = gtk::Window::builder().title("Download complete").default_width(560).child(&body).build();
-    center::on_screen(&window, false);
     window.set_default_widget(Some(&open));
 
     let c = ctx.clone();

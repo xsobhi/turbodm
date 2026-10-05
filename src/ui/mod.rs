@@ -2,13 +2,7 @@
 
 mod actions;
 mod add_dialog;
-#[cfg(target_os = "linux")]
 mod center;
-#[cfg(not(target_os = "linux"))]
-mod center {
-    /// Elsewhere the desktop places new windows itself.
-    pub fn on_screen(_window: &gtk::Window, _minimizable: bool) {}
-}
 mod clipboard;
 mod finish;
 mod item;
@@ -116,6 +110,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
             return;
         }
         *hold.borrow_mut() = Some(app.hold()); // keep running while the window is hidden
+        center::all_windows();
         let ctx = Rc::new(Ctx {
             app: app.clone(),
             manager: manager_for_app.clone(),

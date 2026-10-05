@@ -1,6 +1,6 @@
 //! "When done: sleep / shut down", with a 30-second countdown that can be cancelled.
 
-use super::{center, Ctx};
+use super::Ctx;
 use gtk::glib;
 use gtk::prelude::*;
 use std::cell::Cell;
@@ -63,7 +63,6 @@ pub fn countdown(ctx: &Rc<Ctx>, power: Power, filename: &str) {
     body.append(&body_text);
     body.append(&buttons);
     let window = gtk::Window::builder().title("TurboDM").child(&body).build();
-    center::on_screen(&window, false);
 
     let left = Rc::new(Cell::new(SECONDS));
     let label = move |t: &gtk::Label, n: u32| t.set_text(&format!("The computer will {what} in {n} seconds"));

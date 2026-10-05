@@ -4,7 +4,7 @@
 
 mod link;
 
-use super::{center, progress, Ctx};
+use super::{progress, Ctx};
 use link::check;
 use gtk::prelude::*;
 use gtk::{gio, glib};
@@ -49,8 +49,9 @@ fn row(grid: &gtk::Grid, y: i32, label: &str, widget: &impl IsA<gtk::Widget>) {
 pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
     let settings = ctx.manager.settings();
     let form = Rc::new(Form {
-        url: gtk::Entry::builder().text(&req.url).hexpand(true).placeholder_text("https://…").build(),
-        name: gtk::Entry::builder().text(req.filename.clone().unwrap_or_default()).build(),
+        url: gtk::Entry::builder().text(&req.url).hexpand(true).placeholder_text("https://…")
+            .activates_default(true).build(), // Enter: Start download
+        name: gtk::Entry::builder().text(req.filename.clone().unwrap_or_default()).activates_default(true).build(),
         folder: gtk::Button::new(),
         info: gtk::Label::builder().xalign(0.0).label("Enter a link").build(),
         connections: gtk::SpinButton::with_range(1.0, MAX_CONNECTIONS as f64, 1.0),
@@ -81,9 +82,7 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
     body.append(&buttons);
     let dialog = gtk::Window::builder().title("Download file info").default_width(620).child(&body).build();
     if ctx.win.window.is_visible() {
-        dialog.set_transient_for(Some(&ctx.win.window)); // centred over the main window
-    } else {
-        center::on_screen(&dialog, false); // started by the browser: centred on screen
+        dialog.set_transient_for(Some(&ctx.win.window));
     }
     update_folder_label(&form);
 

@@ -108,6 +108,9 @@ jobs:
           [System.Drawing.Graphics]::FromImage($image).CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
           $image.Save("$PWD\windows-screenshot.png")
           Stop-Process -Name turbodm
+      - name: GUI test (centred windows, Hide details)
+        shell: pwsh
+        run: packaging\windows\gui_test.ps1 -Exe "$PWD\dist\windows\TurboDM\bin\turbodm.exe"
       - name: Installer (Inno Setup)
         shell: pwsh
         run: |

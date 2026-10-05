@@ -66,7 +66,7 @@ pub fn open(ctx: &Rc<Ctx>, id: &str) {
     notebook.append_page(&page(&options::speed_limiter(ctx, &snap)), Some(&gtk::Label::new(Some("Speed limiter"))));
     notebook.append_page(&page(&options::on_completion(ctx, id)), Some(&gtk::Label::new(Some("Options on completion"))));
 
-    let more = gtk::Button::with_label("Hide details");
+    let more = gtk::Button::with_mnemonic("_Hide details"); // Alt+H
     let toggle = gtk::Button::builder().label("Pause").width_request(96).build();
     let cancel = gtk::Button::builder().label("Cancel").width_request(96).build();
     let buttons = gtk::Box::builder().spacing(8).margin_start(14).margin_end(14).margin_bottom(14).build();
@@ -78,7 +78,6 @@ pub fn open(ctx: &Rc<Ctx>, id: &str) {
     body.append(&notebook);
     body.append(&buttons);
     let window = gtk::Window::builder().title(&snap.filename).default_width(640).child(&body).build();
-    center::on_screen(&window, true);
 
     let m = more.clone();
     notebook.connect_switch_page(move |_, _, page| m.set_visible(page == 0)); // details: status tab only
@@ -86,8 +85,8 @@ pub fn open(ctx: &Rc<Ctx>, id: &str) {
     more.connect_clicked(move |b| {
         let show = !d.is_visible();
         d.set_visible(show);
-        b.set_label(if show { "Hide details" } else { "Show details" });
-        fit_height(&w); // no empty space where the connections were, room when they're back
+        b.set_label(if show { "_Hide details" } else { "_Show details" });
+        center::fit_height(&w); // no empty space where the connections were, room when they're back
     });
     let (c, i) = (ctx.clone(), id.to_string());
     toggle.connect_clicked(move |_| match c.manager.get(&i).map(|s| s.status) {
@@ -112,13 +111,6 @@ pub fn open(ctx: &Rc<Ctx>, id: &str) {
     pw.refresh(&ctx.manager);
     pw.window.present();
     ctx.progress.borrow_mut().insert(id.to_string(), pw);
-}
-
-/// Shrink or grow the shown window to the height its content needs now (GTK otherwise keeps
-/// a window's size; the window manager resizes the frame to match).
-fn fit_height(window: &gtk::Window) {
-    let height = window.measure(gtk::Orientation::Vertical, window.width()).1;
-    window.set_default_size(window.width(), height);
 }
 
 /// Close a download's window (it finished or was removed). Safe to call from anywhere.

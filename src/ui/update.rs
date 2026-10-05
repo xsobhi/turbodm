@@ -1,7 +1,7 @@
 //! "A new version is available", like IDM: checked at start and once a day. On Windows the new
 //! installer is downloaded and run; Linux packages update through apt instead.
 
-use super::{center, Ctx};
+use super::Ctx;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use std::path::PathBuf;
@@ -94,7 +94,6 @@ pub fn show_pending(ctx: &Rc<Ctx>) {
         content.append(w);
     }
     let window = gtk::Window::builder().title("TurboDM update").default_width(460).child(&content).build();
-    center::on_screen(&window, false);
     window.set_default_widget(Some(&go));
 
     let w = window.clone();
