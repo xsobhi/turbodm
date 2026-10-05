@@ -69,5 +69,11 @@ fn watch(window: &gtk::Window) {
 pub fn fit_height(window: &gtk::Window) {
     let height = window.measure(gtk::Orientation::Vertical, window.width()).1;
     window.set_default_size(window.width(), height); // honoured on X11
-    platform::set_height(window, height);
+    // Windows: resize once GTK has laid the window out again, or the old minimum height
+    // (still in force until then) keeps it from shrinking
+    let window = window.clone();
+    glib::timeout_add_local_once(Duration::from_millis(120), move || {
+        let height = window.measure(gtk::Orientation::Vertical, window.width()).1;
+        platform::set_height(&window, height);
+    });
 }
