@@ -66,15 +66,51 @@ async function handOff({ url, filename, directory, referrer, fileSize, cookies, 
   return Boolean(reply && reply.ok);
 }
 
-// Catch browser downloads: pause, hand to TurboDM, and only then cancel the browser's
-// copy. If TurboDM can't be reached, the browser simply continues the download.
-// (Firefox catches most downloads earlier, from the response headers: see intercept.js.)
+function wanted(url, size, settings) {
+  if (!settings.enabled || !/^https?:/i.test(url) || isSkippedHost(url, settings)) return false;
+  return !(settings.minSizeKB > 0 && size > 0 && size < settings.minSizeKB * 1024);
+}
+
+async function discard(id) {
+  try {
+    await api.downloads.cancel(id);
+    await api.downloads.erase({ id });
+  } catch {
+    /* the download may already be gone */
+  }
+}
+
+// Chrome, Edge, Brave: decide while the browser is still choosing the file name, before it
+// shows its "Save as" window; if TurboDM takes the download, that window never appears.
+const BEFORE_SAVE_AS = Boolean(api.downloads.onDeterminingFilename);
+if (BEFORE_SAVE_AS) {
+  api.downloads.onDeterminingFilename.addListener((item, suggest) => {
+    const url = item.finalUrl || item.url;
+    if (!/^https?:/i.test(url)) return; // blob:, data:: the browser's own business
+    (async () => {
+      let accepted = false;
+      try {
+        if (wanted(url, item.totalBytes || item.fileSize, await getSettings())) {
+          accepted = await handOff({ url, filename: basename(item.filename), referrer: item.referrer,
+                                     fileSize: item.totalBytes || item.fileSize });
+        }
+      } catch (err) {
+        console.warn("TurboDM is not reachable, keeping the browser download:", err);
+      }
+      if (accepted) await discard(item.id);
+      else suggest(); // carry on as usual
+    })();
+    return true; // answering asynchronously
+  });
+}
+
+// Firefox: pause, hand to TurboDM, and only then cancel the browser's copy. If TurboDM can't
+// be reached, the browser simply continues. (Firefox catches most downloads earlier, from the
+// response headers: see intercept.js.)
 api.downloads.onCreated.addListener(async (item) => {
+  if (BEFORE_SAVE_AS) return;
   const url = item.finalUrl || item.url;
-  const settings = await getSettings();
-  if (!settings.enabled || !/^https?:/i.test(url) || item.state !== "in_progress") return;
-  if (isSkippedHost(url, settings)) return;
-  if (settings.minSizeKB > 0 && item.totalBytes > 0 && item.totalBytes < settings.minSizeKB * 1024) return;
+  if (item.state !== "in_progress" || !wanted(url, item.totalBytes, await getSettings())) return;
   try {
     await api.downloads.pause(item.id);
   } catch {
@@ -94,15 +130,10 @@ api.downloads.onCreated.addListener(async (item) => {
   } catch (err) {
     console.warn("TurboDM is not reachable, keeping the browser download:", err);
   }
-  try {
-    if (accepted) {
-      await api.downloads.cancel(item.id);
-      await api.downloads.erase({ id: item.id });
-    } else {
-      await api.downloads.resume(item.id);
-    }
-  } catch {
-    /* the download may already be gone */
+  if (accepted) {
+    await discard(item.id);
+  } else {
+    api.downloads.resume(item.id).catch(() => {});
   }
 });
 

@@ -117,6 +117,7 @@ pub fn show_pending(ctx: &Rc<Ctx>) {
         }
     });
     window.present();
+    go.grab_focus(); // Enter = the main action, not "Skip this version"
 }
 
 /// Windows: fetch the installer, run it (it asks for admin rights, replaces this version and

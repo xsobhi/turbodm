@@ -16,3 +16,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --release --all-targets -- -D warnings
       - run: cargo test --release
+      - name: Extension scripts parse (Firefox loads them into one scope)
+        run: |
+          node --check extension/common/background.js
+          cat extension/common/background.js extension/firefox/intercept.js > /tmp/firefox-background.js
+          node --check /tmp/firefox-background.js

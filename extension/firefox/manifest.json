@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "TurboDM Integration",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Send browser downloads to TurboDM, a fast multi-connection download manager, with cookies and referrer so protected links work.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -17,7 +17,8 @@
         "required": [
           "none"
         ]
-      }
+      },
+      "update_url": "https://xsobhi.github.io/turbodm/firefox/updates.json"
     }
   },
   "permissions": [

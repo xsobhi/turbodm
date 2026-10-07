@@ -22,11 +22,13 @@ function headerOf(headers, name) {
   return found ? found.value : "";
 }
 
+// "inline" isn't enough: servers (Moodle, for one) mark Word files and the like inline too,
+// and Firefox downloads what it can't show anyway. Only what it really shows stays in the tab.
 function isDownload(disposition, contentType) {
   const type = contentType.split(";")[0].trim().toLowerCase();
   if (BROWSER_ONLY.test(type)) return false;
   if (/^\s*attachment/i.test(disposition)) return true;
-  if (/^\s*inline/i.test(disposition) || !type) return false;
+  if (!type) return false;
   return !SHOWN_INLINE.test(type);
 }
 
