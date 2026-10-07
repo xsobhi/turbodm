@@ -146,7 +146,9 @@ fn install(ctx: &Rc<Ctx>, url: &str, version: &str, button: &gtk::Button, status
 /// The installer needs admin rights: `start` goes through the shell, which shows the prompt.
 fn run_installer(setup: &std::path::Path) -> std::io::Result<()> {
     let mut command = std::process::Command::new("cmd");
-    command.args(["/C", "start", ""]).arg(setup).args(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]);
+    let log = std::env::temp_dir().join("TurboDM-update.log"); // to find out why, if it fails
+    command.args(["/C", "start", ""]).arg(setup).args(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
+        .arg(format!("/LOG={}", log.display()));
     #[cfg(windows)]
     std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000); // no console
     command.spawn().map(|_| ())

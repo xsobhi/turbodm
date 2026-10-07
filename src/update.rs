@@ -63,7 +63,9 @@ async fn get(client: &reqwest::Client, url: &str) -> Result<reqwest::Response, S
 pub async fn check(client: &reqwest::Client) -> Result<Option<Release>, String> {
     let bytes = get(client, LATEST).await?.bytes().await.map_err(|e| e.to_string())?;
     let api: ApiRelease = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    if !is_newer(&api.tag_name, VERSION) {
+    // TURBODM_PRETEND_VERSION: tests the whole update with the current release (CI)
+    let current = std::env::var("TURBODM_PRETEND_VERSION").unwrap_or_else(|_| VERSION.to_string());
+    if !is_newer(&api.tag_name, &current) {
         return Ok(None);
     }
     Ok(Some(Release {

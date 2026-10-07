@@ -152,6 +152,9 @@ jobs:
           Start-Sleep 4
           Shot "installer-3-opened-app.png"
           Stop-Process -Name turbodm -ErrorAction SilentlyContinue
+      - name: Update test (Update now installs the latest release and reopens TurboDM)
+        shell: pwsh
+        run: packaging\windows\update_test.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}
