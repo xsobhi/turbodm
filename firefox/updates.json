@@ -1,0 +1,12 @@
+{
+  "addons": {
+    "turbodm@xsobhi.github.io": {
+      "updates": [
+        {
+          "version": "1.2.0",
+          "update_link": "https://xsobhi.github.io/turbodm/firefox/turbodm-1.2.0.xpi"
+        }
+      ]
+    }
+  }
+}
