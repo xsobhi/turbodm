@@ -4,8 +4,9 @@ param([string]$Exe = "$env:ProgramFiles\TurboDM\bin\turbodm.exe")
 $ErrorActionPreference = "Stop"
 $key = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{6B0C7A52-3E0B-4B7E-9C1D-7A4D2F1B9E21}_is1"
 $latest = (Invoke-RestMethod https://api.github.com/repos/xsobhi/turbodm/releases/latest).tag_name.TrimStart("v")
-$before = (Get-ItemProperty $key).DisplayVersion
-Write-Host "installed $before, latest release $latest"
+# mark the installed copy as old, so only a real update brings back the release's version
+Set-ItemProperty $key DisplayVersion "0.0.1-test"
+Write-Host "latest release $latest"
 Get-Process turbodm -ErrorAction SilentlyContinue | Stop-Process
 $env:TURBODM_PRETEND_VERSION = "0.0.1"
 Start-Process $Exe
@@ -18,6 +19,7 @@ while (-not $shell.AppActivate("TurboDM update")) {
 }
 Start-Sleep 1
 $shell.SendKeys("{ENTER}") # Update now
+$clicked = Get-Date
 $deadline = (Get-Date).AddSeconds(180)
 while ((Get-ItemProperty $key).DisplayVersion -ne $latest) {
     if ((Get-Date) -gt $deadline) {
@@ -28,6 +30,7 @@ while ((Get-ItemProperty $key).DisplayVersion -ne $latest) {
 }
 Write-Host "updated to $latest"
 Start-Sleep 8
-if (-not (Get-Process turbodm -ErrorAction SilentlyContinue)) { throw "TurboDM wasn't reopened" }
+$reopened = Get-Process turbodm -ErrorAction SilentlyContinue | Where-Object { $_.StartTime -gt $clicked }
+if (-not $reopened) { throw "TurboDM wasn't reopened" }
 Write-Host "and TurboDM is running again"
 Get-Process turbodm | Stop-Process

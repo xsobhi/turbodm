@@ -8,7 +8,6 @@ use gtk::glib;
 use gtk::prelude::*;
 use std::rc::Rc;
 use std::time::Duration;
-use turbodm::categories::target_dir;
 use turbodm::engine::http::{self, Headers};
 use turbodm::engine::{AddRequest, Status};
 use turbodm::util::human_size;
@@ -88,7 +87,7 @@ fn probe(ctx: &Rc<Ctx>, form: &Rc<Form>, req: &AddRequest) {
                 }
                 if !form.dir_chosen.get() {
                     let name = form.name.text();
-                    *form.dir.borrow_mut() = target_dir(&settings.download_dir, &name, settings.use_categories);
+                    *form.dir.borrow_mut() = settings.folder_for(&name);
                     update_folder_label(&form);
                 }
             }

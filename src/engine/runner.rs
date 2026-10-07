@@ -5,7 +5,6 @@ use super::segments::SegmentMap;
 use super::task::{unix_now, Status, Task};
 use super::worker::{connection_loop, WorkerCtx};
 use super::Shared;
-use crate::categories::target_dir;
 use crate::util::{part_path, sanitize_filename, unique_path};
 use std::fs::OpenOptions;
 use std::sync::Arc;
@@ -59,8 +58,8 @@ async fn prepare(task: &Task, shared: &Shared, cancel: &CancellationToken) -> Re
     }
     if info.filename.is_none() {
         let name = sanitize_filename(&probe.filename);
-        if let Some(base) = info.category_base.clone() {
-            info.directory = target_dir(&base, &name, true);
+        if info.category_base.is_some() {
+            info.directory = settings.folder_for(&name);
         }
         let unique = unique_path(&info.directory.join(&name));
         info.filename = unique.file_name().map(|n| n.to_string_lossy().into_owned());

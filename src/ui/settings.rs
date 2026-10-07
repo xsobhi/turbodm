@@ -21,6 +21,17 @@ pub fn open(ctx: &Rc<Ctx>) {
     let s = ctx.manager.settings();
     let folder = Rc::new(RefCell::new(s.download_dir.clone()));
     let folder_btn = gtk::Button::with_label(&s.download_dir.display().to_string());
+    // "Always save … to this folder" choices from the add dialog
+    let forget_folders = Rc::new(std::cell::Cell::new(false));
+    let remembered = s.folders.iter().map(|(kind, dir)| format!("{kind}: {}", dir.display())).collect::<Vec<_>>();
+    let forget = gtk::Button::builder().label(format!("Forget ({})", remembered.len()))
+        .sensitive(!remembered.is_empty()).halign(gtk::Align::Start).tooltip_text(remembered.join("\n")).build();
+    let f = forget_folders.clone();
+    forget.connect_clicked(move |b| {
+        f.set(true);
+        b.set_label("Forgotten");
+        b.set_sensitive(false);
+    });
     let categories = switch(s.use_categories);
     let connections = spin(1.0, MAX_CONNECTIONS as f64, s.connections as f64);
     let parallel = spin(1.0, 16.0, s.max_parallel as f64);
@@ -38,8 +49,9 @@ pub fn open(ctx: &Rc<Ctx>) {
 
     let grid = gtk::Grid::builder().row_spacing(10).column_spacing(16)
         .margin_top(18).margin_bottom(18).margin_start(18).margin_end(18).build();
-    let rows: [(&str, &gtk::Widget); 15] = [
+    let rows: [(&str, &gtk::Widget); 16] = [
         ("Download folder", folder_btn.upcast_ref()),
+        ("Folders remembered for kinds of files", forget.upcast_ref()),
         ("Sort into category folders", categories.upcast_ref()),
         ("Connections per download (servers may limit this)", connections.upcast_ref()),
         ("Downloads at the same time", parallel.upcast_ref()),
@@ -78,6 +90,9 @@ pub fn open(ctx: &Rc<Ctx>) {
     window.connect_close_request(move |_| {
         let mut s = c.manager.settings();
         s.download_dir = folder.borrow().clone();
+        if forget_folders.get() {
+            s.folders.clear();
+        }
         s.use_categories = categories.is_active();
         s.connections = connections.value() as usize;
         s.max_parallel = parallel.value() as usize;

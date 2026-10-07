@@ -1,6 +1,8 @@
 //! User settings (JSON in ~/.config/turbodm) and standard file locations.
 
+use crate::categories::{category_for, target_dir};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 pub const APP_ID: &str = "io.github.xsobhi.TurboDM";
@@ -68,6 +70,7 @@ pub struct Settings {
     pub auto_resume: bool,         // resume unfinished downloads at start
     pub check_updates: bool,       // ask GitHub for a newer release, at start and daily
     pub skipped_update: String,    // "Skip this version" in the update dialog
+    pub folders: BTreeMap<String, PathBuf>, // category → folder ("Always save … here", like IDM)
 }
 
 impl Default for Settings {
@@ -90,11 +93,21 @@ impl Default for Settings {
             auto_resume: false,
             check_updates: true,
             skipped_update: String::new(),
+            folders: BTreeMap::new(),
         }
     }
 }
 
 impl Settings {
+    /// Where a file of this name goes by default: the folder chosen for its kind of file,
+    /// or its category's sub-folder of the download folder.
+    pub fn folder_for(&self, filename: &str) -> PathBuf {
+        match self.folders.get(category_for(filename)) {
+            Some(dir) => dir.clone(),
+            None => target_dir(&self.download_dir, filename, self.use_categories),
+        }
+    }
+
     pub fn clamp(mut self) -> Self {
         self.connections = self.connections.clamp(1, MAX_CONNECTIONS);
         self.max_parallel = self.max_parallel.clamp(1, 16);
@@ -128,4 +141,20 @@ pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> std::io::Resul
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, serde_json::to_vec_pretty(value)?)?;
     std::fs::rename(tmp, path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remembered_folder_wins_for_that_kind_of_file() {
+        let mut s = Settings { download_dir: "/dl".into(), use_categories: true, ..Settings::default() };
+        s.folders.insert("Documents".into(), "/mnt/d/mydocs".into());
+        assert_eq!(s.folder_for("report.pdf"), PathBuf::from("/mnt/d/mydocs"));
+        assert_eq!(s.folder_for("movie.mkv"), PathBuf::from("/dl/Video"));
+        s.use_categories = false;
+        assert_eq!(s.folder_for("notes.docx"), PathBuf::from("/mnt/d/mydocs"));
+        assert_eq!(s.folder_for("movie.mkv"), PathBuf::from("/dl"));
+    }
 }

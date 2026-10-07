@@ -8,7 +8,6 @@ pub use confirm::Confirm;
 use super::state::{self, Snapshot};
 use super::task::{Status, Task, TaskInfo};
 use super::{runner, Shared};
-use crate::categories::target_dir;
 use crate::config::Settings;
 use crate::util::{filename_from_url, sanitize_filename, unique_path};
 use std::collections::HashMap;
@@ -86,12 +85,12 @@ impl Manager {
         let auto_dir = req.directory.is_none();
         let dir = req.directory.clone().unwrap_or_else(|| {
             let guess = name.clone().unwrap_or_else(|| filename_from_url(&req.url));
-            target_dir(&s.download_dir, &guess, s.use_categories)
+            s.folder_for(&guess)
         });
         let mut info = TaskInfo::new(req.url, dir.clone(), req.connections.unwrap_or(s.connections));
         info.filename = name.map(|n| unique_path(&dir.join(n)).file_name().unwrap().to_string_lossy().into_owned());
-        if auto_dir && info.filename.is_none() && s.use_categories {
-            info.category_base = Some(s.download_dir.clone());
+        if auto_dir && info.filename.is_none() {
+            info.category_base = Some(s.download_dir.clone()); // pick the folder once the name is known
         }
         (info.referrer, info.cookies, info.user_agent) = (req.referrer, req.cookies, req.user_agent);
         info.status = if req.start { Status::Queued } else { Status::Paused };

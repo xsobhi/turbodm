@@ -2,9 +2,11 @@
 //! the download quietly starts on one connection while the dialog is open (hidden from the
 //! list), so pressing Start feels instant; Cancel throws away what was downloaded.
 
+mod folder;
 mod link;
 
 use super::{progress, Ctx};
+use folder::{choose_folder, kind_of, update_folder_label, update_remember_label};
 use link::check;
 use gtk::prelude::*;
 use gtk::{gio, glib};
@@ -15,6 +17,7 @@ use std::time::Duration;
 use turbodm::config::MAX_CONNECTIONS;
 use turbodm::engine::manager::Confirm;
 use turbodm::engine::AddRequest;
+use turbodm::util::filename_from_url;
 
 struct Form {
     url: gtk::Entry,
@@ -22,6 +25,7 @@ struct Form {
     folder: gtk::Button,
     info: gtk::Label,
     connections: gtk::SpinButton,
+    remember: gtk::CheckButton, // "Always save documents to this folder", like IDM
     dir: RefCell<PathBuf>,
     dir_chosen: Cell<bool>,  // user picked a folder: stop auto-categorizing
     name_edited: Cell<bool>, // user typed a name: don't overwrite it
@@ -55,7 +59,10 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
         folder: gtk::Button::new(),
         info: gtk::Label::builder().xalign(0.0).label("Enter a link").build(),
         connections: gtk::SpinButton::with_range(1.0, MAX_CONNECTIONS as f64, 1.0),
-        dir: RefCell::new(req.directory.clone().unwrap_or_else(|| settings.download_dir.clone())),
+        remember: gtk::CheckButton::new(),
+        dir: RefCell::new(req.directory.clone().unwrap_or_else(|| {
+            settings.folder_for(&req.filename.clone().unwrap_or_else(|| filename_from_url(&req.url)))
+        })),
         dir_chosen: Cell::new(req.directory.is_some()), // e.g. picked in the browser's "Save As"
         name_edited: Cell::new(req.filename.is_some()),
         probe_id: Cell::new(0),
@@ -66,8 +73,10 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
     row(&grid, 0, "Address", &form.url);
     row(&grid, 1, "Save as", &form.name);
     row(&grid, 2, "Folder", &form.folder);
-    row(&grid, 3, "Connections", &form.connections);
-    row(&grid, 4, "", &form.info);
+    row(&grid, 3, "", &form.remember);
+    row(&grid, 4, "Connections", &form.connections);
+    row(&grid, 5, "", &form.info);
+    update_remember_label(&form);
     let (later, start, cancel) = (gtk::Button::with_label("Download later"),
         gtk::Button::builder().label("Start download").css_classes(["suggested-action"]).build(),
         gtk::Button::with_label("Cancel"));
@@ -101,6 +110,7 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
     let f = form.clone();
     form.name.connect_changed(move |e| {
         f.name_edited.set(e.has_focus());
+        update_remember_label(&f);
     });
     let (f, d) = (form.clone(), dialog.clone());
     form.folder.connect_clicked(move |_| choose_folder(&f, &d));
@@ -114,6 +124,11 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
             let name = form.name.text().trim().to_string();
             let filename = (!name.is_empty()).then_some(name);
             let (directory, connections) = (form.dir.borrow().clone(), form.connections.value() as usize);
+            if form.remember.is_active() {
+                let mut s = ctx.manager.settings();
+                s.folders.insert(kind_of(&form).into(), directory.clone());
+                ctx.manager.update_settings(s);
+            }
             let id = match form.take_early(&ctx, Some(&url)) {
                 Some(id) => {
                     ctx.manager.confirm(&id, Confirm { filename, directory, connections, start: start_now });
@@ -150,23 +165,6 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
     } else {
         check(ctx, &form, &req);
     }
-}
-
-fn update_folder_label(form: &Form) {
-    form.folder.set_label(&form.dir.borrow().display().to_string());
-}
-
-fn choose_folder(form: &Rc<Form>, parent: &gtk::Window) {
-    let dialog = gtk::FileDialog::builder().title("Save to folder").modal(true)
-        .initial_folder(&gio::File::for_path(&*form.dir.borrow())).build();
-    let form = form.clone();
-    dialog.select_folder(Some(parent), gio::Cancellable::NONE, move |result| {
-        if let Some(path) = result.ok().and_then(|f| f.path()) {
-            *form.dir.borrow_mut() = path;
-            form.dir_chosen.set(true);
-            update_folder_label(&form);
-        }
-    });
 }
 
 /// Pre-fill the address from the clipboard when it holds a link (IDM behaviour).
