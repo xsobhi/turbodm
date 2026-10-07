@@ -127,7 +127,14 @@ fn install(ctx: &Rc<Ctx>, url: &str, version: &str, button: &gtk::Button, status
     status.set_text("Downloading the update…");
     let dest: PathBuf = std::env::temp_dir().join(format!("TurboDM-{version}-setup.exe"));
     let (client, url, file) = (ctx.manager.shared.client(), url.to_string(), dest.clone());
-    let job = ctx.rt.spawn(async move { update::download(&client, &url, &file).await });
+    // TURBODM_TEST_INSTALLER: tests the update with a freshly built installer (CI)
+    let local = std::env::var_os("TURBODM_TEST_INSTALLER");
+    let job = ctx.rt.spawn(async move {
+        match local {
+            Some(path) => std::fs::copy(path, &file).map(|_| ()).map_err(|e| e.to_string()),
+            None => update::download(&client, &url, &file).await,
+        }
+    });
     let (ctx, button, status) = (ctx.clone(), button.clone(), status.clone());
     glib::spawn_future_local(async move {
         if let Err(err) = job.await.unwrap_or_else(|e| Err(e.to_string())) {

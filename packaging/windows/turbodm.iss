@@ -40,7 +40,8 @@ OutputDir=..\..\dist\windows
 OutputBaseFilename=TurboDM-{#Version}-windows-{#Arch}-setup
 Compression=lzma2/max
 SolidCompression=yes
-CloseApplications=yes
+; TurboDM's GTK runtime leaves gdbus.exe running from {app}: close it rather than abort
+CloseApplications=force
 #if Arch == "x64"
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -75,13 +76,18 @@ Filename: "{app}\bin\turbodm.exe"; Parameters: "--unregister-system"; Flags: run
 Type: filesandordirs; Name: "{app}\native-messaging"
 
 [Code]
-// TurboDM 1.4.0 installed per user (in AppData): remove that copy so only this one is left.
+// Before installing over a copy: end everything still running from its folder (TurboDM, and
+// the gdbus.exe helper its GTK runtime starts, which outlives it), then remove a per-user
+// TurboDM 1.4.0 from AppData so only this copy is left.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Uninstaller: String;
   Code: Integer;
 begin
   Result := '';
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+       '-NoProfile -NonInteractive -Command "Get-Process | Where-Object { $_.Path -like ''' +
+       ExpandConstant('{app}') + '\*'' } | Stop-Process -Force"', '', SW_HIDE, ewWaitUntilTerminated, Code);
   if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6B0C7A52-3E0B-4B7E-9C1D-7A4D2F1B9E21}_is1',
                          'UninstallString', Uninstaller) then
     Exec(RemoveQuotes(Uninstaller), '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE,

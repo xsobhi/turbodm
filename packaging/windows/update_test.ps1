@@ -1,6 +1,6 @@
 # The in-app update, end to end on a real Windows desktop (CI): the installed TurboDM pretends
 # to be old, finds the latest release on GitHub, and "Update now" must install it and reopen it.
-param([string]$Exe = "$env:ProgramFiles\TurboDM\bin\turbodm.exe")
+param([string]$Exe = "$env:ProgramFiles\TurboDM\bin\turbodm.exe", [string]$Installer)
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 function Shot($file) {
@@ -10,14 +10,17 @@ function Shot($file) {
     $image.Save("$PWD\$file")
 }
 $key = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{6B0C7A52-3E0B-4B7E-9C1D-7A4D2F1B9E21}_is1"
-$latest = (Invoke-RestMethod https://api.github.com/repos/xsobhi/turbodm/releases/latest).tag_name.TrimStart("v")
+# the version to end up with: this build's installer (-Installer), or the latest release
+$latest = if ($Installer) { ([regex]'TurboDM-|-windows.*').Replace((Split-Path $Installer -Leaf), "") }
+          else { (Invoke-RestMethod https://api.github.com/repos/xsobhi/turbodm/releases/latest).tag_name.TrimStart("v") }
 # mark the installed copy as old, so only a real update brings back the release's version
 Set-ItemProperty $key DisplayVersion "0.0.1-test"
 Write-Host "latest release $latest"
 Get-Process turbodm -ErrorAction SilentlyContinue | Stop-Process
 $env:TURBODM_PRETEND_VERSION = "0.0.1"
+if ($Installer) { $env:TURBODM_TEST_INSTALLER = $Installer } # instead of downloading the release
 Start-Process $Exe
-Remove-Item Env:\TURBODM_PRETEND_VERSION
+Remove-Item Env:\TURBODM_PRETEND_VERSION, Env:\TURBODM_TEST_INSTALLER -ErrorAction SilentlyContinue
 $shell = New-Object -ComObject WScript.Shell
 $deadline = (Get-Date).AddSeconds(30)
 while (-not $shell.AppActivate("TurboDM update")) {
