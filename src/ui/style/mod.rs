@@ -48,12 +48,18 @@ pub fn load() {
     gtk::style_context_add_provider_for_display(&display, &provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
 
-/// Segoe Fluent Icons (Windows 11) or Segoe MDL2 Assets (Windows 10) is there to draw icons.
+/// Segoe Fluent Icons (Windows 11) or Segoe MDL2 Assets (Windows 10) is there to draw icons:
+/// the "+" icon comes out of the font, not as a missing-glyph box.
 fn have_icon_font() -> bool {
     static FOUND: OnceLock<bool> = OnceLock::new();
     *FOUND.get_or_init(|| {
-        let Some(map) = gtk::Label::new(None).pango_context().font_map() else { return false };
-        map.list_families().iter().any(|f| matches!(f.name().as_str(), "Segoe Fluent Icons" | "Segoe MDL2 Assets"))
+        let layout = gtk::Label::new(None).create_pango_layout(Some("\u{E710}"));
+        layout.set_font_description(Some(&gtk::pango::FontDescription::from_string("Segoe Fluent Icons, Segoe MDL2 Assets 16")));
+        let found = layout.unknown_glyphs_count() == 0;
+        if std::env::var_os("TURBODM_DEBUG").is_some() {
+            eprintln!("turbodm: icon font {}", if found { "found" } else { "missing" });
+        }
+        found
     })
 }
 

@@ -160,6 +160,7 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
     });
     dialog.set_default_widget(Some(&start));
     dialog.present();
+    form.url.grab_focus();
     if req.url.is_empty() {
         paste_from_clipboard(&form, &dialog);
     } else {

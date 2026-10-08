@@ -139,10 +139,10 @@ progressbar > trough {
   min-height: 3px; border-radius: 2px; border: none;
   background: alpha(@fl_text, 0.16); box-shadow: none;
 }
-progressbar > trough > progress { min-height: 3px; border-radius: 2px; background: @fl_accent; border: none; }
+progressbar > trough > progress { min-height: 3px; min-width: 0; margin: 0; border-radius: 2px; background: @fl_accent; border: none; }
 progressbar > text { color: @fl_text_secondary; font-size: 9pt; }
 levelbar > trough { padding: 0; border: none; background: transparent; }
 levelbar block { min-height: 4px; border-radius: 2px; border: none; box-shadow: none; }
-levelbar block.filled, levelbar block.low, levelbar block.high, levelbar block.full { background: @fl_accent; }
-levelbar block.used { background: #c42b1c; }
+levelbar block.filled, levelbar block.low, levelbar block.high, levelbar block.used { background: @fl_accent; }
+levelbar block.full { background: #c42b1c; } /* the disk is almost full */
 levelbar block.empty { background: alpha(@fl_text, 0.12); }
