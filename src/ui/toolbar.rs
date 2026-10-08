@@ -1,18 +1,21 @@
-//! The main window's toolbar, menus, and the note shown when the list is empty.
+//! The main window's toolbar, title bar, menus, and the note shown when the list is empty.
 
+use super::style;
 use gtk::gio;
 use gtk::prelude::*;
 
 /// A toolbar button like IDM's: icon over a label.
 fn tool_button(icon: &str, label: &str, tooltip: &str, action: &str) -> gtk::Button {
     let content = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(3).build();
-    content.append(&gtk::Image::builder().icon_name(icon).pixel_size(20).build());
+    content.append(&style::icon(icon, 20));
     content.append(&gtk::Label::builder().label(label).css_classes(["caption"]).build());
     gtk::Button::builder().child(&content).tooltip_text(tooltip).action_name(action)
         .css_classes(["flat"]).width_request(76).build()
 }
 
-pub fn toolbar() -> gtk::Box {
+/// The toolbar. With the Windows look it also holds the search and the menu, which are in
+/// GTK's own title bar elsewhere (Windows draws its title bars itself).
+pub fn toolbar(search: &gtk::SearchEntry) -> gtk::Box {
     let bar = gtk::Box::builder().spacing(2).margin_start(6).margin_end(6).margin_top(4).margin_bottom(4).build();
     let groups: [&[(&str, &str, &str, &str)]; 4] = [
         &[("list-add-symbolic", "Add URL", "Add a download (Ctrl+N)", "win.add")],
@@ -34,20 +37,52 @@ pub fn toolbar() -> gtk::Box {
             bar.append(&tool_button(icon, label, tip, action));
         }
     }
+    if style::windows_look() {
+        let end = gtk::Box::builder().spacing(4).hexpand(true).halign(gtk::Align::End).valign(gtk::Align::Center).build();
+        end.append(search);
+        end.append(&menu_button());
+        bar.append(&end);
+    }
     bar
+}
+
+fn menu_button() -> gtk::MenuButton {
+    let button = gtk::MenuButton::builder().menu_model(&app_menu()).tooltip_text("Menu").build();
+    match style::glyph_icons() {
+        true => button.set_child(Some(&style::icon("open-menu-symbolic", 16))),
+        false => button.set_icon_name("open-menu-symbolic"),
+    }
+    button
+}
+
+/// GTK's title bar with the search and menu (not with the Windows look).
+pub fn header_bar(search: &gtk::SearchEntry) -> Option<gtk::HeaderBar> {
+    if style::windows_look() {
+        return None;
+    }
+    let header = gtk::HeaderBar::new();
+    header.pack_end(&menu_button());
+    header.pack_end(search);
+    Some(header)
+}
+
+/// A line between the toolbar, the list and the status bar (Windows uses none).
+pub fn rule() -> gtk::Separator {
+    gtk::Separator::builder().orientation(gtk::Orientation::Horizontal).visible(!style::windows_look()).build()
 }
 
 pub fn empty_page() -> (gtk::Box, gtk::Label) {
     let text = gtk::Label::builder().css_classes(["dim-label"]).justify(gtk::Justification::Center).build();
     let page = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(12)
         .valign(gtk::Align::Center).halign(gtk::Align::Center).build();
-    page.append(&gtk::Image::builder().icon_name("folder-download-symbolic").pixel_size(64)
-        .css_classes(["dim-label"]).build());
+    let icon = style::icon("folder-download-symbolic", 64);
+    icon.add_css_class("dim-label");
+    page.append(&icon);
     page.append(&text);
     (page, text)
 }
 
-/// The header bar's menu.
+/// The main menu.
 pub fn app_menu() -> gio::Menu {
     let app_menu = gio::Menu::new();
     let section = gio::Menu::new();
@@ -59,6 +94,7 @@ pub fn app_menu() -> gio::Menu {
     app_menu.append_section(None, &section);
     let section = gio::Menu::new();
     section.append(Some("Preferences"), Some("win.settings"));
+    section.append(Some("Add to your browser…"), Some("win.browsers"));
     section.append(Some("Check for updates"), Some("win.check-updates"));
     section.append(Some("About TurboDM"), Some("win.about"));
     section.append(Some("Quit"), Some("app.quit"));

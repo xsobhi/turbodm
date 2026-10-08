@@ -1,0 +1,148 @@
+/* Windows 11 (Fluent) look, part 1: windows, text, buttons, fields, checks, switches, bars.
+   Colours come from style/system.rs (@fl_*), following Windows' mode and accent colour. */
+
+window, window.background, dialog {
+  background-color: @fl_window;
+  color: @fl_text;
+  font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  font-size: 10pt;
+}
+
+label.dim-label, .dim-label { color: @fl_text_secondary; opacity: 1; }
+label:disabled { color: @fl_text_disabled; }
+.caption { font-size: 9pt; }
+.caption-heading { font-size: 9pt; font-weight: 600; }
+.title-1 { font-size: 21pt; font-weight: 600; }
+.title-2 { font-size: 15pt; font-weight: 600; }
+.title-3 { font-size: 13.5pt; font-weight: 600; }
+.title-4 { font-size: 11pt; font-weight: 600; }
+.heading { font-weight: 600; }
+.fluent-icon { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-weight: normal; }
+
+separator { background: @fl_divider; min-width: 1px; min-height: 1px; }
+
+button:focus-visible, switch:focus-visible, checkbutton:focus-visible > check, checkbutton:focus-visible > radio,
+.navigation-sidebar > row:focus-visible { outline: 2px solid @fl_text; outline-offset: 1px; }
+entry, spinbutton, text { outline: none; }
+
+/* Buttons */
+button {
+  min-height: 22px;
+  padding: 4px 11px;
+  border-radius: 4px;
+  border: 1px solid @fl_control_border;
+  border-bottom-color: @fl_control_border_bottom;
+  background: @fl_control;
+  color: @fl_text;
+  box-shadow: none;
+  text-shadow: none;
+  -gtk-icon-shadow: none;
+  font-weight: normal;
+}
+button:hover { background: @fl_control_hover; }
+button:active, button:checked { background: @fl_control_pressed; color: @fl_text_secondary;
+  border-bottom-color: @fl_control_border; }
+button:disabled { background: @fl_control; color: @fl_text_disabled; border-color: @fl_control_border; }
+button.suggested-action, button.default {
+  background: @fl_accent; color: @fl_on_accent;
+  border: 1px solid alpha(white, 0.08); border-bottom-color: alpha(black, 0.4);
+}
+button.suggested-action:hover { background: shade(@fl_accent, 1.08); }
+button.suggested-action:active { background: shade(@fl_accent, 1.16); color: alpha(@fl_on_accent, 0.8);
+  border-color: transparent; }
+button.suggested-action:disabled { background: @fl_control_pressed; color: @fl_text_disabled;
+  border-color: transparent; }
+button.flat, button.image-button.flat, menubutton > button.flat, .toolbar button {
+  background: transparent; border-color: transparent;
+}
+button.flat:hover { background: @fl_subtle_hover; }
+button.flat:active, button.flat:checked { background: @fl_subtle_pressed; color: @fl_text_secondary; }
+button.flat:disabled { background: transparent; color: @fl_text_disabled; }
+button.flat:disabled label { color: @fl_text_disabled; }
+
+/* Text fields */
+entry, spinbutton, searchbar entry {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 4px;
+  border: 1px solid @fl_control_border;
+  border-bottom-color: @fl_strong_border;
+  background: @fl_input;
+  color: @fl_text;
+  box-shadow: none;
+  outline: none;
+  caret-color: @fl_text;
+}
+entry:hover, spinbutton:hover { background: @fl_control_hover; }
+entry:focus-within, spinbutton:focus-within {
+  background: @fl_input_focus;
+  border-bottom-color: @fl_accent;
+  box-shadow: inset 0 -1px @fl_accent;
+  outline: none;
+}
+entry:disabled, spinbutton:disabled { color: @fl_text_disabled; background: @fl_control_pressed; }
+entry > text > selection, text selection, label > selection { background: @fl_accent; color: @fl_on_accent; }
+entry image { color: @fl_text_secondary; }
+spinbutton { padding: 0 0 0 10px; }
+spinbutton > text { min-width: 40px; }
+spinbutton > button, spinbutton > button.up, spinbutton > button.down {
+  min-height: 22px; min-width: 22px; margin: 3px 3px 3px 0; padding: 0;
+  border: none; border-radius: 4px; background: transparent; color: @fl_text_secondary;
+}
+spinbutton > button:hover { background: @fl_subtle_hover; }
+
+/* Drop-downs */
+dropdown > button, combobox > button { padding: 4px 10px; }
+dropdown arrow, combobox arrow { color: @fl_text_secondary; }
+
+/* Check boxes and radio buttons */
+checkbutton { padding: 2px 0; border-spacing: 8px; }
+checkbutton check, checkbutton radio {
+  min-width: 18px; min-height: 18px; margin: 0;
+  border: 1px solid @fl_strong_border;
+  background: alpha(@fl_text, 0.03);
+  color: transparent;
+  box-shadow: none;
+  -gtk-icon-size: 12px;
+}
+checkbutton check { border-radius: 4px; }
+checkbutton radio { border-radius: 50%; }
+checkbutton:hover check, checkbutton:hover radio { background: alpha(@fl_text, 0.06); }
+checkbutton check:checked, checkbutton check:indeterminate {
+  background: @fl_accent; border-color: @fl_accent; color: @fl_on_accent;
+}
+checkbutton radio:checked {
+  background: @fl_on_accent; border: 5px solid @fl_accent; color: transparent; -gtk-icon-source: none;
+}
+checkbutton check:disabled, checkbutton radio:disabled { border-color: @fl_text_disabled; }
+
+/* Switches: Windows' toggle */
+switch {
+  min-width: 38px; min-height: 18px; padding: 0;
+  border-radius: 10px;
+  border: 1px solid @fl_strong_border;
+  background: alpha(@fl_text, 0.03);
+  box-shadow: none; outline: none; color: transparent;
+}
+switch image { opacity: 0; }
+switch:hover { background: alpha(@fl_text, 0.06); }
+switch > slider {
+  min-width: 12px; min-height: 12px; margin: 3px 4px;
+  border-radius: 7px; border: none; box-shadow: none;
+  background: @fl_text_secondary;
+}
+switch:checked { background: @fl_accent; border-color: @fl_accent; }
+switch:checked > slider { background: @fl_on_accent; }
+
+/* Progress */
+progressbar > trough {
+  min-height: 3px; border-radius: 2px; border: none;
+  background: alpha(@fl_text, 0.16); box-shadow: none;
+}
+progressbar > trough > progress { min-height: 3px; border-radius: 2px; background: @fl_accent; border: none; }
+progressbar > text { color: @fl_text_secondary; font-size: 9pt; }
+levelbar > trough { padding: 0; border: none; background: transparent; }
+levelbar block { min-height: 4px; border-radius: 2px; border: none; box-shadow: none; }
+levelbar block.filled, levelbar block.low, levelbar block.high, levelbar block.full { background: @fl_accent; }
+levelbar block.used { background: #c42b1c; }
+levelbar block.empty { background: alpha(@fl_text, 0.12); }

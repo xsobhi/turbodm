@@ -1,5 +1,5 @@
 # GUI test on a real Windows desktop (CI): every window centred, Hide details shrinks the
-# progress window. Prints each TurboDM window's position and saves screenshots.
+# progress window, light and dark mode. Prints each TurboDM window's position and saves screenshots.
 param([string]$Exe)
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
@@ -43,6 +43,8 @@ $shell = New-Object -ComObject WScript.Shell
 $server = Start-Process python -ArgumentList "tools/slow_server.py", "8765", "209715200", "262144" -PassThru
 Start-Process $Exe
 Start-Sleep 5
+Report "0-browsers" # first start: the "add to your browser" guide
+$null = $shell.AppActivate("Add TurboDM to your browser"); Start-Sleep 1; $shell.SendKeys("{ENTER}")
 Report "1-main"
 $shell.SendKeys("^,")
 Report "2-preferences"
@@ -59,4 +61,15 @@ Report "5-details-hidden"
 $shell.SendKeys("%s")
 Report "6-details-shown"
 Stop-Process -Name turbodm
+# Windows in dark mode: TurboDM follows it
+$personalize = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+New-Item -Path $personalize -Force | Out-Null
+Set-ItemProperty -Path $personalize -Name AppsUseLightTheme -Value 0 -Type DWord
+Start-Process $Exe
+Start-Sleep 5
+Report "7-dark"
+$shell.SendKeys("^,")
+Report "8-dark-preferences"
+Stop-Process -Name turbodm
+Set-ItemProperty -Path $personalize -Name AppsUseLightTheme -Value 1 -Type DWord
 $server | Stop-Process

@@ -2,6 +2,7 @@
 
 mod actions;
 mod add_dialog;
+mod browsers;
 mod center;
 mod clipboard;
 mod finish;
@@ -12,6 +13,7 @@ mod power;
 mod progress;
 mod settings;
 mod sidebar;
+mod style;
 mod toolbar;
 #[cfg(target_os = "linux")]
 mod tray;
@@ -73,6 +75,9 @@ impl Ctx {
 
 /// Start the GUI. `messages` are handed to the already-running instance if there is one.
 pub fn run(messages: Vec<Message>, background: bool) -> i32 {
+    #[cfg(windows)]
+    // SAFETY: no other threads yet. Windows draws the title bars, as for its own apps.
+    unsafe { std::env::set_var("GTK_CSD", "0") };
     let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all()
         .build().expect("runtime"); // network-bound: a few threads are plenty
     let _enter = runtime.enter();
@@ -110,6 +115,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
             return;
         }
         *hold.borrow_mut() = Some(app.hold()); // keep running while the window is hidden
+        style::load();
         center::all_windows();
         let ctx = Rc::new(Ctx {
             app: app.clone(),
@@ -129,8 +135,11 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
         update::start(&ctx);
         listen_ipc(&ctx, from_ipc.clone());
         listen_events(&ctx, events.clone());
-        if !background {
+        if background {
+            browsers::mark_offered(&ctx); // the browser started us: its extension works
+        } else {
             ctx.show_all();
+            browsers::offer(&ctx);
         }
     });
     // logout/shutdown/kill send SIGTERM: quit properly so downloads are paused and saved
@@ -164,6 +173,9 @@ fn listen_ipc(ctx: &Rc<Ctx>, rx: async_channel::Receiver<Message>) {
                 Message::Show => ctx.show_all(),
                 Message::Quit => ctx.app.quit(),
                 Message::Download { url, filename, directory, referrer, cookies, user_agent, silent, .. } => {
+                    if user_agent.is_some() {
+                        browsers::mark_offered(&ctx); // from the extension
+                    }
                     let directory = directory.filter(|d| d.is_absolute());
                     let req = AddRequest { url, filename, directory, referrer, cookies, user_agent, ..Default::default() };
                     ctx.handle_download(req, silent);

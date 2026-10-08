@@ -51,7 +51,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 WelcomeLabel1=Welcome to TurboDM
 WelcomeLabel2=TurboDM {#Version} will be installed on this computer.%n%nDownload files over many connections at once, pause and resume them any time, and catch downloads straight from your browser.
 FinishedHeadingLabel=TurboDM is ready
-FinishedLabel=TurboDM is installed. To catch downloads from your browser, add the TurboDM extension (its folder can be opened below).
+FinishedLabel=TurboDM is installed. When it opens, it helps you add its extension to your browser, to catch your downloads.
 ClickFinish=
 
 [Files]
@@ -65,7 +65,6 @@ Name: "{autodesktop}\TurboDM"; Filename: "{app}\bin\turbodm.exe"
 ; connect the browser extension for every user of this PC
 Filename: "{app}\bin\turbodm.exe"; Parameters: "--register-system"; Flags: runhidden
 Filename: "{app}\bin\turbodm.exe"; Description: "Open TurboDM"; Flags: nowait postinstall skipifsilent runasoriginaluser
-Filename: "{app}\extension"; Description: "Show the browser extension folder"; Flags: postinstall shellexec skipifsilent unchecked
 ; updating from inside TurboDM runs this installer with /SILENT: open the new version afterwards
 Filename: "{app}\bin\turbodm.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 

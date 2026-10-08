@@ -74,7 +74,7 @@ fn heading(text: &str) -> gtk::ListBoxRow {
 fn entry(name: &str, icon: &str) -> (gtk::ListBoxRow, gtk::Label) {
     let count = gtk::Label::builder().css_classes(["dim-label", "numeric"]).build();
     let row = gtk::Box::builder().spacing(10).margin_start(4).margin_end(4).margin_top(3).margin_bottom(3).build();
-    row.append(&gtk::Image::from_icon_name(icon));
+    row.append(&super::style::icon(icon, 16));
     row.append(&gtk::Label::builder().label(name).xalign(0.0).hexpand(true).build());
     row.append(&count);
     (gtk::ListBoxRow::builder().child(&row).build(), count)

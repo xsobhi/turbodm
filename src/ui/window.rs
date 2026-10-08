@@ -55,30 +55,26 @@ impl MainWindow {
         let (view, selection) = list::build(&store, &filter, on_menu);
         menu.set_parent(&view);
 
-        let header = gtk::HeaderBar::new();
-        header.pack_end(&gtk::MenuButton::builder().icon_name("open-menu-symbolic").menu_model(&toolbar::app_menu()).build());
-        header.pack_end(&search);
-
         let status = gtk::Label::builder().xalign(0.0).margin_start(10).margin_end(10)
             .margin_top(4).margin_bottom(4).build();
         let scroller = gtk::ScrolledWindow::builder().child(&view).vexpand(true).hexpand(true).build();
         let (empty_box, empty) = toolbar::empty_page();
-        let pages = gtk::Stack::new();
+        let pages = gtk::Stack::builder().css_classes(["fluent-layer"]).build();
         pages.add_named(&scroller, Some("list"));
         pages.add_named(&empty_box, Some("empty"));
         let paned = gtk::Paned::builder().orientation(gtk::Orientation::Horizontal)
             .start_child(&sidebar.widget).end_child(&pages)
             .shrink_start_child(false).resize_start_child(false).position(210).vexpand(true).build();
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        content.append(&toolbar::toolbar());
-        content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        content.append(&toolbar::toolbar(&search));
+        content.append(&toolbar::rule());
         content.append(&paned);
-        content.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+        content.append(&toolbar::rule());
         content.append(&status);
         let window = gtk::ApplicationWindow::builder()
             .application(app).title("TurboDM").default_width(1180).default_height(700)
             .icon_name("turbodm").child(&content).build();
-        window.set_titlebar(Some(&header));
+        window.set_titlebar(toolbar::header_bar(&search).as_ref());
         MainWindow { window, store, view, selection, status, search, sidebar, filter, pages, empty }
     }
 }

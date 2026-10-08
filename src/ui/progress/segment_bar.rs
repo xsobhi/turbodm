@@ -32,7 +32,8 @@ impl SegmentBar {
             for seg in &data.segments {
                 let x = seg.start as f64 * scale;
                 let done = (seg.done as f64 * scale).max(if seg.done > 0 { 1.0 } else { 0.0 });
-                cr.set_source_rgb(0.21, 0.52, 0.89); // downloaded: blue
+                let (r, g, b) = crate::ui::style::accent().unwrap_or((0.21, 0.52, 0.89));
+                cr.set_source_rgb(r, g, b); // downloaded: blue, or Windows' accent colour
                 cr.rectangle(x, 0.0, done, h);
                 let _ = cr.fill();
                 if seg.active && !seg.finished() {

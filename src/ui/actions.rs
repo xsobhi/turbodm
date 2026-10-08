@@ -62,6 +62,7 @@ pub fn install(ctx: &Rc<Ctx>) {
     add(ctx, win, "refresh", refresh_address);
     add(ctx, win, "settings", settings::open);
     add(ctx, win, "about", about);
+    add(ctx, win, "browsers", super::browsers::open);
     add(ctx, win, "check-updates", |ctx| super::update::check(ctx, true));
     add(ctx, &ctx.app, "quit", |ctx| ctx.app.quit());
     add(ctx, &ctx.app, "show", |ctx| ctx.show_all());

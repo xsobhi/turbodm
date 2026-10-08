@@ -70,7 +70,7 @@ fn field(grid: &gtk::Grid, y: i32, name: &str, value: &str) {
 }
 
 fn complete_dialog(ctx: &Rc<Ctx>, snap: &Snapshot) {
-    let icon = gtk::Image::builder().icon_name(icon_for(&snap.filename)).pixel_size(48).build();
+    let icon = super::style::icon(icon_for(&snap.filename), 48);
     let heading = gtk::Box::new(gtk::Orientation::Vertical, 2);
     heading.append(&gtk::Label::builder().label("Download complete").xalign(0.0).css_classes(["title-3"]).build());
     heading.append(&gtk::Label::builder().label(&snap.filename).xalign(0.0).wrap(true).build());

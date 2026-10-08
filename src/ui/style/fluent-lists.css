@@ -1,0 +1,96 @@
+/* Windows 11 (Fluent) look, part 2: the downloads table, the sidebar, menus, tooltips,
+   scroll bars, tabs and message dialogs. */
+
+/* The content area: a lighter layer with a rounded corner, as in Explorer and Settings */
+.fluent-layer {
+  background: @fl_layer;
+  border-top: 1px solid @fl_layer_border;
+  border-left: 1px solid @fl_layer_border;
+  border-top-left-radius: 8px;
+}
+.fluent-layer > scrolledwindow, .fluent-layer columnview, .fluent-layer columnview > listview { background: transparent; }
+paned > separator { background: transparent; min-width: 1px; }
+
+/* The downloads table, like Explorer's details view */
+columnview, columnview > listview { background: transparent; color: @fl_text; }
+columnview > header > button {
+  padding: 6px 10px; border: none; border-radius: 0; background: transparent;
+  color: @fl_text_secondary; font-weight: normal; box-shadow: inset -1px 0 @fl_divider;
+}
+columnview > header > button:hover { background: @fl_subtle_hover; color: @fl_text; }
+columnview > header > button sort-indicator { color: @fl_text_secondary; min-height: 10px; -gtk-icon-size: 10px; }
+columnview > header { border-bottom: 1px solid @fl_divider; }
+columnview > listview > row { border-radius: 4px; margin: 1px 4px; min-height: 30px; background: transparent; }
+columnview > listview > row:hover { background: @fl_subtle_hover; }
+columnview > listview > row:selected { background: alpha(@fl_accent, 0.16); color: @fl_text; }
+columnview > listview > row:selected:hover { background: alpha(@fl_accent, 0.22); }
+columnview > listview > row > cell { padding: 2px 10px; }
+columnview.column-separators > listview > row > cell { border: none; }
+
+/* The sidebar, like Explorer's navigation pane: a pill marks the chosen view */
+.navigation-sidebar, list.navigation-sidebar { background: transparent; }
+.navigation-sidebar > row {
+  min-height: 34px; margin: 1px 6px; padding: 0 8px; border-radius: 4px;
+  background-color: transparent; color: @fl_text;
+}
+.navigation-sidebar > row:hover { background-color: @fl_subtle_hover; }
+.navigation-sidebar > row:selected {
+  background-color: @fl_subtle_hover; color: @fl_text;
+  background-image: linear-gradient(@fl_accent, @fl_accent);
+  background-size: 3px 16px; background-position: 0 center; background-repeat: no-repeat;
+}
+.navigation-sidebar > row:selected:hover { background-color: alpha(@fl_text, 0.06); }
+.navigation-sidebar > row:selected label, .navigation-sidebar > row:selected .fluent-icon { color: @fl_text; }
+.navigation-sidebar .numeric { color: @fl_text_secondary; }
+
+/* Menus and pop-ups */
+popover > contents, popover.menu > contents {
+  background: @fl_flyout; color: @fl_text;
+  border: 1px solid @fl_flyout_border; border-radius: 8px; padding: 4px;
+  box-shadow: 0 8px 16px alpha(black, 0.14);
+}
+popover > arrow { background: @fl_flyout; border: 1px solid @fl_flyout_border; }
+popover.menu modelbutton {
+  min-height: 30px; padding: 0 12px; border-radius: 4px; margin: 1px 0; color: @fl_text;
+}
+popover.menu modelbutton:hover, popover.menu modelbutton:focus { background: @fl_subtle_hover; }
+popover.menu modelbutton:active { background: @fl_subtle_pressed; }
+popover.menu modelbutton:disabled { color: @fl_text_disabled; }
+popover.menu separator { margin: 4px -4px; background: @fl_divider; }
+popover.menu accelerator { color: @fl_text_secondary; }
+tooltip, tooltip.background {
+  background: @fl_flyout; color: @fl_text; border: 1px solid @fl_flyout_border; border-radius: 4px;
+  box-shadow: 0 4px 8px alpha(black, 0.14); padding: 6px 8px;
+}
+tooltip > box > label { color: @fl_text; }
+
+/* Scroll bars: thin, wider on hover */
+scrollbar { background: transparent; border: none; }
+scrollbar slider { background: alpha(@fl_text, 0.45); border-radius: 3px; border: none; min-width: 3px; min-height: 3px; }
+scrollbar:hover slider { min-width: 6px; min-height: 6px; }
+scrollbar.vertical slider { min-height: 30px; }
+scrollbar.horizontal slider { min-width: 30px; }
+
+/* Tabs (Preferences) */
+notebook { background: transparent; }
+notebook > header { background: transparent; border: none; box-shadow: none; padding: 0 8px; }
+notebook > header tab {
+  min-height: 30px; padding: 0 12px; margin: 4px 2px; border-radius: 4px; border: none;
+  color: @fl_text_secondary; box-shadow: none;
+}
+notebook > header tab:hover { background: @fl_subtle_hover; color: @fl_text; }
+notebook > header tab:checked {
+  color: @fl_text; background-color: transparent; box-shadow: none;
+  background-image: linear-gradient(@fl_accent, @fl_accent);
+  background-size: 16px 3px; background-position: center bottom; background-repeat: no-repeat;
+}
+notebook > stack { background: @fl_layer; border-top: 1px solid @fl_layer_border; }
+
+/* Message boxes (alerts): text on the layer, buttons in a footer, like Windows' dialogs */
+window.dialog.message { background: @fl_layer; }
+window.dialog.message .dialog-action-area,
+window.dialog.message box.dialog-action-box { background: @fl_window; border-top: 1px solid @fl_divider; padding: 16px 20px; border-spacing: 8px; }
+window.dialog.message .dialog-action-area > button { border-radius: 4px; border: 1px solid @fl_control_border;
+  border-bottom-color: @fl_control_border_bottom; margin: 0; min-width: 96px; }
+window.dialog.message .dialog-action-area > button.suggested-action { border-color: alpha(white, 0.08); }
+window.dialog.message label.title { font-size: 15pt; font-weight: 600; }

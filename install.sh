@@ -20,7 +20,7 @@ sed "s|@BIN@|$BIN|" data/turbodm.desktop > "$DATA/applications/turbodm.desktop"
 tools/build-extension.sh
 rm -rf "$DATA/turbodm/extension/firefox" "$DATA/turbodm/extension/chrome" # keeps signed .xpi files
 mkdir -p "$DATA/turbodm/extension"
-cp -r dist/firefox dist/chrome "$DATA/turbodm/extension/"
+cp -r dist/firefox dist/chrome dist/turbodm-firefox.xpi "$DATA/turbodm/extension/"
 command -v update-desktop-database >/dev/null && update-desktop-database "$DATA/applications" || true
 
 cat <<MSG

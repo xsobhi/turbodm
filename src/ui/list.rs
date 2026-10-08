@@ -1,8 +1,9 @@
 //! The downloads table (ColumnView) and keeping it in sync with the engine.
 
 use super::item::DownloadItem;
+use super::style;
 use gtk::prelude::*;
-use gtk::gio;
+use gtk::{gio, glib};
 use std::collections::HashMap;
 use std::rc::Rc;
 use turbodm::engine::Snapshot;
@@ -94,11 +95,9 @@ fn name_column(selection: &gtk::MultiSelection, on_menu: &MenuHandler) -> gtk::C
     factory.connect_setup(move |_, obj| {
         let list_item = obj.downcast_ref::<gtk::ListItem>().unwrap();
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let icon = gtk::Image::new();
         let label = gtk::Label::builder().xalign(0.0).ellipsize(gtk::pango::EllipsizeMode::Middle).build();
-        row.append(&icon);
+        row.append(&file_icon(list_item));
         row.append(&label);
-        bind(list_item, "icon", &icon, "icon-name");
         bind(list_item, "name", &label, "label");
         bind(list_item, "name", &row, "tooltip-text");
         attach_menu(&row, list_item, &selection, &on_menu);
@@ -107,6 +106,22 @@ fn name_column(selection: &gtk::MultiSelection, on_menu: &MenuHandler) -> gtk::C
     let col = column("File name", factory, 320, Some(by(|i| i.name().to_lowercase())));
     col.set_expand(true);
     col
+}
+
+/// The file type's icon (a Fluent glyph with the Windows look).
+fn file_icon(list_item: &gtk::ListItem) -> gtk::Widget {
+    if !style::glyph_icons() {
+        let icon = gtk::Image::new();
+        bind(list_item, "icon", &icon, "icon-name");
+        return icon.upcast();
+    }
+    let label = style::glyph_label(' ', 16);
+    list_item.property_expression("item").chain_property::<DownloadItem>("icon")
+        .chain_closure::<String>(glib::closure!(|_: Option<glib::Object>, icon: String| {
+            style::glyph(&icon).map(String::from).unwrap_or_default()
+        }))
+        .bind(&label, "label", gtk::Widget::NONE);
+    label.upcast()
 }
 
 fn status_column(sorter: gtk::CustomSorter, selection: &gtk::MultiSelection, on_menu: &MenuHandler) -> gtk::ColumnViewColumn {
