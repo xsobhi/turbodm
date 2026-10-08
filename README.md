@@ -1,7 +1,8 @@
 # TurboDM
 
 A fast, multi-connection download manager for Linux and Windows — in the spirit of Internet Download Manager —
-written in Rust with a native GTK4 interface, plus a browser extension that hands downloads over
+written in Rust with a native interface on each system (GTK4 on Linux; Windows' own controls on
+Windows, drawn in the style of your Windows version), plus a browser extension that hands downloads over
 from Firefox, Chrome, Brave and Chromium **with their cookies**, so links that only work while you're
 logged in keep working.
 
@@ -149,7 +150,8 @@ src/engine/   segmentation, connections, task runner, manager, persistence (no G
 src/ipc/      extension ↔ app: native-messaging host, Unix socket / named pipe client/server
 src/register.rs  registers the native-messaging host (manifests; registry on Windows)
 packaging/    .deb/.rpm files, Windows installer (Inno Setup), apt repository script
-src/ui/       GTK4 interface
+src/ui/       GTK4 interface (Linux)
+src/win/      Windows interface (Win32 and common controls)
 extension/    shared JS + Firefox (MV2) and Chrome (MV3) manifests
 ```
 
