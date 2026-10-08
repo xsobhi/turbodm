@@ -59,32 +59,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 64-bit only: MSYS2 no longer builds Rust or GTK 4 for 32-bit Windows
-          - { msystem: UCRT64, arch: x64 }
+          - { arch: x64 }
     runs-on: windows-latest
     defaults:
       run:
-        shell: msys2 {0}
+        shell: pwsh
     steps:
       - uses: actions/checkout@v5
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: ${{ matrix.msystem }}
-          update: true
-          install: git zip
-          pacboy: gcc:p pkgconf:p rust:p gtk4:p librsvg:p nasm:p vulkan-loader:p
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release
       - run: tools/build-extension.sh
+        shell: bash
       - run: cargo build --release
       - run: packaging/windows/bundle.sh
-      - name: Hide the build machine's own Vulkan loader (PCs without a Vulkan driver lack it)
-        shell: pwsh
+        shell: bash
+      - name: Only Windows' own libraries
         run: |
-          $dll = "$env:SystemRoot\System32\vulkan-1.dll"
-          if (Test-Path $dll) {
-            takeown /f $dll | Out-Null
-            icacls $dll /grant "*S-1-5-32-544:F" | Out-Null
-            Rename-Item $dll vulkan-1.dll.hidden
-          }
+          $dumpbin = Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio" -Recurse -Filter dumpbin.exe |
+            Where-Object { $_.FullName -match "Hostx64\\x64" } | Select-Object -First 1
+          & $dumpbin.FullName /dependents dist\windows\TurboDM\bin\turbodm.exe
       - name: Smoke test (app, browser connector, single instance)
         shell: pwsh
         run: |
@@ -108,7 +102,7 @@ jobs:
           [System.Drawing.Graphics]::FromImage($image).CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
           $image.Save("$PWD\windows-screenshot.png")
           Stop-Process -Name turbodm
-      - name: GUI test (centred windows, Hide details)
+      - name: GUI test (windows centred, Hide details, screenshots)
         shell: pwsh
         run: packaging\windows\gui_test.ps1 -Exe "$PWD\dist\windows\TurboDM\bin\turbodm.exe"
       - name: Installer (Inno Setup)

@@ -21,3 +21,16 @@ jobs:
           node --check extension/common/background.js
           cat extension/common/background.js extension/firefox/intercept.js > /tmp/firefox-background.js
           node --check /tmp/firefox-background.js
+
+  windows-check:
+    name: Windows interface compiles (lint)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install -y mingw-w64
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: x86_64-pc-windows-gnu
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings

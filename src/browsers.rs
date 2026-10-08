@@ -54,7 +54,7 @@ fn registered(_exe: &str) -> Option<PathBuf> {
 pub fn extension_dir() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let prefix = exe.parent()?.parent()?;
-    [prefix.join("extension"), prefix.join("share/turbodm/extension"), turbodm::config::data_dir().join("extension")]
+    [prefix.join("extension"), prefix.join("share/turbodm/extension"), crate::config::data_dir().join("extension")]
         .into_iter().find(|dir| dir.join("chrome").is_dir())
 }
 

@@ -13,15 +13,8 @@ pub fn kind_of(form: &Form) -> &'static str {
 }
 
 pub fn update_remember_label(form: &Form) {
-    let kind = match kind_of(form) {
-        "Video" => "videos",
-        "Music" => "music",
-        "Documents" => "documents",
-        "Compressed" => "archives",
-        "Programs" => "programs",
-        "Images" => "images",
-        _ => "other files",
-    };
+    let name = form.name.text();
+    let kind = turbodm::text::kind_words(if name.is_empty() { form.url.text() } else { name }.as_str());
     form.remember.set_label(Some(&format!("Always save {kind} to this folder")));
 }
 

@@ -10,7 +10,12 @@
 #![cfg_attr(windows, windows_subsystem = "windows")] // no console window behind the app
 
 mod cli;
-mod ui;
+#[cfg(not(windows))]
+mod ui; // GTK
+#[cfg(windows)]
+mod win; // Windows' own controls
+#[cfg(windows)]
+use win as ui;
 
 use turbodm::ipc::{self, Message};
 

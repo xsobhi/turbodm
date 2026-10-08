@@ -3,13 +3,12 @@
 //! Brave only take extensions from their stores, or unpacked by hand: their extensions page
 //! is opened, with the steps and the folder to pick.
 
-mod find;
-
 use super::launch::{launch, Launch};
 use super::Ctx;
 use gtk::prelude::*;
 use std::path::Path;
 use std::rc::Rc;
+use turbodm::browsers as find;
 
 /// The first time TurboDM starts (until the extension is seen working).
 pub fn offer(ctx: &Rc<Ctx>) {

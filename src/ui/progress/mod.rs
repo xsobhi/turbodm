@@ -5,11 +5,12 @@ mod details;
 mod options;
 mod segment_bar;
 
-use super::{center, item::status_text, Ctx};
+use super::{center, Ctx};
 use details::Details;
 use gtk::prelude::*;
 use std::rc::Rc;
-use turbodm::engine::{Manager, Snapshot, Status};
+use turbodm::engine::{Manager, Status};
+use turbodm::text::{status_line, status_text};
 use turbodm::util::{human_eta, human_size, human_speed};
 
 pub struct ProgressWindow {
@@ -117,14 +118,6 @@ pub fn open(ctx: &Rc<Ctx>, id: &str) {
 pub fn close(ctx: &Ctx, id: &str) -> bool {
     let window = ctx.progress.borrow().get(id).map(|p| p.window.clone());
     window.map(|w| w.close()).is_some()
-}
-
-fn status_line(s: &Snapshot) -> String {
-    match (s.status, &s.error) {
-        (Status::Error, Some(e)) => format!("Error: {e}"),
-        (Status::Downloading, _) => "Receiving data…".into(),
-        (status, _) => status.label().into(),
-    }
 }
 
 impl ProgressWindow {

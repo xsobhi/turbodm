@@ -7,19 +7,7 @@ use gtk::{gio, glib};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
-use turbodm::update::{self, RELEASES_PAGE};
-
-/// Installed from the .deb, which added the apt repository: updates come with the system's.
-fn updated_by_apt() -> bool {
-    cfg!(target_os = "linux") && std::env::current_exe().is_ok_and(|p| p.starts_with("/usr"))
-        && std::path::Path::new("/etc/apt/sources.list.d/turbodm.sources").exists()
-}
-
-/// Installed by our Windows installer (not the portable zip): it can install over itself.
-fn installed_by_setup() -> bool {
-    cfg!(windows) && std::env::current_exe().ok().and_then(|p| Some(p.parent()?.parent()?.join("unins000.exe")))
-        .is_some_and(|p| p.exists())
-}
+use turbodm::update::{self, installed_by_setup, run_installer, updated_by_apt, RELEASES_PAGE};
 
 pub fn start(ctx: &Rc<Ctx>) {
     let weak = Rc::downgrade(ctx);
@@ -149,15 +137,4 @@ fn install(ctx: &Rc<Ctx>, url: &str, version: &str, button: &gtk::Button, status
         }
         ctx.app.quit(); // downloads are paused and saved; the installer reopens TurboDM
     });
-}
-
-/// The installer needs admin rights: `start` goes through the shell, which shows the prompt.
-fn run_installer(setup: &std::path::Path) -> std::io::Result<()> {
-    let mut command = std::process::Command::new("cmd");
-    let log = std::env::temp_dir().join("TurboDM-update.log"); // to find out why, if it fails
-    command.args(["/C", "start", ""]).arg(setup).args(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
-        .arg(format!("/LOG={}", log.display()));
-    #[cfg(windows)]
-    std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000); // no console
-    command.spawn().map(|_| ())
 }

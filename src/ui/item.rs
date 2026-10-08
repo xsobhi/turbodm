@@ -6,7 +6,8 @@ use gtk::prelude::*;
 use std::cell::{Cell, RefCell};
 use super::sidebar::state_of;
 use turbodm::categories::icon_for;
-use turbodm::engine::{Snapshot, Status};
+use turbodm::engine::Snapshot;
+use turbodm::text::status_text;
 use turbodm::util::{human_eta, human_size, human_speed};
 
 mod imp {
@@ -56,16 +57,6 @@ mod imp {
 
 glib::wrapper! {
     pub struct DownloadItem(ObjectSubclass<imp::DownloadItem>);
-}
-
-pub fn status_text(snap: &Snapshot) -> String {
-    let pct = snap.progress.map(|p| format!("{:.1}%", p * 100.0));
-    match snap.status {
-        Status::Downloading => pct.unwrap_or_else(|| human_size(Some(snap.downloaded))),
-        Status::Paused => pct.map_or("Paused".into(), |p| format!("Paused · {p}")),
-        Status::Error => format!("Error: {}", snap.error.as_deref().unwrap_or("unknown")),
-        other => other.label().into(),
-    }
 }
 
 fn format_time(secs: u64) -> String {

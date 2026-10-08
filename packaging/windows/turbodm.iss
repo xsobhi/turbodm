@@ -40,7 +40,7 @@ OutputDir=..\..\dist\windows
 OutputBaseFilename=TurboDM-{#Version}-windows-{#Arch}-setup
 Compression=lzma2/max
 SolidCompression=yes
-; TurboDM's GTK runtime leaves gdbus.exe running from {app}: close it rather than abort
+; versions with the GTK runtime left gdbus.exe running from {app}: close it rather than abort
 CloseApplications=force
 #if Arch == "x64"
 ArchitecturesAllowed=x64compatible
@@ -53,6 +53,13 @@ WelcomeLabel2=TurboDM {#Version} will be installed on this computer.%n%nDownload
 FinishedHeadingLabel=TurboDM is ready
 FinishedLabel=TurboDM is installed. When it opens, it helps you add its extension to your browser, to catch your downloads.
 ClickFinish=
+
+[InstallDelete]
+; TurboDM before 1.6 shipped the GTK runtime: now it's one turbodm.exe using Windows' own controls
+Type: filesandordirs; Name: "{app}\lib"
+Type: filesandordirs; Name: "{app}\share"
+Type: files; Name: "{app}\bin\*.dll"
+Type: files; Name: "{app}\bin\gdbus.exe"
 
 [Files]
 Source: "..\..\dist\windows\TurboDM\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion

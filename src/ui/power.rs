@@ -5,40 +5,9 @@ use gtk::glib;
 use gtk::prelude::*;
 use std::cell::Cell;
 use std::rc::Rc;
+pub use turbodm::power::{Power, COUNTDOWN_SECONDS};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Power {
-    #[default]
-    Nothing = 0,
-    Sleep = 1,
-    Shutdown = 2,
-}
-
-impl Power {
-    pub fn from_index(i: u32) -> Self {
-        match i {
-            1 => Power::Sleep,
-            2 => Power::Shutdown,
-            _ => Power::Nothing,
-        }
-    }
-
-    fn run(self) {
-        // logind lets the active local session do this without a password
-        #[cfg(not(windows))]
-        let command = ("systemctl", vec![if self == Power::Sleep { "suspend" } else { "poweroff" }]);
-        #[cfg(windows)]
-        let command = match self {
-            Power::Sleep => ("rundll32.exe", vec!["powrprof.dll,SetSuspendState", "0,1,0"]),
-            _ => ("shutdown.exe", vec!["/s", "/t", "0"]),
-        };
-        if let Err(err) = std::process::Command::new(command.0).args(&command.1).spawn() {
-            eprintln!("turbodm: {}: {err}", command.0);
-        }
-    }
-}
-
-const SECONDS: u32 = 30;
+const SECONDS: u32 = COUNTDOWN_SECONDS;
 
 pub fn countdown(ctx: &Rc<Ctx>, power: Power, filename: &str) {
     if power == Power::Nothing {

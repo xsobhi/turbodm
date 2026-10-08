@@ -11,12 +11,7 @@ use turbodm::categories::icon_for;
 use turbodm::engine::{Snapshot, Status};
 use turbodm::util::human_size;
 
-/// Chosen in the progress window's "Options on completion" tab.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct OnDone {
-    pub open_file: bool,
-    pub power: Power,
-}
+pub use turbodm::power::OnDone;
 
 pub fn on_status(ctx: &Rc<Ctx>, snap: Snapshot) {
     match snap.status {

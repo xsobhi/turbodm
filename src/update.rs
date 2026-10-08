@@ -83,6 +83,30 @@ pub async fn download(client: &reqwest::Client, url: &str, dest: &Path) -> Resul
     std::fs::write(dest, &bytes).map_err(|e| format!("Cannot save the update: {e}"))
 }
 
+/// Installed from the .deb, which added the apt repository: updates come with the system's.
+pub fn updated_by_apt() -> bool {
+    cfg!(target_os = "linux") && std::env::current_exe().is_ok_and(|p| p.starts_with("/usr"))
+        && Path::new("/etc/apt/sources.list.d/turbodm.sources").exists()
+}
+
+/// Installed by our Windows installer (not the portable zip): it can install over itself.
+pub fn installed_by_setup() -> bool {
+    cfg!(windows) && std::env::current_exe().ok().and_then(|p| Some(p.parent()?.parent()?.join("unins000.exe")))
+        .is_some_and(|p| p.exists())
+}
+
+/// Run the downloaded installer, quietly: it asks for admin rights (`start` goes through the
+/// shell, which shows the prompt), replaces this version and opens the new one.
+pub fn run_installer(setup: &Path) -> std::io::Result<()> {
+    let mut command = std::process::Command::new("cmd");
+    let log = std::env::temp_dir().join("TurboDM-update.log"); // to find out why, if it fails
+    command.args(["/C", "start", ""]).arg(setup).args(["/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
+        .arg(format!("/LOG={}", log.display()));
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut command, 0x0800_0000); // no console
+    command.spawn().map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,3 @@
+# Windows: one self-contained turbodm.exe (the C runtime built in, nothing else to install)
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

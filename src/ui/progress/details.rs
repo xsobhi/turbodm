@@ -3,8 +3,8 @@
 use super::segment_bar::SegmentBar;
 use gtk::prelude::*;
 use std::cell::RefCell;
-use turbodm::engine::segments::Segment;
-use turbodm::engine::{Snapshot, Status};
+use turbodm::engine::Snapshot;
+use turbodm::text::connection_info;
 use turbodm::util::human_size;
 
 /// Connection rows shown without scrolling; more scroll.
@@ -20,18 +20,6 @@ pub struct Details {
 
 fn cell(text: &str, xalign: f32, css: &[&str]) -> gtk::Label {
     gtk::Label::builder().label(text).xalign(xalign).css_classes(css.to_vec()).build()
-}
-
-fn info(seg: &Segment, status: Status) -> &'static str {
-    if seg.finished() {
-        "Complete"
-    } else if seg.active {
-        if status == Status::Connecting { "Connecting…" } else { "Receiving data…" }
-    } else if status.is_active() {
-        "Waiting for a free connection"
-    } else {
-        status.label()
-    }
 }
 
 impl Details {
@@ -75,7 +63,7 @@ impl Details {
             let seg = s.segments.get(i);
             let values = match seg {
                 Some(seg) => [(i + 1).to_string(), human_size(Some(seg.start)), human_size(Some(seg.done)),
-                              info(seg, s.status).to_string()],
+                              connection_info(seg, s.status).to_string()],
                 None => Default::default(),
             };
             for (label, value) in row.iter().zip(values) {
