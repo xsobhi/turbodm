@@ -108,20 +108,13 @@ fn name_column(selection: &gtk::MultiSelection, on_menu: &MenuHandler) -> gtk::C
     col
 }
 
-/// The file type's icon (a Fluent glyph with the Windows look).
-fn file_icon(list_item: &gtk::ListItem) -> gtk::Widget {
-    if !style::glyph_icons() {
-        let icon = gtk::Image::new();
-        bind(list_item, "icon", &icon, "icon-name");
-        return icon.upcast();
-    }
-    let label = style::glyph_label(' ', 16);
+/// The file type's icon (Windows 11's with the Windows look).
+fn file_icon(list_item: &gtk::ListItem) -> gtk::Image {
+    let icon = gtk::Image::new();
     list_item.property_expression("item").chain_property::<DownloadItem>("icon")
-        .chain_closure::<String>(glib::closure!(|_: Option<glib::Object>, icon: String| {
-            style::glyph(&icon).map(String::from).unwrap_or_default()
-        }))
-        .bind(&label, "label", gtk::Widget::NONE);
-    label.upcast()
+        .chain_closure::<String>(glib::closure!(|_: Option<glib::Object>, name: String| style::icon_name(&name)))
+        .bind(&icon, "icon-name", gtk::Widget::NONE);
+    icon
 }
 
 fn status_column(sorter: gtk::CustomSorter, selection: &gtk::MultiSelection, on_menu: &MenuHandler) -> gtk::ColumnViewColumn {

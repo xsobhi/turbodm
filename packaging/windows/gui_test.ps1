@@ -39,17 +39,11 @@ function Report($name) {
     [System.Drawing.Graphics]::FromImage($image).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
     $image.Save("$PWD\gui-$name.png")
 }
-# the icon fonts the Windows look uses (Windows 11; Windows 10)
-Get-ChildItem "$env:WINDIR\Fonts\SegoeIcons.ttf", "$env:WINDIR\Fonts\segmdl2.ttf" -ErrorAction SilentlyContinue |
-    ForEach-Object { Write-Host "icon font: $($_.Name)" }
 Remove-Item "$env:APPDATA\turbodm" -Recurse -ErrorAction SilentlyContinue # a first start
 $shell = New-Object -ComObject WScript.Shell
 $server = Start-Process python -ArgumentList "tools/slow_server.py", "8765", "209715200", "262144" -PassThru
-$env:TURBODM_DEBUG = "1"
 Start-Process $Exe
-Remove-Item Env:\TURBODM_DEBUG
 Start-Sleep 5
-Get-Content "$env:TEMP\turbodm-debug.txt" -ErrorAction SilentlyContinue
 Report "0-browsers" # first start: the "add to your browser" guide
 if ($shell.AppActivate("Add TurboDM to your browser")) { Start-Sleep 1; $shell.SendKeys("{ENTER}") }
 Report "1-main"

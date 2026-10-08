@@ -40,7 +40,7 @@ columnview.column-separators > listview > row > cell { border: none; }
   background-size: 3px 16px; background-position: 0 center; background-repeat: no-repeat;
 }
 .navigation-sidebar > row:selected:hover { background-color: alpha(@fl_text, 0.06); }
-.navigation-sidebar > row:selected label, .navigation-sidebar > row:selected .fluent-icon { color: @fl_text; }
+.navigation-sidebar > row:selected label, .navigation-sidebar > row:selected image { color: @fl_text; }
 .navigation-sidebar .numeric { color: @fl_text_secondary; }
 
 /* Menus and pop-ups */

@@ -47,12 +47,8 @@ pub fn toolbar(search: &gtk::SearchEntry) -> gtk::Box {
 }
 
 fn menu_button() -> gtk::MenuButton {
-    let button = gtk::MenuButton::builder().menu_model(&app_menu()).tooltip_text("Menu").build();
-    match style::glyph_icons() {
-        true => button.set_child(Some(&style::icon("open-menu-symbolic", 16))),
-        false => button.set_icon_name("open-menu-symbolic"),
-    }
-    button
+    gtk::MenuButton::builder().menu_model(&app_menu()).tooltip_text("Menu")
+        .icon_name(style::icon_name("open-menu-symbolic")).build()
 }
 
 /// GTK's title bar with the search and menu (not with the Windows look).

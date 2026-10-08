@@ -17,7 +17,6 @@ label:disabled { color: @fl_text_disabled; }
 .title-3 { font-size: 13.5pt; font-weight: 600; }
 .title-4 { font-size: 11pt; font-weight: 600; }
 .heading { font-weight: 600; }
-.fluent-icon { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-weight: normal; }
 
 separator { background: @fl_divider; min-width: 1px; min-height: 1px; }
 
