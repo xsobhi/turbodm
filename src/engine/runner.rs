@@ -82,6 +82,9 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
         let is_new = !part.exists();
         let file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(&part)
             .map_err(|e| format!("Cannot open the file: {e}"))?;
+        if is_new {
+            super::disk::make_sparse(&file);
+        }
         if let (true, Some(size)) = (is_new, info.size) {
             file.set_len(size).map_err(|e| format!("Cannot reserve disk space: {e}"))?;
         }
@@ -91,7 +94,7 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
     let settings = shared.settings();
     let count = if info.resumable { info.connections } else { 1 };
     let ctx = Arc::new(WorkerCtx {
-        file,
+        file: Arc::new(file),
         segments: segments.clone(),
         client: shared.client(),
         url: info.download_url.clone(),

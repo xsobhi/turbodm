@@ -1,5 +1,6 @@
 //! One download connection: fetch byte ranges and write them straight into the file.
 
+use super::disk::{Pending, BLOCK};
 use super::http::{self, FetchError, Headers};
 use super::limiter::RateLimiter;
 use super::segments::SegmentMap;
@@ -12,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 
 /// Everything the connections of one download share.
 pub struct WorkerCtx {
-    pub file: File,
+    pub file: Arc<File>,
     pub segments: Arc<SegmentMap>,
     pub client: reqwest::Client,
     pub url: String,
@@ -133,6 +134,22 @@ async fn backoff(ctx: &WorkerCtx, failures: u32, reason: String) -> Result<u32, 
 
 /// Copy the body into the file. Ok(true) when the segment is complete.
 async fn stream(ctx: &WorkerCtx, index: usize, resp: reqwest::Response) -> Result<bool, StreamError> {
+    let mut pending = Pending::new();
+    let result = receive(ctx, index, resp, &mut pending).await;
+    // what arrived is good data even when the connection broke or the download is paused
+    let written = pending.flush(&ctx.file).await.map_err(StreamError::Write)?;
+    ctx.segments.commit(index, written);
+    let complete = result?;
+    if complete && ctx.segments.get(index).end.is_none() {
+        ctx.segments.mark_eof(index); // unknown size: stream end = file end
+    }
+    Ok(complete || ctx.segments.get(index).finished())
+}
+
+/// Read the body into `pending`, writing it out a block at a time. Ok(true) when everything
+/// for this segment arrived (or, for an unknown size, the stream ended).
+async fn receive(ctx: &WorkerCtx, index: usize, resp: reqwest::Response, pending: &mut Pending)
+                 -> Result<bool, StreamError> {
     let mut body = resp.bytes_stream();
     loop {
         let chunk = tokio::select! {
@@ -140,46 +157,23 @@ async fn stream(ctx: &WorkerCtx, index: usize, resp: reqwest::Response) -> Resul
             _ = ctx.cancel.cancelled() => return Ok(false),
         };
         let bytes = match chunk {
-            None => {
-                if ctx.segments.get(index).end.is_none() {
-                    ctx.segments.mark_eof(index); // unknown size: stream end = file end
-                    return Ok(true);
-                }
-                return Ok(ctx.segments.get(index).finished());
-            }
+            None => return Ok(ctx.segments.get(index).end.is_none() || ctx.segments.get(index).received()),
             Some(Err(err)) => return Err(StreamError::Network(FetchError::from(err).to_string())),
             Some(Ok(bytes)) => bytes,
         };
-        let (allowed, offset) = ctx.segments.reserve(index, bytes.len());
+        let (allowed, offset) = ctx.segments.receive(index, bytes.len());
         if allowed > 0 {
-            write_all_at(&ctx.file, &bytes[..allowed], offset)
-                .map_err(|e| StreamError::Write(format!("Cannot write the file: {e}")))?;
-            ctx.segments.commit(index, allowed);
+            pending.push(offset, &bytes[..allowed]);
+            if pending.len() >= BLOCK {
+                let written = pending.flush(&ctx.file).await.map_err(StreamError::Write)?;
+                ctx.segments.commit(index, written);
+            }
             for limiter in &ctx.limiters {
                 limiter.consume(allowed).await;
             }
         }
-        if allowed < bytes.len() || ctx.segments.get(index).finished() {
+        if allowed < bytes.len() || ctx.segments.get(index).received() {
             return Ok(true); // reached our (possibly shortened) end
         }
     }
-}
-
-/// Write `buf` at `offset` without moving a shared cursor: every connection writes into the
-/// same open file.
-#[cfg(unix)]
-fn write_all_at(file: &File, buf: &[u8], offset: u64) -> std::io::Result<()> {
-    std::os::unix::fs::FileExt::write_all_at(file, buf, offset)
-}
-
-#[cfg(windows)]
-fn write_all_at(file: &File, mut buf: &[u8], mut offset: u64) -> std::io::Result<()> {
-    use std::os::windows::fs::FileExt;
-    while !buf.is_empty() {
-        match file.seek_write(buf, offset)? {
-            0 => return Err(std::io::ErrorKind::WriteZero.into()),
-            n => (buf, offset) = (&buf[n..], offset + n as u64),
-        }
-    }
-    Ok(())
 }

@@ -4,6 +4,7 @@ pub mod http;
 pub mod limiter;
 pub mod manager;
 mod runner;
+mod disk;
 pub mod segments;
 pub mod state;
 pub mod task;

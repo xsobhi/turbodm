@@ -13,18 +13,27 @@ pub struct Segment {
     pub end: Option<u64>, // one past the last byte (exclusive); None while size unknown
     pub done: u64,        // bytes written, counted from start
     #[serde(skip)]
+    pub ahead: u64,       // received after those, not written yet (disk::Pending)
+    #[serde(skip)]
     pub active: bool,
 }
 
 impl Segment {
     fn new(start: u64, end: Option<u64>) -> Self {
-        Segment { start, end, done: 0, active: false }
+        Segment { start, end, done: 0, ahead: 0, active: false }
     }
     pub fn pos(&self) -> u64 {
         self.start + self.done
     }
     pub fn remaining(&self) -> Option<u64> {
         self.end.map(|end| end.saturating_sub(self.pos()))
+    }
+    /// Not even received yet: what a split can take over.
+    fn unreceived(&self) -> Option<u64> {
+        self.end.map(|end| end.saturating_sub(self.pos() + self.ahead))
+    }
+    pub fn received(&self) -> bool {
+        self.unreceived() == Some(0)
     }
     pub fn finished(&self) -> bool {
         self.remaining() == Some(0)
@@ -62,7 +71,7 @@ impl SegmentMap {
     }
 
     pub fn from_segments(segs: Vec<Segment>, min_split: u64) -> Self {
-        let segs = segs.into_iter().map(|s| Segment { active: false, ..s }).collect();
+        let segs = segs.into_iter().map(|s| Segment { active: false, ahead: 0, ..s }).collect();
         SegmentMap { segs: Mutex::new(segs), min_split: Mutex::new(min_split), speed_floor: AtomicU64::new(0) }
     }
 
@@ -87,12 +96,12 @@ impl SegmentMap {
             .iter()
             .enumerate()
             .filter(|(_, s)| s.active)
-            .filter_map(|(i, s)| s.remaining().map(|r| (i, r)))
+            .filter_map(|(i, s)| s.unreceived().map(|r| (i, r)))
             .max_by_key(|&(_, r)| r)?;
         if remaining < 2 * min_split {
             return None;
         }
-        let middle = segs[best].pos() + remaining / 2;
+        let middle = segs[best].pos() + segs[best].ahead + remaining / 2;
         let end = segs[best].end;
         segs[best].end = Some(middle);
         segs.push(Segment { active: true, ..Segment::new(middle, end) });
@@ -100,27 +109,36 @@ impl SegmentMap {
     }
 
     pub fn release(&self, i: usize) {
-        self.segs.lock().unwrap()[i].active = false;
+        let mut segs = self.segs.lock().unwrap();
+        segs[i].active = false;
+        segs[i].ahead = 0; // written, or dropped with a failed write
     }
 
     pub fn get(&self, i: usize) -> Segment {
         self.segs.lock().unwrap()[i]
     }
 
-    /// How many of `n` bytes may be written for segment i, and at which offset.
-    pub fn reserve(&self, i: usize, n: usize) -> (usize, u64) {
-        let seg = self.segs.lock().unwrap()[i];
-        let allowed = seg.remaining().map_or(n as u64, |r| r.min(n as u64));
-        (allowed as usize, seg.pos())
+    /// `n` bytes arrived for segment i: how many of them belong to it (a split may have
+    /// shortened it), and their offset in the file.
+    pub fn receive(&self, i: usize, n: usize) -> (usize, u64) {
+        let seg = &mut self.segs.lock().unwrap()[i];
+        let allowed = seg.unreceived().map_or(n as u64, |r| r.min(n as u64));
+        let offset = seg.pos() + seg.ahead;
+        seg.ahead += allowed;
+        (allowed as usize, offset)
     }
 
+    /// `n` received bytes are on disk now.
     pub fn commit(&self, i: usize, n: usize) {
-        self.segs.lock().unwrap()[i].done += n as u64;
+        let seg = &mut self.segs.lock().unwrap()[i];
+        seg.done += n as u64;
+        seg.ahead = seg.ahead.saturating_sub(n as u64);
     }
 
     /// Throw away progress (a non-resumable stream broke and must start over).
     pub fn restart(&self, i: usize) {
-        self.segs.lock().unwrap()[i].done = 0;
+        let seg = &mut self.segs.lock().unwrap()[i];
+        (seg.done, seg.ahead) = (0, 0);
     }
 
     /// An unknown-size stream ended normally: its position is the end of the file.
@@ -150,51 +168,4 @@ impl SegmentMap {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    const MB: u64 = 1 << 20;
-
-    #[test]
-    fn splits_initially_and_dynamically() {
-        let map = SegmentMap::create(Some(100 * MB), 32, MB);
-        assert_eq!(map.snapshot().len(), 32);
-        assert_eq!(map.snapshot().last().unwrap().end, Some(100 * MB));
-        assert_eq!(SegmentMap::create(Some(3 * MB), 32, MB).snapshot().len(), 3);
-
-        let map = SegmentMap::create(Some(10 * MB), 2, MB);
-        let (a, b) = (map.claim().unwrap(), map.claim().unwrap());
-        map.commit(a, (5 * MB) as usize);
-        map.release(a);
-        let stolen = map.claim().unwrap();
-        assert_eq!(map.get(stolen).start, 5 * MB + (5 * MB) / 2);
-        assert_eq!(map.get(b).end.unwrap(), map.get(stolen).start);
-        assert_eq!(map.reserve(b, usize::MAX).0 as u64, (5 * MB) / 2);
-    }
-
-    #[test]
-    fn empty_unknown_stream_finishes() {
-        let map = SegmentMap::create(None, 1, MB);
-        let i = map.claim().unwrap();
-        map.mark_eof(i);
-        map.release(i);
-        assert!(map.all_finished());
-        assert_eq!(map.total_done(), 0);
-    }
-
-    #[test]
-    fn no_split_when_the_rest_is_quick_at_this_speed() {
-        let map = SegmentMap::create(Some(40 * MB), 1, MB);
-        map.claim();
-        map.set_speed((10 * MB) as f64); // 10 MB/s per connection: 40 MB left is worth a split
-        assert!(map.claim().is_some());
-        map.set_speed((50 * MB) as f64); // 50 MB/s: halves of ~20 MB are done in under 2 s
-        assert!(map.claim().is_none());
-    }
-
-    #[test]
-    fn no_split_below_twice_min() {
-        let map = SegmentMap::create(Some(2 * MB - 1), 1, MB);
-        map.claim();
-        assert!(map.claim().is_none());
-    }
-}
+mod tests;
