@@ -87,6 +87,7 @@ pub fn open(ctx: &Rc<Ctx>) {
     window.set_child(Some(&content));
     window.set_default_widget(Some(&done));
     window.present();
+    done.grab_focus(); // Enter closes it, rather than adding to the first browser
 }
 
 /// Start adding the extension to `browser`; returns what the user does next.

@@ -24,7 +24,7 @@ Remove-Item Env:\TURBODM_PRETEND_VERSION, Env:\TURBODM_TEST_INSTALLER -ErrorActi
 $shell = New-Object -ComObject WScript.Shell
 $deadline = (Get-Date).AddSeconds(30)
 while (-not $shell.AppActivate("TurboDM update")) {
-    if ((Get-Date) -gt $deadline) { throw "no update dialog" }
+    if ((Get-Date) -gt $deadline) { Shot "update-0-no-dialog.png"; throw "no update dialog" }
     Start-Sleep 1
 }
 Start-Sleep 1

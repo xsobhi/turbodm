@@ -57,7 +57,11 @@ fn have_icon_font() -> bool {
         layout.set_font_description(Some(&gtk::pango::FontDescription::from_string("Segoe Fluent Icons, Segoe MDL2 Assets 16")));
         let found = layout.unknown_glyphs_count() == 0;
         if std::env::var_os("TURBODM_DEBUG").is_some() {
-            eprintln!("turbodm: icon font {}", if found { "found" } else { "missing" });
+            let families: Vec<String> = layout.context().font_map().map(|m| m.list_families().iter()
+                .map(|f| f.name().to_string()).filter(|n| n.contains("Segoe")).collect()).unwrap_or_default();
+            let note = format!("icon font found: {found} (unknown glyphs {}); Segoe families: {families:?}\n",
+                               layout.unknown_glyphs_count());
+            let _ = std::fs::write(std::env::temp_dir().join("turbodm-debug.txt"), note);
         }
         found
     })
