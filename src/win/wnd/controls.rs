@@ -161,8 +161,14 @@ pub fn enable(hwnd: HWND, on: bool) {
 }
 
 pub fn set_visible(hwnd: HWND, on: bool) {
-    // SAFETY: plain call
-    unsafe { let _ = ShowWindow(hwnd, if on { SW_SHOW } else { SW_HIDE }); }
+    let show = if on { SW_SHOW } else { SW_HIDE };
+    // SAFETY: plain calls
+    unsafe {
+        let _ = ShowWindow(hwnd, show);
+        if let Some(arrows) = super::arrows_of(hwnd) {
+            let _ = ShowWindow(arrows, show);
+        }
+    }
 }
 
 /// 0.0–1.0 on a progress bar.

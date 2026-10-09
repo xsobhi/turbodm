@@ -47,6 +47,7 @@ Start-Sleep 5
 Report "0-browsers" # first start: the "add to your browser" guide
 if ($shell.AppActivate("Add TurboDM to your browser")) { Start-Sleep 1; $shell.SendKeys("{ENTER}") }
 Report "1-main"
+$null = $shell.AppActivate("TurboDM"); Start-Sleep 1
 $shell.SendKeys("^,")
 Report "2-preferences"
 $shell.SendKeys("{ESC}")

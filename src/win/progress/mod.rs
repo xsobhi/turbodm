@@ -14,7 +14,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 use turbodm::engine::Status;
 use windows::core::{HSTRING, PWSTR};
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{COLORREF, HWND, LRESULT};
+use windows::Win32::Graphics::Gdi::{GetSysColor, GetSysColorBrush, SetBkColor, COLOR_WINDOW, HDC};
 use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -124,6 +125,12 @@ pub fn open(app: &Rc<App>, id: &str) {
         }
         None
     });
+    // labels and check boxes sit on the tabs' page, which is white
+    window.hook(|msg, wparam, _| (msg == WM_CTLCOLORSTATIC).then(|| unsafe {
+        // SAFETY: the DC Windows passes for drawing the control
+        SetBkColor(HDC(wparam.0 as *mut _), COLORREF(GetSysColor(COLOR_WINDOW)));
+        LRESULT(GetSysColorBrush(COLOR_WINDOW).0 as isize)
+    }));
     let (a, i) = (Rc::downgrade(app), id.to_string());
     window.hook(move |msg, _, _| {
         if let (WM_DESTROY, Some(app)) = (msg, a.upgrade()) {

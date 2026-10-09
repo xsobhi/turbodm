@@ -16,7 +16,7 @@ use windows::Win32::UI::Controls::HIMAGELIST;
 use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_SMALLICON, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES};
 
 pub const COLUMNS: [(&str, i32, bool); 6] = [ // (title, width, right-aligned)
-    ("File name", 320, false), ("Size", 80, true), ("Status", 140, false), ("Time left", 80, true),
+    ("File name", 250, false), ("Size", 80, true), ("Status", 140, false), ("Time left", 80, true),
     ("Transfer rate", 95, true), ("Added", 125, false),
 ];
 
