@@ -4,21 +4,23 @@
 use std::collections::HashMap;
 use std::cell::RefCell;
 use turbodm::categories::extension;
-use turbodm::engine::Snapshot;
-use turbodm::text::status_text;
-use turbodm::util::{human_eta, human_size, human_speed};
+use turbodm::engine::{Snapshot, Status};
+use turbodm::text::{eta_text, rate_text, status_text};
+use turbodm::util::human_size;
 use windows::core::HSTRING;
 use windows::Win32::Foundation::{FILETIME, SYSTEMTIME};
-use windows::Win32::Globalization::{GetDateFormatEx, GetTimeFormatEx, DATE_SHORTDATE, TIME_NOSECONDS};
+use windows::core::w;
+use windows::Win32::Globalization::{GetDateFormatEx, GetTimeFormatEx, ENUM_DATE_FORMATS_FLAGS, TIME_NOSECONDS};
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
 use windows::Win32::System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime};
 use windows::Win32::UI::Controls::HIMAGELIST;
-use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_SMALLICON, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES};
+use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_FLAGS, SHGFI_SMALLICON, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES};
 
-pub const COLUMNS: [(&str, i32, bool); 6] = [ // (title, width, right-aligned)
-    ("File name", 250, false), ("Size", 80, true), ("Status", 140, false), ("Time left", 80, true),
-    ("Transfer rate", 95, true), ("Added", 125, false),
+/// (title, width) as on Linux; the name takes the room the others leave.
+pub const COLUMNS: [(&str, i32); 6] = [
+    ("File name", 320), ("Size", 90), ("Status", 170), ("Speed", 100), ("Time left", 80), ("Added", 130),
 ];
+pub const STATUS: i32 = 2; // the column drawn as a progress bar
 
 #[derive(Clone, PartialEq)]
 pub struct Row {
@@ -36,9 +38,9 @@ impl Row {
     pub fn new(s: &Snapshot) -> Self {
         Row {
             id: s.id.clone(),
-            cells: [s.filename.clone(), human_size(s.size), status_text(s), human_eta(s.eta),
-                    human_speed(s.speed), local_time(s.added)],
-            icon: file_icon(&s.filename),
+            cells: [s.filename.clone(), human_size(s.size), status_text(s), rate_text(s), eta_text(s),
+                    local_time(s.added)],
+            icon: file_icon(s),
             size: s.size.unwrap_or(0),
             added: s.added,
             progress: s.progress.unwrap_or(0.0),
@@ -51,8 +53,8 @@ impl Row {
         match column {
             1 => self.size.cmp(&other.size),
             2 => self.progress.total_cmp(&other.progress),
-            3 => self.eta.total_cmp(&other.eta),
-            4 => self.speed.cmp(&other.speed),
+            3 => self.speed.cmp(&other.speed),
+            4 => self.eta.total_cmp(&other.eta),
             5 => self.added.cmp(&other.added),
             _ => self.cells[0].to_lowercase().cmp(&other.cells[0].to_lowercase()),
         }
@@ -70,27 +72,35 @@ pub fn system_icons() -> HIMAGELIST {
     HIMAGELIST(list as isize)
 }
 
-/// The file type's icon in Windows' list (as Explorer shows it), by extension.
-fn file_icon(filename: &str) -> i32 {
+/// Kinds of files with an icon of their own (programs and installers show theirs, like IDM).
+const OWN_ICONS: [&str; 4] = ["exe", "msi", "ico", "lnk"];
+
+/// The file's icon in Windows' list, as Explorer shows it: a program's own once it's downloaded,
+/// otherwise its type's.
+fn file_icon(s: &Snapshot) -> i32 {
     thread_local! {
         static CACHE: RefCell<HashMap<String, i32>> = RefCell::default();
     }
-    let ext = format!(".{}", extension(filename));
-    CACHE.with(|cache| {
-        *cache.borrow_mut().entry(ext.clone()).or_insert_with(|| {
-            let mut info = SHFILEINFOW::default();
-            // SAFETY: looks up an icon by extension only (the file needn't exist)
-            unsafe {
-                SHGetFileInfoW(&HSTRING::from(ext.as_str()), FILE_ATTRIBUTE_NORMAL, Some(&mut info),
-                               std::mem::size_of::<SHFILEINFOW>() as u32,
-                               SHGFI_USEFILEATTRIBUTES | SHGFI_SYSICONINDEX | SHGFI_SMALLICON);
-            }
-            info.iIcon
-        })
-    })
+    let ext = extension(&s.filename);
+    let own = s.status == Status::Completed && OWN_ICONS.contains(&ext.as_str());
+    let key = if own { s.path.display().to_string() } else { format!(".{ext}") };
+    if let Some(icon) = CACHE.with(|cache| cache.borrow().get(&key).copied()) {
+        return icon;
+    }
+    let by_type = if own && s.path.exists() { SHGFI_FLAGS(0) } else { SHGFI_USEFILEATTRIBUTES };
+    let ask = if by_type == SHGFI_USEFILEATTRIBUTES { format!(".{ext}") } else { key.clone() };
+    let mut info = SHFILEINFOW::default();
+    // SAFETY: looks up an icon into our struct: from the file itself, or by its extension only
+    // (the file needn't exist)
+    unsafe {
+        SHGetFileInfoW(&HSTRING::from(ask.as_str()), FILE_ATTRIBUTE_NORMAL, Some(&mut info),
+                       std::mem::size_of::<SHFILEINFOW>() as u32, by_type | SHGFI_SYSICONINDEX | SHGFI_SMALLICON);
+    }
+    CACHE.with(|cache| cache.borrow_mut().insert(key, info.iIcon));
+    info.iIcon
 }
 
-/// A Unix time as the user's short date and time ("08/10/2026 15:42", or as set in Windows).
+/// A Unix time as a short date, as on Linux, and the time as the user has it ("Oct 8, 15:42").
 pub fn local_time(secs: u64) -> String {
     let ticks = (secs + 11_644_473_600) * 10_000_000; // since 1601, in 100 ns
     let file = FILETIME { dwLowDateTime: ticks as u32, dwHighDateTime: (ticks >> 32) as u32 };
@@ -102,9 +112,9 @@ pub fn local_time(secs: u64) -> String {
             || SystemTimeToTzSpecificLocalTime(None, &utc, &mut local).is_err() {
             return String::new();
         }
-        let d = GetDateFormatEx(None, DATE_SHORTDATE, Some(&local), None, Some(&mut date), None);
+        let d = GetDateFormatEx(None, ENUM_DATE_FORMATS_FLAGS(0), Some(&local), w!("MMM d"), Some(&mut date), None);
         let t = GetTimeFormatEx(None, TIME_NOSECONDS, Some(&local), None, Some(&mut time));
-        format!("{} {}", String::from_utf16_lossy(&date[..(d.max(1) - 1) as usize]),
+        format!("{}, {}", String::from_utf16_lossy(&date[..(d.max(1) - 1) as usize]),
                 String::from_utf16_lossy(&time[..(t.max(1) - 1) as usize]))
     }
 }

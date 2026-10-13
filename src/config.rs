@@ -20,12 +20,25 @@ fn home() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"))
 }
 
+/// `TURBODM_HOME=folder`: a TurboDM of its own (tests, trying a build beside the installed one),
+/// with its settings and download list in that folder and its own running instance, leaving
+/// the browsers connected to the installed one.
+pub fn sandbox() -> Option<PathBuf> {
+    std::env::var_os("TURBODM_HOME").filter(|home| !home.is_empty()).map(PathBuf::from)
+}
+
 pub fn config_dir() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(|| home().join(".config")).join("turbodm")
+    match sandbox() {
+        Some(home) => home.join("config"),
+        None => dirs::config_dir().unwrap_or_else(|| home().join(".config")).join("turbodm"),
+    }
 }
 
 pub fn data_dir() -> PathBuf {
-    dirs::data_dir().unwrap_or_else(|| home().join(".local/share")).join("turbodm")
+    match sandbox() {
+        Some(home) => home.join("data"),
+        None => dirs::data_dir().unwrap_or_else(|| home().join(".local/share")).join("turbodm"),
+    }
 }
 
 pub fn downloads_file() -> PathBuf {
@@ -35,11 +48,15 @@ pub fn downloads_file() -> PathBuf {
 /// Where the running app listens: a user-only Unix socket, or a named pipe on Windows.
 #[cfg(windows)]
 pub fn socket_path() -> PathBuf {
-    PathBuf::from(format!(r"\\.\pipe\turbodm-{}", user_name()))
+    let sandboxed = if sandbox().is_some() { "-sandbox" } else { "" };
+    PathBuf::from(format!(r"\\.\pipe\turbodm-{}{sandboxed}", user_name()))
 }
 
 #[cfg(unix)]
 pub fn socket_path() -> PathBuf {
+    if let Some(home) = sandbox() {
+        return home.join("ipc.sock");
+    }
     match dirs::runtime_dir() {
         Some(dir) => dir.join("turbodm").join("ipc.sock"),
         None => PathBuf::from(format!("/tmp/turbodm-{}/ipc.sock", user_name())),

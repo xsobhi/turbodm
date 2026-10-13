@@ -60,6 +60,9 @@ mod platform {
     }
 
     pub fn register() -> std::io::Result<()> {
+        if crate::config::sandbox().is_some() {
+            return Ok(()); // a sandboxed TurboDM leaves the browsers to the installed one
+        }
         let program = program()?;
         for (dir, firefox) in targets() {
             write_if_changed(&dir.join(format!("{NATIVE_HOST}.json")), &manifest(&program, firefox))?;
@@ -148,6 +151,9 @@ mod platform {
     }
 
     pub fn register() -> std::io::Result<()> {
+        if crate::config::sandbox().is_some() {
+            return Ok(()); // a sandboxed TurboDM leaves the browsers to the installed one
+        }
         if installed_for_everyone() {
             remove(&user()); // the installer's registration covers everyone: nothing per user
             return Ok(());

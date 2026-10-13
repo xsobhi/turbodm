@@ -1,5 +1,6 @@
 //! The progress window's "Speed limiter" and "Options on completion" tabs.
 
+use super::super::theme;
 use super::super::wnd::{enable, place, text, Window, FIELD, LINE};
 use super::super::App;
 use std::rc::Rc;
@@ -28,11 +29,12 @@ pub fn speed_limiter(window: &Window, app: &Rc<App>, snap: &Snapshot, x: i32, y:
     let unit = window.label("KiB/s");
     let note = window.note("Applies to this download only, right away. The limit for all downloads \
                             together is in Preferences.");
-    place(enabled, x, y, 300, LINE + 4);
-    place(label, x, y + 36, 150, LINE);
-    place(field, x + 155, y + 32, 100, FIELD);
-    place(unit, x + 262, y + 36, 60, LINE);
-    place(note, x, y + 72, 460, 36);
+    window.set_text_color(note, theme::DIM);
+    place(enabled, x, y, 300, LINE + 6);
+    place(label, x, y + 46, 170, LINE);
+    place(field, x + 175, y + 40, 130, FIELD);
+    place(unit, x + 315, y + 46, 60, LINE);
+    place(note, x, y + 88, 560, 40);
     vec![enabled, label, field, unit, note]
 }
 
@@ -59,10 +61,11 @@ pub fn on_completion(window: &Window, app: &Rc<App>, id: &str, x: i32, y: i32) -
         store(&|t| t.power = Power::from_index(i as u32));
     });
     let note = window.note("Sleep and shut down wait 30 seconds first, so you can still cancel.");
-    place(dialog, x, y, 400, LINE + 4);
-    place(open, x, y + 26, 400, LINE + 4);
-    place(label, x, y + 62, 190, LINE);
-    place(power, x + 195, y + 58, 140, 200);
-    place(note, x, y + 96, 460, 36);
+    window.set_text_color(note, theme::DIM);
+    place(dialog, x, y, 400, LINE + 6);
+    place(open, x, y + 30, 400, LINE + 6);
+    place(label, x, y + 78, 210, LINE);
+    place(power, x + 215, y + 72, 160, FIELD);
+    place(note, x, y + 118, 560, 40);
     vec![dialog, open, label, power, note]
 }

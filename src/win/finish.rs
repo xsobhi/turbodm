@@ -1,7 +1,14 @@
 //! When a download finishes or fails: IDM's "Download complete" dialog, the download's
 //! "on completion" options, or a notification for downloads nobody was watching.
 
-use super::wnd::{self, is_checked, Rows, Window, LINE};
+use super::theme;
+use super::wnd::{self, is_checked, place, Rows, Window, LINE};
+use std::path::Path;
+use windows::core::{Interface, HSTRING};
+use windows::Win32::Foundation::HWND;
+use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
+use windows::Win32::UI::Controls::{IImageList, ImageList_Draw, HIMAGELIST, ILD_TRANSPARENT};
+use windows::Win32::UI::Shell::{SHGetFileInfoW, SHGetImageList, SHFILEINFOW, SHGFI_SYSICONINDEX, SHIL_EXTRALARGE};
 use super::{power, progress, shell, tray, App};
 use std::rc::Rc;
 use turbodm::engine::{Snapshot, Status};
@@ -42,13 +49,20 @@ fn completed(app: &Rc<App>, snap: Snapshot) {
     }
 }
 
+/// The file icon's size (Windows' "extra large" icons, 96-DPI pixels).
+const ICON: i32 = 48;
+
 fn complete_dialog(app: &Rc<App>, snap: &Snapshot) {
-    let window = Window::new("Download complete", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, WINDOW_EX_STYLE(0), None, (520, 200));
+    let window = Window::new("Download complete", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, WINDOW_EX_STYLE(0), None, (560, 240));
+    let icon = file_icon(&window, &snap.path);
     let heading = window.heading("Download complete");
     let name = window.label(&snap.filename);
     let fields = [("Address", snap.url.clone()), ("File size", human_size(snap.size)),
                   ("Saved to", snap.path.display().to_string())]
-        .map(|(label, value)| (window.label(label), window.label(&value)));
+        .map(|(label, value)| (window.name(label), window.label(&value)));
+    for (label, _) in &fields {
+        window.set_text_color(*label, theme::DIM);
+    }
     let again = window.checkbox("Don't show this dialog again", false, |_| {});
     let (path, w) = (snap.path.clone(), window.clone());
     let open = window.default_button("Open", move || { shell::open(&path); w.close(); });
@@ -70,18 +84,37 @@ fn complete_dialog(app: &Rc<App>, snap: &Snapshot) {
         true
     });
 
-    let mut rows = Rows::new(16, 14, 80, 488);
-    rows.full(heading, 24);
-    rows.full(name, LINE);
-    rows.gap(6);
+    // as on Linux: the file's icon beside the heading and name, then the details
+    place(icon, 18, 18, ICON, ICON);
+    place(heading, 18 + ICON + 14, 18, 560 - 36 - ICON - 14, 28);
+    place(name, 18 + ICON + 14, 48, 560 - 36 - ICON - 14, LINE);
+    let mut rows = Rows::new(18, 18 + ICON + 16, 84, 524);
     for (label, value) in fields {
         rows.field(Some(label), value, LINE);
     }
-    rows.gap(4);
-    rows.full(again, LINE + 4);
-    rows.gap(6);
+    rows.gap(2);
+    rows.full(again, LINE + 6);
+    rows.gap(8);
     let bottom = rows.buttons(&[open, with, folder, close]);
-    wnd::set_client_height(window.hwnd(), bottom + 14);
+    wnd::set_client_height(window.hwnd(), bottom + 18);
     wnd::center(window.hwnd());
     window.show();
+}
+
+/// The file's icon, big, as Explorer shows it (the program's own, for a program).
+fn file_icon(window: &Window, path: &Path) -> HWND {
+    let mut info = SHFILEINFOW::default();
+    // SAFETY: queries into our struct; the image list is Windows' own, kept by the canvas
+    let list = unsafe {
+        SHGetFileInfoW(&HSTRING::from(path.as_os_str()), FILE_ATTRIBUTE_NORMAL, Some(&mut info),
+                       std::mem::size_of::<SHFILEINFOW>() as u32, SHGFI_SYSICONINDEX);
+        SHGetImageList::<IImageList>(SHIL_EXTRALARGE as i32).ok()
+    };
+    window.canvas(move |p| {
+        p.fill(p.rect, theme::CHROME);
+        if let Some(list) = &list {
+            // SAFETY: drawing an icon of the list into our canvas
+            unsafe { let _ = ImageList_Draw(HIMAGELIST(list.as_raw() as isize), info.iIcon, p.dc, 0, 0, ILD_TRANSPARENT); }
+        }
+    })
 }

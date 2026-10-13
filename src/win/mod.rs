@@ -14,6 +14,7 @@ mod power;
 mod progress;
 mod settings;
 mod shell;
+mod theme;
 mod tray;
 mod update;
 mod wnd;

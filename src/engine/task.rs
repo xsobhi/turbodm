@@ -140,6 +140,7 @@ impl Task {
         self.info.lock().unwrap().status = status;
     }
 
+    /// Bytes received so far (what progress, speed and time left go by).
     pub fn downloaded(&self) -> u64 {
         let info = self.info.lock().unwrap();
         if info.status == Status::Completed
@@ -147,7 +148,7 @@ impl Task {
                 return size;
             }
         drop(info);
-        self.segments.lock().unwrap().as_ref().map_or(0, |s| s.total_done())
+        self.segments.lock().unwrap().as_ref().map_or(0, |s| s.total_received())
     }
 
     pub fn speed(&self) -> f64 {

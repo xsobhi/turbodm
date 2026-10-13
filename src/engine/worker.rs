@@ -100,14 +100,22 @@ async fn fetch(ctx: &WorkerCtx, index: usize) -> Result<Flow, String> {
                                     (use Refresh address)"));
             }
             Err(FetchError::Http(429 | 503, _)) if ctx.try_retire() => return Ok(Flow::Retire),
-            Err(FetchError::Network(_)) if failures >= 1 && ctx.try_retire() => return Ok(Flow::Retire),
+            // refused again while the others get data: the server limits connections per IP. (Not
+            // when nothing gets through: that's the network, and every connection waits it out.)
+            Err(FetchError::Network(_)) if failures >= 1 && ctx.segments.others_flowing(index) && ctx.try_retire() => {
+                return Ok(Flow::Retire)
+            }
             Err(err) => {
                 failures = backoff(ctx, failures, err.to_string()).await?;
                 continue;
             }
         };
+        let before = ctx.segments.get(index).done;
         let streamed = stream(ctx, index, resp).await;
         debug!("seg {index} stream end: {}", match &streamed { Ok(done) => format!("complete={done}"), Err(StreamError::Network(m) | StreamError::Write(m)) => m.clone() });
+        if ctx.segments.get(index).done > before {
+            failures = 0; // it got somewhere: a long download's occasional drop starts the count afresh
+        }
         match streamed {
             Ok(true) => failures = 0,
             Ok(false) if ctx.cancel.is_cancelled() => return Ok(Flow::Continue),

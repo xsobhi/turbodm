@@ -2063,6 +2063,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "windows",
+ "windows-numerics",
  "winreg",
  "winresource",
 ]
