@@ -4,7 +4,8 @@
 
 mod link;
 
-use super::wnd::{self, is_checked, place, set_text, text, Rows, Window, FIELD, LINE};
+use super::theme;
+use super::wnd::{self, is_checked, set_text, text, Rows, Window, FIELD, LINE};
 use super::{progress, shell, App};
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -67,7 +68,7 @@ pub fn open(app: &Rc<App>, req: AddRequest) {
     let settings = app.manager.settings();
     let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
     let owner = app.main.is_visible().then(|| app.main.window.hwnd());
-    let window = Window::new("Download File Info", style, WINDOW_EX_STYLE(0), owner, (560, 250));
+    let window = Window::new("Download file info", style, WINDOW_EX_STYLE(0), owner, (620, 300));
     let guess = req.filename.clone().unwrap_or_else(|| filename_from_url(&req.url));
     let form = Rc::new(Form {
         window: window.clone(),
@@ -90,11 +91,9 @@ pub fn open(app: &Rc<App>, req: AddRequest) {
         f.name_edited.set(unsafe { GetFocus() } == f.name.get());
         f.update_remember();
     }));
-    let folder = window.control(windows::Win32::UI::Controls::WC_EDITW, "", WINDOW_STYLE(0x0800 | 0x0080), // ES_READONLY | ES_AUTOHSCROLL
-                                WS_EX_CLIENTEDGE).0;
-    form.folder.set(folder);
+    // the folder is a button showing it, as on Linux: click it to choose another
     let f = Rc::downgrade(&form);
-    let browse = window.button("...", move || {
+    let folder = window.button("", move || {
         let Some(f) = f.upgrade() else { return };
         if let Some(dir) = shell::choose_folder(f.window.hwnd(), "Save to folder", &f.dir.borrow().clone()) {
             *f.dir.borrow_mut() = dir;
@@ -102,14 +101,16 @@ pub fn open(app: &Rc<App>, req: AddRequest) {
             f.show_folder();
         }
     });
+    form.folder.set(folder);
     form.remember.set(window.checkbox("", false, |_| {}));
     form.connections.set(window.spin(1, MAX_CONNECTIONS as i32, settings.connections as i32, |_| {}));
     form.info.set(window.label("Enter a link"));
-    let labels = ["URL", "Save as", "Folder", "Connections"].map(|l| window.label(l));
+    window.set_text_color(form.info.get(), theme::DIM);
+    let labels = ["Address", "Save as", "Folder", "Connections"].map(|l| window.name(l));
     let (a, f) = (app.clone(), form.clone());
-    let start = window.default_button("Start Download", move || submit(&a, &f, true));
+    let start = window.default_button("Start download", move || submit(&a, &f, true));
     let (a, f) = (app.clone(), form.clone());
-    let later = window.button("Download Later", move || submit(&a, &f, false));
+    let later = window.button("Download later", move || submit(&a, &f, false));
     let w = window.clone();
     let cancel = window.button("Cancel", move || w.close());
     // Escape and the close button cancel too: delete what was downloaded early
@@ -123,19 +124,17 @@ pub fn open(app: &Rc<App>, req: AddRequest) {
     let w = window.clone();
     window.on_command(IDCANCEL.0 as u16, move |_| w.close());
 
-    let mut rows = Rows::new(14, 14, 90, 532);
+    // laid out as the Linux dialog: names on the right of their column, then the fields
+    let mut rows = Rows::new(18, 18, 100, 584);
     rows.field(Some(labels[0]), form.url.get(), FIELD);
     rows.field(Some(labels[1]), form.name.get(), FIELD);
-    place(labels[2], 14, rows.y + 4, 82, LINE);
-    place(folder, 104, rows.y, 400, FIELD);
-    place(browse, 510, rows.y, 36, FIELD);
-    rows.gap(FIELD + 6);
-    rows.field(None, form.remember.get(), LINE + 4);
-    rows.short(Some(labels[3]), form.connections.get(), 70);
+    rows.field(Some(labels[2]), folder, FIELD);
+    rows.field(None, form.remember.get(), LINE + 6);
+    rows.field(Some(labels[3]), form.connections.get(), FIELD);
     rows.field(None, form.info.get(), LINE);
     rows.gap(6);
-    let bottom = rows.buttons(&[start, later, cancel]);
-    wnd::set_client_height(window.hwnd(), bottom + 14);
+    let bottom = rows.buttons(&[cancel, later, start]);
+    wnd::set_client_height(window.hwnd(), bottom + 18);
     form.show_folder();
     form.update_remember();
     link::start_timer(&form, app);

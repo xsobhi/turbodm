@@ -8,7 +8,11 @@ use super::Shared;
 use crate::util::{part_path, sanitize_filename, unique_path};
 use std::fs::OpenOptions;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
+
+/// How often a connection that bowed out is tried again.
+const REGROW: Duration = Duration::from_secs(30);
 
 /// Drive a download until it completes, is paused, or fails.
 pub async fn run(task: Arc<Task>, shared: Arc<Shared>, cancel: CancellationToken) {
@@ -109,6 +113,8 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
     let mut workers = tokio::task::JoinSet::new();
     let mut spawned = 0;
     let mut want = count;
+    let mut regrow = tokio::time::interval(REGROW);
+    regrow.reset(); // the first try after a full period
     loop {
         while spawned < want {
             workers.spawn(connection_loop(ctx.clone()));
@@ -128,6 +134,16 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
                 if target > want && !cancel.is_cancelled() {
                     ctx.live.fetch_add(target - want, std::sync::atomic::Ordering::SeqCst);
                     want = target;
+                }
+            }
+            // connections that bowed out (refused by the server, or a bad moment of the network)
+            // get another go now and then, so a long download doesn't stay on fewer of them; one
+            // the server still refuses just bows out again
+            _ = regrow.tick(), if info.resumable => {
+                let live = ctx.live.load(std::sync::atomic::Ordering::SeqCst);
+                if live < want && !cancel.is_cancelled() && !segments.all_finished() {
+                    ctx.live.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    workers.spawn(connection_loop(ctx.clone()));
                 }
             }
         }

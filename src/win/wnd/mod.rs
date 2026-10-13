@@ -1,11 +1,19 @@
 //! Window plumbing: one window class whose procedure hands messages to Rust closures, and the
 //! child controls (Windows' own buttons, fields, lists…) placed in DPI-scaled pixels.
 
+mod buttons;
+pub mod canvas;
 mod class;
 mod controls;
+pub mod field;
+mod frame;
+mod labels;
 mod layout;
+pub mod look;
+pub mod tabs;
 
 pub use controls::*;
+pub use frame::edge;
 pub use layout::*;
 
 use std::cell::{Cell, RefCell};
@@ -13,7 +21,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use class::{register_class, CLASS};
 use windows::core::HSTRING;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::NMHDR;
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -31,6 +39,8 @@ pub struct Window {
     on_close: RefCell<Option<Rc<dyn Fn() -> bool>>>,   // false: stay open
     next_id: Cell<u16>,
     default_id: Cell<u16>, // the button Enter presses
+    surfaces: RefCell<Vec<(RECT, COLORREF)>>, // areas painted another colour (look.rs)
+    colors: RefCell<HashMap<isize, COLORREF>>, // labels' own text colours
 }
 
 pub const APP_ICON: u16 = 1; // the program's icon resource (build.rs)
@@ -52,7 +62,10 @@ impl Window {
             on_close: RefCell::default(),
             next_id: Cell::new(100),
             default_id: Cell::new(0),
+            surfaces: RefCell::default(),
+            colors: RefCell::default(),
         });
+        let style = style | WS_CLIPCHILDREN; // its painting never covers its controls
         let (width, height) = outer_size(px(size.0), px(size.1), style, ex);
         // SAFETY: the window keeps one reference (GWLP_USERDATA), released in WM_NCDESTROY
         unsafe {
@@ -133,11 +146,15 @@ impl Window {
         if let Some(result) = hooks.iter().find_map(|hook| hook(msg, wparam, lparam)) {
             return Some(result);
         }
-        match msg {
+        let handled = match msg {
             WM_COMMAND => {
+                let code = ((wparam.0 >> 16) & 0xffff) as u32;
+                if code == EN_SETFOCUS || code == EN_KILLFOCUS {
+                    field::redraw_frame(HWND(lparam.0 as *mut _)); // the focused field's frame
+                }
                 let f = self.commands.borrow().get(&((wparam.0 & 0xffff) as u16)).cloned();
                 f.map(|f| {
-                    f(((wparam.0 >> 16) & 0xffff) as u32);
+                    f(code);
                     LRESULT(0)
                 })
             }
@@ -158,11 +175,14 @@ impl Window {
                 Some(LRESULT(0))
             }
             _ => None,
-        }
+        };
+        handled.or_else(|| look::handle(self, msg, wparam, lparam))
     }
 
     /// Drop the handlers (they may hold the window itself).
     pub(super) fn forget(&self) {
+        field::forget(self.hwnd());
+        labels::forget(self.hwnd());
         self.commands.borrow_mut().clear();
         self.notifies.borrow_mut().clear();
         self.hooks.borrow_mut().clear();

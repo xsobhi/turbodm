@@ -3,7 +3,7 @@
 use crate::categories::{category_for, is_downloadable};
 use crate::engine::segments::Segment;
 use crate::engine::{Snapshot, Status};
-use crate::util::{filename_from_url, human_size};
+use crate::util::{filename_from_url, human_eta, human_size, human_speed};
 
 /// A download's status column: progress while it runs, why it stopped otherwise.
 pub fn status_text(snap: &Snapshot) -> String {
@@ -22,6 +22,23 @@ pub fn status_line(s: &Snapshot) -> String {
         (Status::Error, Some(e)) => format!("Error: {e}"),
         (Status::Downloading, _) => "Receiving data…".into(),
         (status, _) => status.label().into(),
+    }
+}
+
+/// The transfer rate. While downloading it always says something: "0 B/s" when nothing is
+/// arriving at the moment, instead of a blank that looks like the download is stuck.
+pub fn rate_text(s: &Snapshot) -> String {
+    match (s.status, human_speed(s.speed)) {
+        (Status::Downloading, speed) if speed.is_empty() => "0 B/s".into(),
+        (_, speed) => speed,
+    }
+}
+
+/// Time left; while downloading, "Unknown" until it can be worked out.
+pub fn eta_text(s: &Snapshot) -> String {
+    match (s.status, human_eta(s.eta)) {
+        (Status::Downloading, eta) if eta.is_empty() => "Unknown".into(),
+        (_, eta) => eta,
     }
 }
 

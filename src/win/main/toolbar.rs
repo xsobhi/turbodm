@@ -1,73 +1,125 @@
-//! The toolbar, like IDM's: big icons with their names under them.
+//! The toolbar, as on Linux (and like IDM's): 3D icons with their names under them, in groups.
 
-use super::super::wnd::{instance, px, send, Window};
+use super::super::theme::pictures::{self as pic, Picture};
+use super::super::theme::{self, Align, Font, Painter};
+use super::super::wnd::canvas::{self, Mouse};
+use super::super::wnd::{px, Window};
 use super::menu::Cmd;
-use crate::win::icons;
-use windows::core::{HSTRING, PCWSTR};
-use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::Controls::*;
-use windows::Win32::UI::WindowsAndMessaging::*;
+use std::cell::RefCell;
+use std::rc::Rc;
+use windows::Win32::Foundation::{HWND, RECT};
 
-/// (icon, command, name); `None` separates groups.
-const BUTTONS: [Option<(u16, Cmd, &str)>; 13] = [
-    Some((icons::ADD, Cmd::Add, "Add URL")), None,
-    Some((icons::RESUME, Cmd::Resume, "Resume")), Some((icons::PAUSE, Cmd::Pause, "Pause")),
-    Some((icons::RESUME_ALL, Cmd::ResumeAll, "Resume all")), Some((icons::PAUSE_ALL, Cmd::PauseAll, "Pause all")), None,
-    Some((icons::DELETE, Cmd::Remove, "Delete")), Some((icons::CLEAR, Cmd::ClearDone, "Clear done")), None,
-    Some((icons::FOLDER, Cmd::DownloadFolder, "Folder")), Some((icons::OPTIONS, Cmd::Settings, "Options")), None,
+/// (icon, command, name, tooltip); `None` separates groups.
+const BUTTONS: [Option<(Picture, Cmd, &str, &str)>; 12] = [
+    Some((pic::ADD, Cmd::Add, "Add URL", "Add a download (Ctrl+N)")),
+    None,
+    Some((pic::RESUME, Cmd::Resume, "Resume", "Resume selected (Ctrl+R)")),
+    Some((pic::PAUSE, Cmd::Pause, "Pause", "Pause selected (Ctrl+P)")),
+    Some((pic::RESUME_ALL, Cmd::ResumeAll, "Resume all", "Resume every unfinished download (F5)")),
+    Some((pic::PAUSE_ALL, Cmd::PauseAll, "Pause all", "Pause every download")),
+    None,
+    Some((pic::DELETE, Cmd::Remove, "Delete", "Remove selected from the list (Delete)")),
+    Some((pic::CLEAR, Cmd::ClearDone, "Clear done", "Remove completed downloads from the list")),
+    None,
+    Some((pic::FOLDER, Cmd::DownloadFolder, "Folder", "Open the download folder")),
+    Some((pic::OPTIONS, Cmd::Settings, "Options", "Preferences (Ctrl+,)")),
 ];
 
-pub const ICON: i32 = 32;
+/// Height of the toolbar; a button's width; the room a separator takes (96-DPI pixels).
+pub const HEIGHT: i32 = 60;
+const WIDTH: i32 = 76;
+const SEPARATOR: i32 = 11;
 
-pub fn create(window: &Window) -> HWND {
-    let style = WINDOW_STYLE(TBSTYLE_FLAT | TBSTYLE_TOOLTIPS) | WINDOW_STYLE(CCS_NODIVIDER as u32)
-        | WINDOW_STYLE(CCS_NORESIZE as u32) | WINDOW_STYLE(CCS_NOPARENTALIGN as u32);
-    let (bar, _) = window.control(TOOLBARCLASSNAMEW, "", style, WINDOW_EX_STYLE(0));
-    send(bar, TB_BUTTONSTRUCTSIZE, std::mem::size_of::<TBBUTTON>(), 0);
-    let size = px(ICON);
-    // SAFETY: an image list of our own icon resources, kept by the toolbar for its lifetime
-    let images = unsafe { ImageList_Create(size, size, ILC_COLOR32 | ILC_MASK, BUTTONS.len() as i32, 0) };
-    let mut buttons = Vec::new();
-    let mut names = Vec::new(); // kept alive until TB_ADDBUTTONS has copied them
-    for button in BUTTONS {
-        let Some((icon, cmd, name)) = button else {
-            buttons.push(TBBUTTON { fsStyle: BTNS_SEP as u8, ..Default::default() });
-            continue;
-        };
-        // SAFETY: loads an icon resource of this program at the toolbar's size
-        let index = unsafe {
-            let handle = LoadImageW(Some(instance()), PCWSTR(icon as usize as *const u16), IMAGE_ICON, size, size,
-                                    LR_DEFAULTCOLOR).unwrap_or_default();
-            ImageList_ReplaceIcon(images, -1, HICON(handle.0))
-        };
-        let name = HSTRING::from(name);
-        buttons.push(TBBUTTON {
-            iBitmap: index,
-            idCommand: cmd as i32,
-            fsState: TBSTATE_ENABLED as u8,
-            fsStyle: (BTNS_BUTTON | BTNS_AUTOSIZE) as u8,
-            iString: name.as_ptr() as isize,
-            ..Default::default()
-        });
-        names.push(name);
+#[derive(Default)]
+struct State {
+    hover: Option<usize>,
+    down: Option<usize>,
+    disabled: Vec<Cmd>,
+}
+
+pub struct Toolbar {
+    pub hwnd: HWND,
+    state: Rc<RefCell<State>>,
+}
+
+/// Where each button is (canvas pixels), by its index in BUTTONS; and separators' middles.
+fn areas() -> (Vec<(usize, RECT)>, Vec<i32>) {
+    let (mut buttons, mut separators, mut x) = (Vec::new(), Vec::new(), px(6));
+    for (i, button) in BUTTONS.iter().enumerate() {
+        if button.is_some() {
+            buttons.push((i, RECT { left: x, top: px(4), right: x + px(WIDTH), bottom: px(HEIGHT - 4) }));
+            x += px(WIDTH + 2);
+        } else {
+            separators.push(x + px(SEPARATOR) / 2 - 1);
+            x += px(SEPARATOR);
+        }
     }
-    send(bar, TB_SETIMAGELIST, 0, images.0 as isize);
-    send(bar, TB_SETBUTTONSIZE, 0, ((px(ICON + 36) as isize) << 16) | px(ICON + 44) as isize);
-    send(bar, TB_ADDBUTTONSW, buttons.len(), buttons.as_ptr() as isize);
-    send(bar, TB_SETMAXTEXTROWS, 1, 0);
-    send(bar, TB_AUTOSIZE, 0, 0);
-    bar
+    (buttons, separators)
 }
 
-/// The toolbar's height (screen pixels).
-pub fn height(bar: HWND) -> i32 {
-    let size = send(bar, TB_GETBUTTONSIZE, 0, 0);
-    ((size >> 16) & 0xffff) as i32 + px(6)
+impl Toolbar {
+    pub fn new(window: &Window) -> Self {
+        let state: Rc<RefCell<State>> = Rc::default();
+        let s = state.clone();
+        let hwnd = window.canvas(move |p| paint(p, &s.borrow()));
+        let s = state.clone();
+        canvas::on_mouse(hwnd, move |event| {
+            let at = |x: i32, y: i32| areas().0.into_iter()
+                .find(|(_, r)| x >= r.left && x < r.right && y >= r.top && y < r.bottom).map(|(i, _)| i);
+            let mut state = s.borrow_mut();
+            let before = (state.hover, state.down);
+            let mut clicked = None;
+            match event {
+                Mouse::Move(x, y) => state.hover = at(x, y),
+                Mouse::Leave => state.hover = None,
+                Mouse::Down(x, y) | Mouse::Double(x, y) => state.down = at(x, y),
+                Mouse::Up(x, y) => {
+                    clicked = state.down.take().filter(|&i| at(x, y) == Some(i));
+                }
+            }
+            if (state.hover, state.down) != before {
+                canvas::redraw(hwnd);
+            }
+            let cmd = clicked.and_then(|i| BUTTONS[i]).map(|(_, cmd, ..)| cmd).filter(|cmd| !state.disabled.contains(cmd));
+            drop(state);
+            if let Some(cmd) = cmd {
+                super::super::post(move |app| super::menu::run(app, cmd));
+            }
+        });
+        let tips: Vec<(RECT, String)> = areas().0.into_iter()
+            .filter_map(|(i, r)| BUTTONS[i].map(|(_, _, _, tip)| (r, tip.to_string()))).collect();
+        canvas::set_tips(hwnd, &tips);
+        Toolbar { hwnd, state }
+    }
+
+    pub fn enable(&self, cmd: Cmd, on: bool) {
+        let mut state = self.state.borrow_mut();
+        if state.disabled.contains(&cmd) == on {
+            state.disabled.retain(|c| *c != cmd);
+            if !on {
+                state.disabled.push(cmd);
+            }
+            canvas::redraw(self.hwnd);
+        }
+    }
 }
 
-pub fn enable(bar: HWND, cmd: Cmd, on: bool) {
-    let state = send(bar, TB_GETSTATE, cmd as usize, 0);
-    if (state & TBSTATE_ENABLED as isize != 0) != on {
-        send(bar, TB_ENABLEBUTTON, cmd as usize, on as isize);
+fn paint(p: &Painter, state: &State) {
+    p.fill(p.rect, theme::CHROME);
+    let (buttons, separators) = areas();
+    for x in separators {
+        p.fill(RECT { left: x, top: px(16), right: x + 1, bottom: px(HEIGHT - 16) }, theme::BORDER);
+    }
+    for (i, r) in buttons {
+        let Some((picture, cmd, name, _)) = BUTTONS[i] else { continue };
+        let enabled = !state.disabled.contains(&cmd);
+        if enabled && state.hover == Some(i) {
+            let pressed = state.down == Some(i);
+            let fill = if pressed { theme::pressed(theme::CHROME) } else { theme::hover(theme::CHROME) };
+            p.round(r, px(theme::RADIUS), Some(fill), None);
+        }
+        let color = if enabled { theme::TEXT } else { theme::DISABLED };
+        p.picture(RECT { top: r.top + px(4), bottom: r.top + px(32), ..r }, picture, 26, !enabled);
+        p.text(RECT { top: r.top + px(30), bottom: r.bottom - px(4), ..r }, name, Font::Caption, color, Align::Center);
     }
 }

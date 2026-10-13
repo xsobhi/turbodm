@@ -58,3 +58,30 @@ fn splits_after_what_was_received_but_not_written() {
     map.commit(a, (7 * MB) as usize);
     assert!(map.get(a).finished() && map.get(a).ahead == 0);
 }
+
+#[test]
+fn progress_counts_what_arrived_before_it_is_written() {
+    let map = SegmentMap::create(Some(10 * MB), 2, MB);
+    let a = map.claim().unwrap();
+    map.receive(a, 300_000);
+    assert_eq!((map.total_received(), map.total_done()), (300_000, 0));
+    map.commit(a, 300_000);
+    assert_eq!((map.total_received(), map.total_done()), (300_000, 300_000));
+}
+
+#[test]
+fn a_free_connection_takes_over_a_stuck_one() {
+    let map = SegmentMap::create(Some(10 * MB), 2, MB);
+    let (a, b) = (map.claim().unwrap(), map.claim().unwrap());
+    map.receive(a, MB as usize);
+    map.commit(a, MB as usize);
+    map.segs.lock().unwrap()[a].heard = Some(Instant::now() - Duration::from_secs(60)); // silent since
+    assert!(!map.others_flowing(b));
+    map.receive(b, (5 * MB) as usize);
+    assert!(map.others_flowing(a));
+    map.commit(b, (5 * MB) as usize);
+    map.release(b);
+    let taken = map.claim().unwrap(); // all of a's rest, not half
+    assert_eq!((map.get(taken).start, map.get(taken).end), (MB, Some(5 * MB)));
+    assert!(map.get(a).received());
+}

@@ -1,11 +1,15 @@
 //! Windows' controls: creating them on a window, their text, state and font.
 
-use super::{instance, Window};
+use super::look::{self, mark};
+use super::labels::Kind;
+use super::{field, instance, Window};
+use crate::win::theme::{self, Font};
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::OnceLock;
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
-use windows::Win32::Graphics::Gdi::{CreateFontIndirectW, HFONT, FW_SEMIBOLD};
-use windows::Win32::System::SystemServices::{SS_ENDELLIPSIS, SS_LEFT, SS_NOPREFIX};
+use windows::Win32::Graphics::Gdi::{InvalidateRect, HFONT};
 use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::HiDpi::GetDpiForSystem;
 use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
@@ -17,23 +21,6 @@ pub fn px(v: i32) -> i32 {
     // SAFETY: plain query
     let dpi = *DPI.get_or_init(|| unsafe { GetDpiForSystem() } as i32);
     (v * dpi + 48) / 96
-}
-
-/// Windows' dialog font (Segoe UI on Windows 7 and later), and a bigger one for headings.
-pub fn font(heading: bool) -> HFONT {
-    static FONTS: OnceLock<(isize, isize)> = OnceLock::new();
-    let (normal, big) = *FONTS.get_or_init(|| unsafe {
-        // SAFETY: plain queries; the fonts live as long as the program
-        let mut metrics = NONCLIENTMETRICSW { cbSize: std::mem::size_of::<NONCLIENTMETRICSW>() as u32, ..Default::default() };
-        let _ = SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, metrics.cbSize, Some((&mut metrics as *mut NONCLIENTMETRICSW).cast()),
-                                      SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0));
-        let mut logfont = metrics.lfMessageFont;
-        let normal = CreateFontIndirectW(&logfont);
-        logfont.lfHeight = logfont.lfHeight * 4 / 3;
-        logfont.lfWeight = FW_SEMIBOLD.0 as i32;
-        (normal.0 as isize, CreateFontIndirectW(&logfont).0 as isize)
-    });
-    HFONT((if heading { big } else { normal }) as *mut _)
 }
 
 pub fn send(hwnd: HWND, msg: u32, wparam: usize, lparam: isize) -> isize {
@@ -54,23 +41,27 @@ impl Window {
             CreateWindowExW(ex, class, &HSTRING::from(text), WS_CHILD | WS_VISIBLE | style, 0, 0, 0, 0,
                             Some(self.hwnd()), Some(HMENU(id as usize as *mut _)), Some(instance()), None)
         }.unwrap_or_default();
-        set_font(hwnd, font(false));
+        set_font(hwnd, theme::font(Font::Body));
         (hwnd, id)
     }
 
+    /// One line of text (labels are drawn by TurboDM: see labels.rs).
     pub fn label(&self, text: &str) -> HWND {
-        self.control(WC_STATICW, text, WINDOW_STYLE(SS_LEFT.0 | SS_NOPREFIX.0 | SS_ENDELLIPSIS.0), WINDOW_EX_STYLE(0)).0
+        self.text_label(text, Font::Body, Kind::Line)
     }
 
     /// Text that wraps onto more lines.
     pub fn note(&self, text: &str) -> HWND {
-        self.control(WC_STATICW, text, WINDOW_STYLE(SS_LEFT.0 | SS_NOPREFIX.0), WINDOW_EX_STYLE(0)).0
+        self.text_label(text, Font::Body, Kind::Paragraph)
+    }
+
+    /// A label against the right edge (a form's names, before their fields, as on Linux).
+    pub fn name(&self, text: &str) -> HWND {
+        self.text_label(text, Font::Body, Kind::Right)
     }
 
     pub fn heading(&self, text: &str) -> HWND {
-        let label = self.label(text);
-        set_font(label, font(true));
-        label
+        self.text_label(text, Font::Title, Kind::Line)
     }
 
     pub fn button(&self, text: &str, on_click: impl Fn() + 'static) -> HWND {
@@ -79,11 +70,20 @@ impl Window {
         hwnd
     }
 
-    /// The button Enter presses.
+    /// The button Enter presses, in the accent colour.
     pub fn default_button(&self, text: &str, on_click: impl Fn() + 'static) -> HWND {
         let (hwnd, id) = self.control(WC_BUTTONW, text, WS_TABSTOP | WINDOW_STYLE(BS_DEFPUSHBUTTON as u32), WINDOW_EX_STYLE(0));
         self.on_command(id, move |code| if code == BN_CLICKED { on_click() });
         self.set_default(id);
+        mark(hwnd, look::PRIMARY);
+        hwnd
+    }
+
+    /// A small borderless button showing an icon (Windows' icon font).
+    pub fn icon_button(&self, glyph: char, on_click: impl Fn() + 'static) -> HWND {
+        let hwnd = self.button(&glyph.to_string(), on_click);
+        mark(hwnd, look::FLAT);
+        mark(hwnd, look::ICON);
         hwnd
     }
 
@@ -94,47 +94,72 @@ impl Window {
         hwnd
     }
 
-    pub fn edit(&self, text: &str, on_change: impl Fn() + 'static) -> HWND {
-        let (hwnd, id) = self.control(WC_EDITW, text, WS_TABSTOP | WINDOW_STYLE(ES_AUTOHSCROLL as u32), WS_EX_CLIENTEDGE);
-        self.on_command(id, move |code| if code == EN_CHANGE { on_change() });
+    /// A switch (a check box drawn as GTK's switches), for settings.
+    pub fn switch(&self, on: bool, on_toggle: impl Fn(bool) + 'static) -> HWND {
+        let hwnd = self.checkbox("", on, on_toggle);
+        mark(hwnd, look::SWITCH);
         hwnd
     }
 
-    /// A number field with up/down arrows.
+    /// A text field (see field.rs).
+    pub fn edit(&self, text: &str, on_change: impl Fn() + 'static) -> HWND {
+        let (hwnd, id) = self.control(WC_EDITW, text, WS_TABSTOP | WINDOW_STYLE(ES_AUTOHSCROLL as u32), WINDOW_EX_STYLE(0));
+        self.on_command(id, move |code| if code == EN_CHANGE { on_change() });
+        field::make_field(hwnd, vec![]);
+        hwnd
+    }
+
+    /// A number field with − and + buttons, like the Linux one's.
     pub fn spin(&self, min: i32, max: i32, value: i32, on_change: impl Fn(i32) + 'static) -> HWND {
-        let (edit, id) = self.control(WC_EDITW, &value.to_string(), WS_TABSTOP | WINDOW_STYLE(ES_NUMBER as u32), WS_EX_CLIENTEDGE);
-        let style = WINDOW_STYLE(UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_NOTHOUSANDS);
-        let (arrows, _) = self.control(UPDOWN_CLASSW, "", style, WINDOW_EX_STYLE(0));
-        send(arrows, UDM_SETBUDDY, edit.0 as usize, 0);
-        send(arrows, UDM_SETRANGE32, min as usize, max as isize);
-        send(arrows, UDM_SETPOS32, 0, value as isize);
+        let (edit, id) = self.control(WC_EDITW, &value.to_string(), WS_TABSTOP | WINDOW_STYLE(ES_NUMBER as u32), WINDOW_EX_STYLE(0));
+        let step = move |by: i32| {
+            let now: i32 = text(edit).parse().unwrap_or(min);
+            set_text(edit, &now.saturating_add(by).clamp(min, max).to_string()); // its EN_CHANGE tells
+        };
+        let buttons = [(theme::icon::REMOVE, -1), (theme::icon::ADD, 1)].map(|(glyph, by)| self.icon_button(glyph, move || step(by)));
         self.on_command(id, move |code| if code == EN_CHANGE { on_change(text(edit).parse().unwrap_or(min).clamp(min, max)) });
+        field::make_field(edit, buttons.to_vec());
         edit
     }
 
-    /// A drop-down list to pick one of `items` from.
+    /// A drop-down, as GTK's on Linux: a button showing the choice, which opens the list.
     pub fn choice(&self, items: &[&str], selected: usize, on_pick: impl Fn(usize) + 'static) -> HWND {
-        let (hwnd, id) = self.control(WC_COMBOBOXW, "", WS_TABSTOP | WS_VSCROLL | WINDOW_STYLE(CBS_DROPDOWNLIST as u32), WINDOW_EX_STYLE(0));
-        for item in items {
-            let item = HSTRING::from(*item);
-            send(hwnd, CB_ADDSTRING, 0, item.as_ptr() as isize);
-        }
-        send(hwnd, CB_SETCURSEL, selected, 0);
-        self.on_command(id, move |code| if code == CBN_SELCHANGE { on_pick(send(hwnd, CB_GETCURSEL, 0, 0).max(0) as usize) });
-        hwnd
-    }
-
-    pub fn progress_bar(&self) -> HWND {
-        let hwnd = self.control(PROGRESS_CLASSW, "", WINDOW_STYLE(0), WINDOW_EX_STYLE(0)).0;
-        send(hwnd, PBM_SETRANGE32, 0, 1000);
+        let items: Vec<String> = items.iter().map(|s| s.to_string()).collect();
+        let (picked, button, owner) = (Rc::new(Cell::new(selected)), Rc::new(Cell::new(HWND::default())), self.hwnd());
+        let (p, b, list) = (picked.clone(), button.clone(), items.clone());
+        let hwnd = self.button(&items[selected.min(items.len() - 1)], move || {
+            let mut r = RECT::default();
+            // SAFETY: a menu of the choices under the button; it returns the one picked (0: none)
+            let chosen = unsafe {
+                let menu = CreatePopupMenu().unwrap_or_default();
+                for (i, item) in list.iter().enumerate() {
+                    let checked = if i == p.get() { MF_CHECKED } else { MF_UNCHECKED };
+                    let _ = AppendMenuW(menu, MF_STRING | checked, i + 1, &HSTRING::from(item.as_str()));
+                }
+                let _ = GetWindowRect(b.get(), &mut r);
+                let chosen = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_LEFTALIGN, r.left, r.bottom, None, owner, None);
+                let _ = DestroyMenu(menu);
+                chosen.0 as usize
+            };
+            if let Some((i, item)) = chosen.checked_sub(1).and_then(|i| list.get(i).map(|item| (i, item))) {
+                p.set(i);
+                set_text(b.get(), item);
+                on_pick(i);
+            }
+        });
+        button.set(hwnd);
+        mark(hwnd, look::DROPDOWN);
         hwnd
     }
 }
 
 pub fn set_text(hwnd: HWND, value: &str) {
     if text(hwnd) != value {
-        // SAFETY: plain call on our control
-        unsafe { let _ = SetWindowTextW(hwnd, &HSTRING::from(value)); }
+        // SAFETY: plain calls on our control (drawn again: our labels draw themselves)
+        unsafe {
+            let _ = SetWindowTextW(hwnd, &HSTRING::from(value));
+            let _ = InvalidateRect(Some(hwnd), None, false);
+        }
     }
 }
 
@@ -156,24 +181,32 @@ pub fn set_checked(hwnd: HWND, on: bool) {
 }
 
 pub fn enable(hwnd: HWND, on: bool) {
-    // SAFETY: plain call
-    unsafe { let _ = EnableWindow(hwnd, on); }
+    // SAFETY: plain calls
+    unsafe {
+        let _ = EnableWindow(hwnd, on);
+        for button in field::buttons_of(hwnd) {
+            let _ = EnableWindow(button, on);
+        }
+    }
 }
 
+/// Show or hide a control (a field with its frame and buttons).
 pub fn set_visible(hwnd: HWND, on: bool) {
     let show = if on { SW_SHOW } else { SW_HIDE };
     // SAFETY: plain calls
     unsafe {
         let _ = ShowWindow(hwnd, show);
-        if let Some(arrows) = super::arrows_of(hwnd) {
-            let _ = ShowWindow(arrows, show);
+        for button in field::buttons_of(hwnd) {
+            let _ = ShowWindow(button, show);
         }
     }
+    field::redraw_frame(hwnd);
 }
 
-/// 0.0–1.0 on a progress bar.
-pub fn set_progress(hwnd: HWND, fraction: f64) {
-    send(hwnd, PBM_SETPOS, (fraction.clamp(0.0, 1.0) * 1000.0) as usize, 0);
+/// Draw a control again.
+pub fn redraw(hwnd: HWND) {
+    // SAFETY: plain call
+    unsafe { let _ = InvalidateRect(Some(hwnd), None, true); }
 }
 
 /// The window size that gives `width` × `height` of content.

@@ -55,7 +55,7 @@ $null = $shell.AppActivate("Preferences"); Start-Sleep 1; $shell.SendKeys("%{F4}
 Start-Process $Exe -ArgumentList "http://127.0.0.1:8765/file"
 Start-Sleep 4
 Report "3-add-dialog"
-$null = $shell.AppActivate("Download File Info"); Start-Sleep 1; $shell.SendKeys("{ENTER}")
+$null = $shell.AppActivate("Download file info"); Start-Sleep 1; $shell.SendKeys("{ENTER}")
 Start-Sleep 3
 Report "4-progress"
 $shell.SendKeys("%h")

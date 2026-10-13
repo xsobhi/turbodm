@@ -7,8 +7,8 @@ use super::{clipboard, menu, open_row, refresh};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::LRESULT;
-use windows::Win32::UI::Input::KeyboardAndMouse::{GetActiveWindow, ReleaseCapture, SetCapture};
+use windows::Win32::Foundation::{LRESULT, POINT};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetActiveWindow, GetFocus, ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const REFRESH_TIMER: usize = 1;
@@ -53,17 +53,18 @@ pub fn setup(app: &Rc<App>) {
         WM_GETMINMAXINFO => {
             // SAFETY: WM_GETMINMAXINFO comes with a MINMAXINFO to fill in
             let info = unsafe { &mut *(lparam.0 as *mut MINMAXINFO) };
-            info.ptMinTrackSize.x = px(640);
+            info.ptMinTrackSize.x = px(760); // the title bar's search and buttons beside the title
             info.ptMinTrackSize.y = px(360);
             Some(LRESULT(0))
         }
-        // the gap between the categories and the list moves them
-        WM_SETCURSOR if wparam.0 as *mut std::ffi::c_void == hwnd.0 && (lparam.0 & 0xffff) as u32 == HTCLIENT => {
+        // the strip between the sidebar and the list moves them
+        WM_SETCURSOR if wparam.0 as *mut std::ffi::c_void == hwnd.0 && (lparam.0 & 0xffff) as u32 == HTCLIENT
+            && on_grip(hwnd, None) => {
             // SAFETY: plain cursor change
             unsafe { SetCursor(LoadCursorW(None, IDC_SIZEWE).ok()); }
             Some(LRESULT(1))
         }
-        WM_LBUTTONDOWN => {
+        WM_LBUTTONDOWN if on_grip(hwnd, Some(POINT { x: (lparam.0 & 0xffff) as i16 as i32, y: (lparam.0 >> 16) as i16 as i32 })) => {
             dragging.set(true);
             // SAFETY: follow the mouse until the button is released
             unsafe { SetCapture(hwnd); }
@@ -71,7 +72,7 @@ pub fn setup(app: &Rc<App>) {
         }
         WM_MOUSEMOVE if dragging.get() => {
             let x = (lparam.0 & 0xffff) as i16 as i32 * 96 / px(96);
-            split.set(x.clamp(120, 500));
+            split.set(x.clamp(160, 500));
             let (w, h) = wnd::client_size(hwnd);
             super::super::app().main.layout(px(w), px(h));
             Some(LRESULT(0))
@@ -91,6 +92,21 @@ pub fn setup(app: &Rc<App>) {
     app.main.layout(px(w), px(h));
 }
 
+/// The mouse (at `point` in the window, or where it is now) is on the splitter.
+fn on_grip(hwnd: windows::Win32::Foundation::HWND, point: Option<POINT>) -> bool {
+    let mut point = point.unwrap_or_default();
+    if point == POINT::default() {
+        // SAFETY: plain queries
+        unsafe {
+            let _ = GetCursorPos(&mut point);
+            let _ = windows::Win32::Graphics::Gdi::ScreenToClient(hwnd, &mut point);
+        }
+    }
+    let (_, height) = wnd::client_size(hwnd);
+    let grip = super::super::app().main.grip(px(height));
+    point.x >= grip.left && point.x < grip.right && point.y >= grip.top && point.y < grip.bottom
+}
+
 /// Started by the browser and nothing is shown or downloading: quit after a few seconds.
 fn quit_when_idle(app: &App, started: Instant) {
     if app.background && started.elapsed() > Duration::from_secs(5) && !app.manager.busy()
@@ -102,13 +118,14 @@ fn quit_when_idle(app: &App, started: Instant) {
 /// Windows' message loop, with the main window's shortcuts and dialogs' keyboard handling.
 pub fn message_loop(app: &Rc<App>) {
     let shortcuts = menu::shortcuts();
-    let main = app.main.window.hwnd();
+    let (main, search) = (app.main.window.hwnd(), app.main.search);
     let mut msg = MSG::default();
     // SAFETY: the standard loop on this thread's messages
     unsafe {
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             let active = GetActiveWindow();
-            if active == main && TranslateAcceleratorW(main, shortcuts, &msg) != 0 {
+            // (not while typing a search: Delete and Ctrl+A are the field's then)
+            if active == main && GetFocus() != search && TranslateAcceleratorW(main, shortcuts, &msg) != 0 {
                 continue;
             }
             if !active.is_invalid() && IsDialogMessageW(active, &msg).as_bool() {

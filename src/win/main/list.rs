@@ -1,13 +1,16 @@
 //! The downloads list: Windows' list view in details mode, virtual (rows are drawn on demand,
-//! so it stays quick), with Explorer's look, sortable columns and the selection kept by download.
+//! so it stays quick), with Explorer's look, rows drawn like the Linux list's (draw.rs),
+//! sortable columns and the selection kept by download.
 
+use super::super::theme;
 use super::super::wnd::{px, send, Window};
-use super::cells::{system_icons, Row, COLUMNS};
+use super::cells::{Row, COLUMNS};
+use super::draw::{self, ROW};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use turbodm::engine::Snapshot;
 use windows::core::{w, HSTRING, PCWSTR, PWSTR};
-use windows::Win32::Foundation::{HWND, POINT};
+use windows::Win32::Foundation::{HWND, LRESULT, POINT, RECT};
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -16,6 +19,7 @@ pub struct List {
     pub hwnd: HWND,
     rows: Rc<RefCell<Vec<Row>>>,
     sort: Rc<Cell<(usize, bool)>>, // column, ascending
+    empty: Rc<RefCell<String>>,    // what it says when there's nothing to show
 }
 
 impl List {
@@ -24,31 +28,42 @@ impl List {
     pub fn new(window: &Window, on_open: impl Fn(String) + 'static, on_menu: impl Fn(POINT) + 'static,
                on_sort: impl Fn() + 'static) -> Self {
         let style = WINDOW_STYLE(LVS_REPORT | LVS_OWNERDATA | LVS_SHOWSELALWAYS | LVS_SHAREIMAGELISTS) | WS_TABSTOP;
-        let (hwnd, id) = window.control(WC_LISTVIEWW, "", style, WS_EX_CLIENTEDGE);
-        let extended = LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_HEADERDRAGDROP | LVS_EX_LABELTIP;
+        let (hwnd, id) = window.control(WC_LISTVIEWW, "", style, WINDOW_EX_STYLE(0));
+        let extended = LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP;
         send(hwnd, LVM_SETEXTENDEDLISTVIEWSTYLE, extended as usize, extended as isize);
-        // SAFETY: Explorer's look for the list, as on this Windows
-        unsafe { let _ = SetWindowTheme(hwnd, w!("Explorer"), PCWSTR::null()); }
-        send(hwnd, LVM_SETIMAGELIST, LVSIL_SMALL as usize, system_icons().0);
-        for (i, (title, width, right)) in COLUMNS.iter().enumerate() {
+        // SAFETY: Explorer's look for the list, as on this Windows; an image list only as tall as
+        // the rows should be (rows are as tall as their icons), with no images: we draw the icons
+        unsafe {
+            let _ = SetWindowTheme(hwnd, w!("Explorer"), PCWSTR::null());
+            let height = ImageList_Create(1, px(ROW), ILC_COLOR32, 0, 1);
+            send(hwnd, LVM_SETIMAGELIST, LVSIL_SMALL as usize, height.0);
+        }
+        send(hwnd, LVM_SETBKCOLOR, 0, theme::VIEW.0 as isize);
+        send(hwnd, LVM_SETTEXTBKCOLOR, 0, CLR_NONE as isize);
+        send(hwnd, LVM_SETTEXTCOLOR, 0, theme::TEXT.0 as isize);
+        for (i, (title, width)) in COLUMNS.iter().enumerate() {
             let text = HSTRING::from(*title);
-            let column = LVCOLUMNW {
-                mask: LVCF_TEXT | LVCF_WIDTH | LVCF_FMT,
-                fmt: if *right { LVCFMT_RIGHT } else { LVCFMT_LEFT },
-                cx: px(*width),
-                pszText: PWSTR(text.as_ptr() as *mut _),
-                ..Default::default()
-            };
+            let column = LVCOLUMNW { mask: LVCF_TEXT | LVCF_WIDTH | LVCF_FMT, fmt: LVCFMT_LEFT, cx: px(*width),
+                                     pszText: PWSTR(text.as_ptr() as *mut _), ..Default::default() };
             send(hwnd, LVM_INSERTCOLUMNW, i, &column as *const _ as isize);
         }
-        let list = List { hwnd, rows: Rc::default(), sort: Rc::new(Cell::new((5, false))) }; // newest first
+        let list = List { hwnd, rows: Rc::default(), sort: Rc::new(Cell::new((5, false))), empty: Rc::default() }; // newest first
         list.show_sort_arrow();
-        let (rows, sort) = (list.rows.clone(), list.sort.clone());
+        let (rows, sort, empty) = (list.rows.clone(), list.sort.clone(), list.empty.clone());
         window.on_notify(id, move |header, lparam| {
             // SAFETY: each notification comes with the struct named for it
             unsafe {
                 match header.code {
                     LVN_GETDISPINFOW => fill(&rows.borrow(), &mut (*(lparam.0 as *mut NMLVDISPINFOW)).item),
+                    NM_CUSTOMDRAW => return Some(draw::custom_draw(hwnd, &rows.borrow(), lparam)),
+                    LVN_GETEMPTYMARKUP => {
+                        let markup = &mut *(lparam.0 as *mut NMLVEMPTYMARKUP);
+                        markup.dwFlags = EMF_CENTERED;
+                        let text: Vec<u16> = empty.borrow().encode_utf16().take(markup.szMarkup.len() - 1).collect();
+                        markup.szMarkup[..text.len()].copy_from_slice(&text);
+                        markup.szMarkup[text.len()] = 0;
+                        return Some(LRESULT(1));
+                    }
                     NM_DBLCLK => {
                         let item = (*(lparam.0 as *const NMITEMACTIVATE)).iItem;
                         let id = rows.borrow().get(item.max(0) as usize).filter(|_| item >= 0).map(|r| r.id.clone());
@@ -75,8 +90,13 @@ impl List {
         list
     }
 
-    /// Show these downloads; the selection stays on the same downloads.
-    pub fn update(&self, snapshots: &[Snapshot]) {
+    /// Show these downloads; the selection stays on the same downloads. `empty` is what it
+    /// says when there are none.
+    pub fn update(&self, snapshots: &[Snapshot], empty: &str) {
+        if *self.empty.borrow() != empty {
+            *self.empty.borrow_mut() = empty.to_string();
+            self.redraw();
+        }
         let (column, ascending) = self.sort.get();
         let mut rows: Vec<Row> = snapshots.iter().map(Row::new).collect();
         rows.sort_by(|a, b| if ascending { a.compare(b, column) } else { b.compare(a, column) });
@@ -97,9 +117,26 @@ impl List {
                     self.set_selected(i as i32, true);
                 }
             }
+            self.fit(); // a scroll bar may have come or gone
         }
-        // SAFETY: redraw our list (only the visible rows are asked for again)
+        self.redraw(); // only the visible rows are asked for again
+    }
+
+    fn redraw(&self) {
+        // SAFETY: plain call on our list
         unsafe { let _ = InvalidateRect(Some(self.hwnd), None, false); }
+    }
+
+    /// The name column takes the room the others leave, as on Linux.
+    pub fn fit(&self) {
+        let mut r = RECT::default();
+        // SAFETY: plain query
+        unsafe { let _ = GetClientRect(self.hwnd, &mut r); }
+        let others: i32 = (1..COLUMNS.len()).map(|i| send(self.hwnd, LVM_GETCOLUMNWIDTH, i, 0) as i32).sum();
+        let width = (r.right - others).max(px(160));
+        if send(self.hwnd, LVM_GETCOLUMNWIDTH, 0, 0) as i32 != width {
+            send(self.hwnd, LVM_SETCOLUMNWIDTH, 0, width as isize);
+        }
     }
 
     /// The selected downloads' ids.
@@ -146,7 +183,7 @@ impl List {
     }
 }
 
-/// Fill in a row's text or icon, as the list asks for it.
+/// Fill in a row's text as the list asks for it (the name and status cells are drawn by us).
 fn fill(rows: &[Row], item: &mut LVITEMW) {
     let Some(row) = rows.get(item.iItem.max(0) as usize).filter(|_| item.iItem >= 0) else { return };
     if item.mask.contains(LVIF_TEXT) && !item.pszText.is_null() && item.cchTextMax > 0 {
@@ -155,7 +192,7 @@ fn fill(rows: &[Row], item: &mut LVITEMW) {
         // SAFETY: the list's buffer holds cchTextMax characters; we write at most that many
         unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), item.pszText.0, text.len()) };
     }
-    if item.mask.contains(LVIF_IMAGE) && item.iSubItem == 0 {
-        item.iImage = row.icon;
+    if item.mask.contains(LVIF_IMAGE) {
+        item.iImage = I_IMAGENONE;
     }
 }

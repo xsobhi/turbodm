@@ -1,37 +1,29 @@
 //! Placing controls (in 96-DPI pixels, scaled to the screen) and windows on the screen.
 
-use super::{px, send};
-use windows::Win32::UI::Controls::{BCM_GETIDEALSIZE, UDM_GETBUDDY, UDM_SETBUDDY};
+use super::{field, px, send};
+use windows::Win32::UI::Controls::BCM_GETIDEALSIZE;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
 use windows::core::BOOL;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-/// Standard heights: a text field, button or drop-down; a label line; a check box.
-pub const FIELD: i32 = 23;
-pub const LINE: i32 = 16;
-pub const BUTTON_WIDTH: i32 = 88;
+/// Standard heights (Fluent's): a text field, button or drop-down; a line of text.
+pub const FIELD: i32 = 30;
+pub const LINE: i32 = 18;
+pub const BUTTON_WIDTH: i32 = 96;
 
-pub fn place(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) {
-    // SAFETY: plain calls on our controls
-    unsafe {
-        let _ = SetWindowPos(hwnd, None, px(x), px(y), px(width), px(height), SWP_NOZORDER | SWP_NOACTIVATE);
-        if let Some(arrows) = arrows_of(hwnd) {
-            send(arrows, UDM_SETBUDDY, hwnd.0 as usize, 0); // they move along with it
-        }
-    }
+/// An area given in 96-DPI pixels, in the screen's.
+pub fn rect(x: i32, y: i32, width: i32, height: i32) -> RECT {
+    RECT { left: px(x), top: px(y), right: px(x) + px(width), bottom: px(y) + px(height) }
 }
 
-/// A number field's up/down arrows (created right after it).
-pub fn arrows_of(hwnd: HWND) -> Option<HWND> {
-    // SAFETY: plain queries
-    unsafe {
-        let next = GetWindow(hwnd, GW_HWNDNEXT).ok()?;
-        let mut class = [0u16; 32];
-        let n = GetClassNameW(next, &mut class).max(0) as usize;
-        (String::from_utf16_lossy(&class[..n]) == "msctls_updown32" && send(next, UDM_GETBUDDY, 0, 0) == hwnd.0 as isize)
-            .then_some(next)
+/// Put a control at (x, y), `width` × `height` (96-DPI pixels); a text field goes in its frame.
+pub fn place(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) {
+    let r = rect(x, y, width, height);
+    if !field::place_field(hwnd, r) {
+        // SAFETY: plain move of our control
+        unsafe { let _ = SetWindowPos(hwnd, None, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOZORDER | SWP_NOACTIVATE); }
     }
 }
 
@@ -39,7 +31,7 @@ pub fn arrows_of(hwnd: HWND) -> Option<HWND> {
 fn button_width(button: HWND) -> i32 {
     let mut size = windows::Win32::Foundation::SIZE::default();
     send(button, BCM_GETIDEALSIZE, 0, &mut size as *mut _ as isize);
-    (size.cx * 96 / px(96) + 16).max(BUTTON_WIDTH)
+    (size.cx * 96 / px(96) + 24).max(BUTTON_WIDTH)
 }
 
 /// The window's inside, in 96-DPI pixels.
@@ -96,22 +88,22 @@ impl Rows {
         Rows { y: top, left, label_width, width }
     }
 
-    /// A labelled field `height` tall (the label sits on its first line).
+    /// A labelled field `height` tall (the label beside its first line).
     pub fn field(&mut self, label: Option<HWND>, field: HWND, height: i32) {
         if let Some(label) = label {
-            place(label, self.left, self.y + 4, self.label_width - 8, LINE);
+            place(label, self.left, self.y + (height.min(FIELD) - LINE) / 2, self.label_width - 12, LINE);
         }
         place(field, self.left + self.label_width, self.y, self.width - self.label_width, height);
-        self.y += height + 8;
+        self.y += height + 10;
     }
 
     /// A field only as wide as `width`, after the labels.
     pub fn short(&mut self, label: Option<HWND>, field: HWND, width: i32) {
         if let Some(label) = label {
-            place(label, self.left, self.y + 4, self.label_width - 8, LINE);
+            place(label, self.left, self.y + (FIELD - LINE) / 2, self.label_width - 12, LINE);
         }
         place(field, self.left + self.label_width, self.y, width, FIELD);
-        self.y += FIELD + 8;
+        self.y += FIELD + 10;
     }
 
     /// Something across the whole width.
