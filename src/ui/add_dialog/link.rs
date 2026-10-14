@@ -5,7 +5,6 @@
 use super::Form;
 use crate::ui::Ctx;
 use gtk::glib;
-use gtk::prelude::*;
 use std::rc::Rc;
 use std::time::Duration;
 use turbodm::engine::http::{self, Headers};
