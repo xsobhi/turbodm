@@ -17,6 +17,7 @@ pub fn register_class() {
         // SAFETY: plain class registration with a static name and procedure
         let class = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+            style: CS_HREDRAW | CS_VREDRAW, // drawn whole when its size changes: nothing smears
             lpfnWndProc: Some(procedure),
             hInstance: instance(),
             hIcon: LoadIconW(Some(instance()), PCWSTR(APP_ICON as usize as *const u16)).unwrap_or_default(),

@@ -1,16 +1,27 @@
 # TurboDM
 
 A fast, multi-connection download manager for Linux and Windows — in the spirit of Internet Download Manager —
-written in Rust with a native interface on each system (GTK4 on Linux; Windows' own controls on
-Windows, drawn in the style of your Windows version), plus a browser extension that hands downloads over
-from Firefox, Chrome, Brave and Chromium **with their cookies**, so links that only work while you're
-logged in keep working.
+written in Rust with a native interface on each system (GTK4 on Linux, Win32 on Windows) that looks
+the same on both: Linux Mint's clean Mint-Y style, in its green, plus a browser extension that hands
+downloads over from Firefox, Chrome, Brave and Chromium **with their cookies**, so links that only
+work while you're logged in keep working.
 
 ![Main window](docs/main-window.png)
 
-| Per-download window (opens when a download starts) | Add download / Download complete |
+| Per-download window (opens when a download starts) | Download file info / Download complete |
 |---|---|
-| ![Progress window](docs/progress-window.png) | ![Add download dialog](docs/add-dialog.png) ![Download complete dialog](docs/complete-dialog.png) |
+| ![Progress window](docs/progress-window.png) | ![Download file info dialog](docs/add-dialog.png) ![Download complete dialog](docs/complete-dialog.png) |
+
+<details>
+<summary>Preferences, and TurboDM on Linux</summary>
+
+![Preferences](docs/preferences.png)
+
+![TurboDM on Linux Mint](docs/linux-main-window.png)
+
+</details>
+
+*(Screenshots from Windows 10.)*
 
 ## Features
 
@@ -36,7 +47,10 @@ logged in keep working.
 - **Starts before you click Start**, like IDM: while the *Download file info* dialog is open the
   download quietly begins on a single connection, so it's already connected when you press
   *Start* — then every connection joins in without reconnecting. *Cancel* deletes what was
-  fetched; you can turn this off in Preferences.
+  fetched; you can turn this off in Preferences. A small file may be finished before you decide:
+  it's then moved to the name and folder you chose when you press *Start*. The dialog has one
+  *Save to* path (type it, or pick it with the folder button), and uses the number of connections
+  from Preferences.
 - **Queue** with a limit on simultaneous downloads, and a **global speed limit**.
 - **Categories**: Video, Music, Documents, Compressed, Programs and Images go to their own sub-folders.
 - **Main window with a sidebar**: downloads by state (all, downloading, unfinished, completed) and
@@ -54,6 +68,21 @@ logged in keep working.
 - Servers that reject a browser user-agent (anti-bot checks comparing it with the TLS fingerprint)
   are retried with TurboDM's own honest one.
 - **Command line**: `turbodm get URL -c 16 -d ~/Downloads`.
+
+### One look on Linux and Windows
+
+Both follow Linux Mint's Mint-Y theme: light grey chrome, white lists, Mint's green for the
+selection, buttons and progress, and its Ubuntu font (bundled, under the Ubuntu Font Licence).
+On Windows, TurboDM draws it itself, so it matches rather than looking like a port:
+
+- its own title bars on every window (as GTK's header bars), with Windows' snapping, resizing and
+  shadow kept
+- text and shapes drawn with Direct2D and DirectWrite: smooth, antialiased, ClearType text, the
+  same shapes as on Linux, and not snapped to the pixel grid
+- 3D icons for the toolbar and the sidebar (rounded tiles in colour, with Fluent UI symbols), and
+  programs, installers and shortcuts show their own icons in the list
+- smooth resizing: each window is drawn in one pass into a buffer and shown at once, and its
+  controls move together
 
 ### Fast by design
 
@@ -145,13 +174,22 @@ day) to tell you about updates; turn *Check for updates* off in Preferences to s
 cargo test --release     # unit tests + end-to-end engine tests against a local HTTP server
 ```
 
+To try a build without touching your own downloads, settings or browser setup, give it a folder of
+its own: `TURBODM_HOME=/tmp/tdm-test turbodm` (its own settings, list and instance; it doesn't
+register with the browsers). On Windows, `TURBODM_OFFSCREEN=1` also opens its windows off the screen
+without taking the keyboard, for automated screenshots and tests while you use the computer.
+
+Icons: `python3 tools/icons.py` draws the toolbar's and sidebar's icons, the app's icon (`.svg`,
+`.ico`) and the extension's (needs [resvg](https://github.com/linebender/resvg)), and
+`python3 tools/installer-art.py` the Windows installer's pictures from it.
+
 ```
 src/engine/   segmentation, connections, task runner, manager, persistence (no GUI)
 src/ipc/      extension ↔ app: native-messaging host, Unix socket / named pipe client/server
 src/register.rs  registers the native-messaging host (manifests; registry on Windows)
 packaging/    .deb/.rpm files, Windows installer (Inno Setup), apt repository script
 src/ui/       GTK4 interface (Linux)
-src/win/      Windows interface (Win32 and common controls)
+src/win/      Windows interface (Win32 controls, drawn with Direct2D/DirectWrite)
 extension/    shared JS + Firefox (MV2) and Chrome (MV3) manifests
 ```
 

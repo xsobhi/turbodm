@@ -10,8 +10,8 @@ use details::Details;
 use gtk::prelude::*;
 use std::rc::Rc;
 use turbodm::engine::{Manager, Status};
-use turbodm::text::{status_line, status_text};
-use turbodm::util::{human_eta, human_size, human_speed};
+use turbodm::text::{eta_text, rate_text, status_line, status_text};
+use turbodm::util::human_size;
 
 pub struct ProgressWindow {
     id: String,
@@ -134,8 +134,8 @@ impl ProgressWindow {
             status_line(&s),
             human_size(s.size),
             downloaded,
-            human_speed(s.speed),
-            human_eta(s.eta),
+            rate_text(&s),
+            eta_text(&s),
             if s.resumable { "Yes".into() } else { "No (single connection, can't pause and resume)".into() },
         ];
         for (label, value) in self.rows.iter().zip(values) {

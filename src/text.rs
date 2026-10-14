@@ -68,6 +68,15 @@ pub fn kind_words(filename: &str) -> &'static str {
     }
 }
 
+/// Under a finished download's name: "1.20 MB · Video · took 4s".
+pub fn finished_line(s: &Snapshot) -> String {
+    let kind = if s.category == "General" { "Other" } else { s.category };
+    let took = s.completed.map(|done| human_eta(Some(done.saturating_sub(s.added) as f64))).filter(|t| !t.is_empty());
+    let mut parts = vec![human_size(s.size), kind.to_string()];
+    parts.extend(took.map(|t| format!("took {t}")));
+    parts.join("  ·  ")
+}
+
 /// A copied link worth offering to download (clipboard monitoring).
 pub fn looks_like_file_link(text: &str) -> bool {
     (text.starts_with("http://") || text.starts_with("https://"))

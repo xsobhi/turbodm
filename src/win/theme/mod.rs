@@ -3,10 +3,13 @@
 //! chosen, Mint's font (Ubuntu), and symbolic icons from Windows' own icon font (Segoe Fluent
 //! Icons, or Segoe MDL2 Assets on Windows 10).
 
+mod d2d;
+mod fallback;
 mod paint;
 pub mod pictures;
 mod text;
 
+pub use d2d::stop;
 pub use paint::{measure, Align, Painter};
 
 use super::wnd::px;
@@ -85,7 +88,7 @@ fn text_face() -> &'static str {
         for data in UBUNTU {
             let mut count = 0u32;
             // SAFETY: the font data is part of the program, so it outlives the fonts made from it
-            let handle = unsafe { AddFontMemResourceEx(data.as_ptr().cast(), data.len() as u32, None, &mut count) };
+            let handle = unsafe { AddFontMemResourceEx(data.as_ptr().cast(), data.len() as u32, None, (&raw mut count).cast_const()) };
             loaded += (!handle.is_invalid()) as usize;
         }
         if loaded == UBUNTU.len() { "Ubuntu" } else { "Segoe UI" }
@@ -159,28 +162,13 @@ pub fn brush(color: COLORREF) -> HBRUSH {
     HBRUSH(handle as *mut _)
 }
 
-/// Icons from Windows' icon font: the same pictures as the Linux look's Fluent icons.
+/// Small line icons from Windows' icon font, for buttons (the toolbar's and the sidebar's are
+/// `pictures`).
 pub mod icon {
     pub const MENU: char = '\u{E700}';
     pub const ADD: char = '\u{E710}';
     pub const REMOVE: char = '\u{E738}'; // minus
-    pub const SETTINGS: char = '\u{E713}';
-    pub const VIDEO: char = '\u{E714}';
-    pub const STOP: char = '\u{E71A}';
-    pub const SEARCH: char = '\u{E721}';
     pub const CHECK: char = '\u{E73E}';
-    pub const DELETE: char = '\u{E74D}';
-    pub const PLAY: char = '\u{E768}';
-    pub const PAUSE: char = '\u{E769}';
-    pub const DOCUMENT: char = '\u{E8A5}';
-    pub const DOWNLOAD: char = '\u{E896}';
-    pub const MUSIC: char = '\u{EC4F}';
-    pub const IMAGE: char = '\u{EB9F}';
-    pub const PACKAGE: char = '\u{E7B8}';
-    pub const APPS: char = '\u{ECAA}';
-    pub const FAST_FORWARD: char = '\u{EB9D}';
-    pub const BROOM: char = '\u{EA99}';
-    pub const PAGE: char = '\u{E7C3}';
     pub const FOLDER_OPEN: char = '\u{ED25}';
     pub const CHEVRON_DOWN: char = '\u{E70D}';
 }

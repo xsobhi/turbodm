@@ -1,5 +1,5 @@
 //! Handing things to Windows: opening files and folders, Explorer with a file selected,
-//! "Open with", the folder picker, and the clipboard.
+//! "Open with", the folder picker and the Save as dialog, and the clipboard.
 
 use super::App;
 use std::path::{Path, PathBuf};
@@ -56,6 +56,30 @@ pub fn choose_folder(owner: HWND, title: &str, initial: &Path) -> Option<PathBuf
         let _ = dialog.SetTitle(&HSTRING::from(title));
         if let Ok(folder) = SHCreateItemFromParsingName::<_, _, IShellItem>(&HSTRING::from(initial.as_os_str()), None) {
             let _ = dialog.SetFolder(&folder);
+        }
+        dialog.Show(Some(owner)).ok()?; // cancelled: an error
+        let name = dialog.GetResult().ok()?.GetDisplayName(SIGDN_FILESYSPATH).ok()?;
+        let path = PathBuf::from(name.to_string().ok()?);
+        CoTaskMemFree(Some(name.0 as *const _));
+        Some(path)
+    }
+}
+
+/// Windows' "Save as" dialog, starting at `initial` (a file's whole path); the path picked.
+/// (No "replace it?" question: a name that's taken gets a number added, like "file (1).zip".)
+pub fn choose_save(owner: HWND, title: &str, initial: &Path) -> Option<PathBuf> {
+    // SAFETY: Windows' file dialog (COM, initialized on this thread at start)
+    unsafe {
+        let dialog: IFileSaveDialog = CoCreateInstance(&FileSaveDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        dialog.SetOptions(FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOREADONLYRETURN).ok()?;
+        let _ = dialog.SetTitle(&HSTRING::from(title));
+        // the folder (or the nearest one above it that exists yet)
+        if let Some(folder) = initial.parent().and_then(|p| p.ancestors().find(|a| a.is_dir()))
+            && let Ok(item) = SHCreateItemFromParsingName::<_, _, IShellItem>(&HSTRING::from(folder.as_os_str()), None) {
+            let _ = dialog.SetFolder(&item);
+        }
+        if let Some(name) = initial.file_name() {
+            let _ = dialog.SetFileName(&HSTRING::from(name));
         }
         dialog.Show(Some(owner)).ok()?; // cancelled: an error
         let name = dialog.GetResult().ok()?.GetDisplayName(SIGDN_FILESYSPATH).ok()?;

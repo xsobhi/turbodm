@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Gdi::*;
+use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// A text field: its frame (in its window's pixels) and the buttons inside it (a number's − +).
@@ -60,8 +61,7 @@ pub fn place_field(edit: HWND, frame: RECT) -> bool {
 }
 
 fn move_to(hwnd: HWND, r: RECT) {
-    // SAFETY: plain move of our control
-    unsafe { let _ = SetWindowPos(hwnd, None, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOZORDER | SWP_NOACTIVATE); }
+    super::moves::move_window(hwnd, r);
 }
 
 fn text_height() -> i32 {
@@ -119,4 +119,28 @@ fn frame(p: &Painter, r: RECT, focused: bool) {
         let inner = RECT { left: r.left + 1, top: r.top + 1, right: r.right - 1, bottom: r.bottom - 1 };
         p.round(inner, px(theme::RADIUS) - 1, None, Some(theme::mix(theme::ACCENT, theme::VIEW, 0.6)));
     }
+}
+
+/// Turn a control on or off (a field with its buttons).
+pub fn enable(hwnd: HWND, on: bool) {
+    // SAFETY: plain calls
+    unsafe {
+        let _ = EnableWindow(hwnd, on);
+        for button in buttons_of(hwnd) {
+            let _ = EnableWindow(button, on);
+        }
+    }
+}
+
+/// Show or hide a control (a field with its frame and buttons).
+pub fn set_visible(hwnd: HWND, on: bool) {
+    let show = if on { SW_SHOW } else { SW_HIDE };
+    // SAFETY: plain calls
+    unsafe {
+        let _ = ShowWindow(hwnd, show);
+        for button in buttons_of(hwnd) {
+            let _ = ShowWindow(button, show);
+        }
+    }
+    redraw_frame(hwnd);
 }

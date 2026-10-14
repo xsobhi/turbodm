@@ -27,13 +27,16 @@ pub enum Mouse {
     Double(i32, i32),
 }
 
+type OnMouse = Rc<dyn Fn(Mouse)>;
+type OnHit = Rc<dyn Fn(i32, i32) -> bool>;
+
 struct Canvas {
     paint: Box<dyn Fn(&Painter)>,
-    mouse: RefCell<Option<Rc<dyn Fn(Mouse)>>>,
+    mouse: RefCell<Option<OnMouse>>,
     tracking: Cell<bool>,
     tips: Cell<HWND>, // its tooltip window, once it has tips
     tip_count: Cell<usize>,
-    hit: RefCell<Option<Rc<dyn Fn(i32, i32) -> bool>>>,
+    hit: RefCell<Option<OnHit>>,
 }
 
 thread_local! {
@@ -114,7 +117,7 @@ fn register() {
         // SAFETY: plain class registration with a static name and procedure
         let class = WNDCLASSEXW {
             cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-            style: CS_DBLCLKS,
+            style: CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW, // drawn whole when resized
             lpfnWndProc: Some(procedure),
             hInstance: instance(),
             hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),

@@ -4,7 +4,7 @@
 
 use super::super::theme::{self, Align, Font, Painter};
 use super::super::wnd::{px, send};
-use super::cells::{system_icons, Row, STATUS};
+use super::cells::{system_icons, Row, COLUMNS, STATUS};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT};
 use windows::Win32::UI::Controls::*;
 
@@ -23,15 +23,13 @@ pub fn custom_draw(list: HWND, rows: &[Row], lparam: LPARAM) -> LRESULT {
         below_rows(list, rows.len(), draw.nmcd.hdc);
         return LRESULT(CDRF_DODEFAULT as isize);
     }
-    if stage == CDDS_ITEMPREPAINT.0 {
-        return LRESULT(CDRF_NOTIFYSUBITEMDRAW as isize);
-    }
-    if stage != CDDS_ITEMPREPAINT.0 | CDDS_SUBITEM.0 {
+    if stage != CDDS_ITEMPREPAINT.0 {
         return LRESULT(CDRF_DODEFAULT as isize);
     }
-    let (index, column) = (draw.nmcd.dwItemSpec, draw.iSubItem);
+    let index = draw.nmcd.dwItemSpec;
     let Some(row) = rows.get(index) else { return LRESULT(CDRF_DODEFAULT as isize) };
-    let r = cell(list, index, column);
+    let mut whole = RECT { left: LVIR_BOUNDS as i32, ..Default::default() };
+    send(list, LVM_GETITEMRECT, index, &mut whole as *mut _ as isize);
     let selected = send(list, LVM_GETITEMSTATE, index, LVIS_SELECTED.0 as isize) & LVIS_SELECTED.0 as isize != 0;
     // as GTK draws lists on Mint: lines between rows, the selected one in Mint's green
     let look = if selected {
@@ -41,18 +39,24 @@ pub fn custom_draw(list: HWND, rows: &[Row], lparam: LPARAM) -> LRESULT {
         let bg = if hot { theme::hover(theme::VIEW) } else { theme::VIEW };
         Look { bg, text: theme::TEXT, dim: theme::DIM, track: theme::TRACK, bar: theme::ACCENT }
     };
-    Painter::over(draw.nmcd.hdc, r, |p| {
-        p.fill(r, look.bg);
+    // the whole row at once: its background and file icon first, then its words and bar in one
+    // smooth pass
+    Painter::over(draw.nmcd.hdc, whole, |p| {
+        p.fill(whole, look.bg);
         if !selected {
-            p.fill(RECT { top: r.bottom - 1, ..r }, theme::SEPARATOR);
+            p.fill(RECT { top: whole.bottom - 1, ..whole }, theme::SEPARATOR);
         }
-        match column {
-            0 => name(p, r, row, &look),
-            STATUS => status(p, r, row, &look),
-            _ => {
-                let text = RECT { left: r.left + px(10), right: r.right - px(6), ..r };
-                let value = row.cells.get(column as usize).map_or("", |c| c.as_str());
-                p.text(text, value, Font::Body, look.text, Align::Left); // one line, cut with "…"
+        let name = cell(list, index, 0);
+        let text_left = icon(p, name, row);
+        for column in 0..COLUMNS.len() as i32 {
+            let r = cell(list, index, column);
+            match column {
+                0 => p.text(RECT { left: text_left, right: r.right - px(6), ..r }, &row.cells[0], Font::Body, look.text, Align::Left),
+                STATUS => status(p, r, row, &look),
+                _ => {
+                    let text = RECT { left: r.left + px(10), right: r.right - px(6), ..r };
+                    p.text(text, &row.cells[column as usize], Font::Body, look.text, Align::Left); // one line, cut with "…"
+                }
             }
         }
     });
@@ -93,16 +97,16 @@ fn cell(list: HWND, item: usize, column: i32) -> RECT {
     r
 }
 
-fn name(p: &Painter, r: RECT, row: &Row, look: &Look) {
+/// The file's icon at the start of the name cell; returns where its name goes.
+fn icon(p: &Painter, r: RECT, row: &Row) -> i32 {
     let (mut width, mut height) = (0, 0);
     let x = r.left + px(10);
     // SAFETY: Windows' file-type icons, drawn into the list's DC
     unsafe {
         let _ = ImageList_GetIconSize(system_icons(), Some(&mut width), Some(&mut height));
-        let _ = ImageList_Draw(system_icons(), row.icon, p.dc, x, (r.top + r.bottom - height) / 2, ILD_TRANSPARENT);
+        let _ = ImageList_Draw(system_icons(), row.icon, p.gdi(), x, (r.top + r.bottom - height) / 2, ILD_TRANSPARENT);
     }
-    let text = RECT { left: x + width + px(8), right: r.right - px(6), ..r };
-    p.text(text, &row.cells[0], Font::Body, look.text, Align::Left);
+    x + width + px(8)
 }
 
 /// The status: its words, and a thin bar under them.

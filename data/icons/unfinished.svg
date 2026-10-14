@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffcb52"/><stop offset="1" stop-color="#e88b0c"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.42"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="shape"><rect x="5" y="4" width="54" height="54" rx="13"/></clipPath>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="1.60" stdDeviation="1.60" flood-color="#000" flood-opacity="0.32"/>
+    </filter>
+    <filter id="lift" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="1.00" stdDeviation="0.80" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect x="5" y="4" width="54" height="54" rx="13" fill="url(#fill)" filter="url(#shadow)"/>
+  <rect x="5" y="4" width="54" height="27.0" fill="url(#shine)" clip-path="url(#shape)"/>
+  <rect x="5.5" y="4.5" width="53" height="53" rx="12.5" fill="none"
+        stroke="#e88b0c" stroke-opacity="0.45"/>
+  <g transform="translate(15.80 14.80) scale(1.3500)" filter="url(#lift)">
+    <path d="M15.25 13.5H11.25C10.836 13.5 10.5 13.164 10.5 12.75V6.75C10.5 6.336 10.836 6 11.25 6C11.664 6 12 6.336 12 6.75V12H15.25C15.664 12 16 12.336 16 12.75C16 13.164 15.664 13.5 15.25 13.5ZM12 2C6.478 2 2 6.478 2 12C2 17.522 6.478 22 12 22C17.522 22 22 17.522 22 12C22 6.478 17.522 2 12 2Z" fill="#fff"/>
+  </g>
+</svg>

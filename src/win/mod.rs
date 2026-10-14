@@ -3,12 +3,9 @@
 
 mod add;
 mod browsers;
+mod complete;
 mod dialogs;
 mod finish;
-/// Ids of the icons in data/windows (build.rs).
-mod icons {
-    include!(concat!(env!("OUT_DIR"), "/icons.rs"));
-}
 mod main;
 mod power;
 mod progress;
@@ -191,6 +188,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
         browsers::offer(&app);
     }
     main::message_loop(&app);
+    theme::stop();
     manager.shutdown();
     drop(app);
     runtime.shutdown_timeout(std::time::Duration::from_secs(3));

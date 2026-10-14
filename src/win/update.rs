@@ -53,8 +53,7 @@ pub fn show_pending(app: &Rc<App>) {
         body.push_str(&format!("\n\nWhat's new:\n{}", release.notes));
     }
     let lines = body.lines().map(|l| 1 + l.len() as i32 / 70).sum::<i32>().min(20);
-    let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
-    let window = Window::new("TurboDM update", style, WINDOW_EX_STYLE(0), None, (480, 200));
+    let window = Window::dialog("TurboDM update", None, (480, 200), false);
     let heading = window.heading(&format!("TurboDM {} is available", release.version));
     let text = window.note(&body.replace('\n', "\r\n"));
     let status = window.label("");

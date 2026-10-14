@@ -3,6 +3,7 @@
 
 mod buttons;
 pub mod canvas;
+pub mod caption;
 mod class;
 mod controls;
 pub mod field;
@@ -10,11 +11,13 @@ mod frame;
 mod labels;
 mod layout;
 pub mod look;
+pub mod moves;
 pub mod tabs;
 
 pub use controls::*;
-pub use frame::edge;
 pub use layout::*;
+pub use field::{enable, set_visible};
+pub use moves::batch;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -41,6 +44,7 @@ pub struct Window {
     default_id: Cell<u16>, // the button Enter presses
     surfaces: RefCell<Vec<(RECT, COLORREF)>>, // areas painted another colour (look.rs)
     colors: RefCell<HashMap<isize, COLORREF>>, // labels' own text colours
+    pub caption: Cell<HWND>, // its title bar's title (redrawn with a new title)
 }
 
 pub const APP_ICON: u16 = 1; // the program's icon resource (build.rs)
@@ -64,9 +68,10 @@ impl Window {
             default_id: Cell::new(0),
             surfaces: RefCell::default(),
             colors: RefCell::default(),
+            caption: Cell::default(),
         });
         let style = style | WS_CLIPCHILDREN; // its painting never covers its controls
-        let (width, height) = outer_size(px(size.0), px(size.1), style, ex);
+        let (width, height) = frame::outer_size(px(size.0), px(size.1), style, ex);
         // SAFETY: the window keeps one reference (GWLP_USERDATA), released in WM_NCDESTROY
         unsafe {
             let param = Rc::into_raw(win.clone());
@@ -111,20 +116,6 @@ impl Window {
         self.default_id.set(id);
     }
 
-    pub fn show(&self) {
-        // SAFETY: plain calls on our own window
-        unsafe {
-            let _ = ShowWindow(self.hwnd(), SW_SHOW);
-            let _ = SetForegroundWindow(self.hwnd());
-            if self.default_id.get() != 0 {
-                // the keyboard starts on the main button, as in Windows' own dialogs
-                if let Ok(button) = GetDlgItem(Some(self.hwnd()), self.default_id.get() as i32) {
-                    let _ = windows::Win32::UI::Input::KeyboardAndMouse::SetFocus(Some(button));
-                }
-            }
-        }
-    }
-
     /// Close as the close button would (asks `on_close`).
     pub fn close(&self) {
         // SAFETY: as above
@@ -138,7 +129,10 @@ impl Window {
     }
 
     pub fn set_title(&self, title: &str) {
-        set_text(self.hwnd(), title);
+        if text(self.hwnd()) != title {
+            set_text(self.hwnd(), title);
+            canvas::redraw(self.caption.get());
+        }
     }
 
     pub(super) fn handle(&self, msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
@@ -182,6 +176,7 @@ impl Window {
     /// Drop the handlers (they may hold the window itself).
     pub(super) fn forget(&self) {
         field::forget(self.hwnd());
+        moves::forget(self.hwnd());
         labels::forget(self.hwnd());
         self.commands.borrow_mut().clear();
         self.notifies.borrow_mut().clear();

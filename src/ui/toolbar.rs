@@ -4,10 +4,10 @@ use super::style;
 use gtk::gio;
 use gtk::prelude::*;
 
-/// A toolbar button like IDM's: icon over a label.
-fn tool_button(icon: &str, label: &str, tooltip: &str, action: &str) -> gtk::Button {
+/// A toolbar button like IDM's: its 3D icon (data/icons/<picture>.png) over a label.
+fn tool_button(picture: &str, label: &str, tooltip: &str, action: &str) -> gtk::Button {
     let content = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(3).build();
-    content.append(&style::icon(icon, 20));
+    content.append(&style::picture(picture, 26));
     content.append(&gtk::Label::builder().label(label).css_classes(["caption"]).build());
     gtk::Button::builder().child(&content).tooltip_text(tooltip).action_name(action)
         .css_classes(["flat"]).width_request(76).build()
@@ -18,23 +18,23 @@ fn tool_button(icon: &str, label: &str, tooltip: &str, action: &str) -> gtk::But
 pub fn toolbar(search: &gtk::SearchEntry) -> gtk::Box {
     let bar = gtk::Box::builder().spacing(2).margin_start(6).margin_end(6).margin_top(4).margin_bottom(4).build();
     let groups: [&[(&str, &str, &str, &str)]; 4] = [
-        &[("list-add-symbolic", "Add URL", "Add a download (Ctrl+N)", "win.add")],
-        &[("media-playback-start-symbolic", "Resume", "Resume selected (Ctrl+R)", "win.resume"),
-          ("media-playback-pause-symbolic", "Pause", "Pause selected (Ctrl+P)", "win.pause"),
-          ("media-seek-forward-symbolic", "Resume all", "Resume every unfinished download", "win.resume-all"),
-          ("media-playback-stop-symbolic", "Pause all", "Pause every download", "win.pause-all")],
-        &[("user-trash-symbolic", "Delete", "Remove selected from the list (Delete)", "win.remove"),
-          ("edit-clear-all-symbolic", "Clear done", "Remove completed downloads from the list", "win.delete-completed")],
-        &[("folder-open-symbolic", "Folder", "Open the download folder", "win.open-download-folder"),
-          ("emblem-system-symbolic", "Options", "Preferences (Ctrl+,)", "win.settings")],
+        &[("add", "Add URL", "Add a download (Ctrl+N)", "win.add")],
+        &[("resume", "Resume", "Resume selected (Ctrl+R)", "win.resume"),
+          ("pause", "Pause", "Pause selected (Ctrl+P)", "win.pause"),
+          ("resume-all", "Resume all", "Resume every unfinished download", "win.resume-all"),
+          ("pause-all", "Pause all", "Pause every download", "win.pause-all")],
+        &[("delete", "Delete", "Remove selected from the list (Delete)", "win.remove"),
+          ("clear", "Clear done", "Remove completed downloads from the list", "win.delete-completed")],
+        &[("folder", "Folder", "Open the download folder", "win.open-download-folder"),
+          ("options", "Options", "Preferences (Ctrl+,)", "win.settings")],
     ];
     for (i, group) in groups.iter().enumerate() {
         if i > 0 {
             bar.append(&gtk::Separator::builder().orientation(gtk::Orientation::Vertical)
                 .margin_start(4).margin_end(4).margin_top(6).margin_bottom(6).build());
         }
-        for (icon, label, tip, action) in group.iter() {
-            bar.append(&tool_button(icon, label, tip, action));
+        for (picture, label, tip, action) in group.iter() {
+            bar.append(&tool_button(picture, label, tip, action));
         }
     }
     if style::windows_look() {

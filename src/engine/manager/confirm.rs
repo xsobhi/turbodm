@@ -51,10 +51,11 @@ impl Manager {
 
 /// The file (or its unfinished part) now, and as it would be named with this name and folder.
 fn target(info: &TaskInfo, name: Option<String>, dir: &Path) -> (PathBuf, PathBuf, Option<String>) {
-    let completed = info.status == Status::Completed;
+    let old = info.path();
+    // (finished, or finishing: the unfinished part already has its final name)
+    let completed = info.status == Status::Completed || (!part_path(&old).exists() && old.exists());
     let file = |p: PathBuf| if completed { p } else { part_path(&p) };
     let name = name.or_else(|| info.filename.clone());
-    let old = info.path();
     let mut new = dir.join(name.as_deref().unwrap_or("download"));
     if new != old && (new.exists() || part_path(&new).exists()) {
         new = unique_path(&new);
