@@ -1,6 +1,6 @@
-//! On Windows: give turbodm.exe its icon, version info, the toolbar and category icons
-//! (data/windows/*.ico, with ids in $OUT_DIR/icons.rs), and a manifest asking for Windows'
-//! current controls (common controls 6: drawn in the style of the Windows version).
+//! On Windows: give turbodm.exe its icon, version info, and a manifest asking for Windows'
+//! current controls (common controls 6). (The interface's own icons are compiled in:
+//! src/win/theme/pictures.rs.)
 
 const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
@@ -27,26 +27,13 @@ const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?
 
 fn main() {
     println!("cargo:rerun-if-changed=data/turbodm.ico");
-    println!("cargo:rerun-if-changed=data/windows");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
-    let root = std::env::var("CARGO_MANIFEST_DIR").unwrap().replace('\\', "/");
-    let mut names: Vec<String> = std::fs::read_dir("data/windows").expect("data/windows").flatten()
-        .filter_map(|e| e.file_name().to_str()?.strip_suffix(".ico").map(String::from)).collect();
-    names.sort();
-    let (mut rc, mut ids) = (String::new(), String::new());
-    for (i, name) in names.iter().enumerate() {
-        let id = 101 + i;
-        rc += &format!("{id} ICON \"{root}/data/windows/{name}.ico\"\n");
-        ids += &format!("pub const {}: u16 = {id};\n", name.to_uppercase().replace('-', "_"));
-    }
-    std::fs::write(std::path::Path::new(&std::env::var("OUT_DIR").unwrap()).join("icons.rs"), ids).unwrap();
     let mut res = winresource::WindowsResource::new();
     res.set_icon("data/turbodm.ico");
     res.set("FileDescription", "TurboDM download manager");
     res.set("ProductName", "TurboDM");
     res.set_manifest(MANIFEST);
-    res.append_rc_content(&rc);
     res.compile().expect("Windows resources");
 }

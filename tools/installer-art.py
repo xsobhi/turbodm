@@ -1,24 +1,32 @@
 #!/usr/bin/env python3
 """Draw the Windows installer's images into packaging/windows/art/ (run after changing the icon).
-Needs Pillow, PyGObject (GdkPixbuf, to render the SVG icon) and the Segoe UI font."""
+Needs Pillow, resvg (`cargo install resvg`; or PyGObject's GdkPixbuf) to draw the SVG icon, and
+the Segoe UI font (Windows' own, or SEGOE_DIR)."""
 import os
+import shutil
+import subprocess
 from pathlib import Path
 
-import gi
-gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import GdkPixbuf
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "packaging/windows/art"
-FONTS = Path(os.environ.get("SEGOE_DIR", Path.home() / ".local/share/fonts/windows-collection"))
-TOP, BOTTOM = (59, 110, 236), (124, 58, 237)  # the icon's blue → purple
+WINDOWS_FONTS = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+FONTS = Path(os.environ.get("SEGOE_DIR", WINDOWS_FONTS if WINDOWS_FONTS.is_dir()
+                            else Path.home() / ".local/share/fonts/windows-collection"))
+TOP, BOTTOM = (52, 168, 84), (22, 104, 52)  # Mint's green, darker below (the icon stands out)
 
 
 def icon(size):
-    pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(str(ROOT / "data/turbodm.svg"), size, size)
     tmp = OUT / ".icon.png"
-    pixbuf.savev(str(tmp), "png", [], [])
+    if shutil.which("resvg"):
+        subprocess.run(["resvg", "-w", str(size), "-h", str(size), str(ROOT / "data/turbodm.svg"), str(tmp)], check=True)
+    else:
+        import gi
+        gi.require_version("GdkPixbuf", "2.0")
+        from gi.repository import GdkPixbuf
+        pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_size(str(ROOT / "data/turbodm.svg"), size, size)
+        pixbuf.savev(str(tmp), "png", [], [])
     image = Image.open(tmp).convert("RGBA")
     tmp.unlink()
     return image
@@ -45,7 +53,7 @@ def banner(scale):
     shadow = Image.new("RGBA", image.size, (0, 0, 0, 0))
     ImageDraw.Draw(shadow).rounded_rectangle(
         [left + 2 * scale, top + 6 * scale, left + mark.width - 2 * scale, top + mark.height + 4 * scale],
-        radius=22 * scale, fill=(20, 10, 60, 90))
+        radius=22 * scale, fill=(5, 40, 15, 110))
     overlay = Image.alpha_composite(overlay, shadow.filter(ImageFilter.GaussianBlur(8 * scale)))
     overlay.alpha_composite(mark, (round(left), round(top)))
     image = Image.alpha_composite(image.convert("RGBA"), overlay)

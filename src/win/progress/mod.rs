@@ -57,8 +57,7 @@ pub fn open(app: &Rc<App>, id: &str) {
     }
     let Some(snap) = app.manager.get(id) else { return };
     app.on_done.borrow_mut().entry(id.to_string()).or_default(); // being watched: say when it's done
-    let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-    let window = Window::new(&snap.filename, style, WINDOW_EX_STYLE(0), None, (WIDTH, 400));
+    let window = Window::dialog(&snap.filename, None, (WIDTH, 400), true);
     let info = Info::new(&window);
     wnd::place(info.hwnd, PAD, TOP, WIDTH - 2 * PAD, info::FIELDS.len() as i32 * info::ROW);
     let bar = Bar::new(&window);

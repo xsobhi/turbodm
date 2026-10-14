@@ -12,7 +12,6 @@ use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{InvalidateRect, HFONT};
 use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::HiDpi::GetDpiForSystem;
-use windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// 96-DPI pixels to this screen's.
@@ -178,41 +177,4 @@ pub fn is_checked(hwnd: HWND) -> bool {
 
 pub fn set_checked(hwnd: HWND, on: bool) {
     send(hwnd, BM_SETCHECK, on as usize, 0);
-}
-
-pub fn enable(hwnd: HWND, on: bool) {
-    // SAFETY: plain calls
-    unsafe {
-        let _ = EnableWindow(hwnd, on);
-        for button in field::buttons_of(hwnd) {
-            let _ = EnableWindow(button, on);
-        }
-    }
-}
-
-/// Show or hide a control (a field with its frame and buttons).
-pub fn set_visible(hwnd: HWND, on: bool) {
-    let show = if on { SW_SHOW } else { SW_HIDE };
-    // SAFETY: plain calls
-    unsafe {
-        let _ = ShowWindow(hwnd, show);
-        for button in field::buttons_of(hwnd) {
-            let _ = ShowWindow(button, show);
-        }
-    }
-    field::redraw_frame(hwnd);
-}
-
-/// Draw a control again.
-pub fn redraw(hwnd: HWND) {
-    // SAFETY: plain call
-    unsafe { let _ = InvalidateRect(Some(hwnd), None, true); }
-}
-
-/// The window size that gives `width` × `height` of content.
-pub fn outer_size(width: i32, height: i32, style: WINDOW_STYLE, ex: WINDOW_EX_STYLE) -> (i32, i32) {
-    let mut rect = RECT { left: 0, top: 0, right: width, bottom: height };
-    // SAFETY: plain calculation
-    unsafe { let _ = AdjustWindowRectEx(&mut rect, style, false, ex); }
-    (rect.right - rect.left, rect.bottom - rect.top)
 }

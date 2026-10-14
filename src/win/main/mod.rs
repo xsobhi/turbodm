@@ -2,7 +2,6 @@
 //! the sidebar, the downloads list, a status line; closing it keeps TurboDM in the notification
 //! area.
 
-mod caption;
 mod cells;
 mod clipboard;
 mod draw;
@@ -13,6 +12,7 @@ mod sidebar;
 mod toolbar;
 
 use super::theme::{self, icon, Align, Font};
+use super::wnd::caption::{self, Button, Caption};
 use super::wnd::{self, canvas, field, px, send, Window};
 pub use events::{message_loop, setup};
 use super::{progress, shell, App};
@@ -29,7 +29,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 pub struct MainWindow {
     pub window: Rc<Window>,
     pub list: list::List,
-    caption: caption::Caption,
+    caption: Caption,
     sidebar: sidebar::Sidebar,
     toolbar: toolbar::Toolbar,
     pub search: HWND,
@@ -46,13 +46,14 @@ const STATUS: i32 = 30;
 impl MainWindow {
     pub fn new() -> Self {
         let window = Window::new("TurboDM", WS_OVERLAPPEDWINDOW, WINDOW_EX_STYLE(0), None, (1180, 700));
+        let caption = Caption::new(&window, &[Button::Minimize, Button::Maximize, Button::Close]);
+        window.caption.set(caption.title);
         window.own_title_bar(caption::HEIGHT);
-        let caption = caption::Caption::new(&window);
         let toolbar = toolbar::Toolbar::new(&window);
         let refresh_soon = || super::post(refresh);
         let search = window.edit("", refresh_soon);
         send(search, EM_SETCUEBANNER, 1, HSTRING::from("Search downloads").as_ptr() as isize);
-        let menu = window.icon_button(icon::MENU, || super::post(|app| menu::app_menu(app)));
+        let menu = window.icon_button(icon::MENU, || super::post(menu::app_menu));
         let sidebar = sidebar::Sidebar::new(&window, refresh_soon);
         let list = list::List::new(&window, |id| super::post(move |app| open_row(app, &id)),
                                    |point| menu::context(super::app().main.window.hwnd(), point), refresh_soon);
@@ -97,31 +98,30 @@ impl MainWindow {
         let bar = px(caption::HEIGHT);
         let (top, bottom) = (bar + px(toolbar::HEIGHT), (height - px(STATUS)).max(bar + px(toolbar::HEIGHT)));
         let split = px(self.split.get());
-        let buttons = width - caption::buttons_width();
+        let buttons = width - self.caption.buttons_width();
         let menu = RECT { left: buttons - px(42), top: (bar - px(34)) / 2, right: buttons - px(8), bottom: (bar + px(34)) / 2 };
         let search = RECT { left: menu.left - px(8) - px(260), top: (bar - px(32)) / 2, right: menu.left - px(8),
                             bottom: (bar + px(32)) / 2 };
-        let place = |hwnd: HWND, r: RECT| {
-            // SAFETY: plain moves of our controls
-            unsafe { let _ = SetWindowPos(hwnd, None, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOZORDER); }
-        };
-        self.caption.place(width, search.left - px(8));
-        field::place_field(self.search, search);
-        place(self.menu, menu);
-        place(self.toolbar.hwnd, RECT { left: 0, top: bar, right: width, bottom: top });
-        // as on Mint: white content between grey bars, thin lines between the parts (the one
-        // between sidebar and list in a white strip that moves it)
-        let (body, line) = (top + 1, split + px(GAP) / 2);
-        self.window.set_surfaces(vec![
-            (RECT { left: 0, top, right: width, bottom: body }, theme::BORDER),
-            (RECT { left: split, top: body, right: split + px(GAP), bottom }, theme::VIEW),
-            (RECT { left: line, top: body, right: line + 1, bottom }, theme::BORDER),
-            (RECT { left: 0, top: bottom, right: width, bottom: bottom + 1 }, theme::BORDER),
-        ]);
-        place(self.sidebar.hwnd, RECT { left: 0, top: body, right: split, bottom });
-        place(self.list.hwnd, RECT { left: split + px(GAP), top: body, right: width, bottom });
-        self.list.fit();
-        place(self.status, RECT { left: 0, top: bottom + 1, right: width, bottom: height });
+        let place = wnd::moves::move_window;
+        wnd::batch(|| {
+            self.caption.place(width, search.left - px(8));
+            field::place_field(self.search, search);
+            place(self.menu, menu);
+            place(self.toolbar.hwnd, RECT { left: 0, top: bar, right: width, bottom: top });
+            // as on Mint: white content between grey bars, thin lines between the parts (the one
+            // between sidebar and list in a white strip that moves it)
+            let (body, line) = (top + 1, split + px(GAP) / 2);
+            self.window.set_surfaces(vec![
+                (RECT { left: 0, top, right: width, bottom: body }, theme::BORDER),
+                (RECT { left: split, top: body, right: split + px(GAP), bottom }, theme::VIEW),
+                (RECT { left: line, top: body, right: line + 1, bottom }, theme::BORDER),
+                (RECT { left: 0, top: bottom, right: width, bottom: bottom + 1 }, theme::BORDER),
+            ]);
+            place(self.sidebar.hwnd, RECT { left: 0, top: body, right: split, bottom });
+            place(self.list.hwnd, RECT { left: split + px(GAP), top: body, right: width, bottom });
+            place(self.status, RECT { left: 0, top: bottom + 1, right: width, bottom: height });
+        });
+        self.list.fit(); // (by its new size)
     }
 
     pub fn menu_button(&self) -> HWND {

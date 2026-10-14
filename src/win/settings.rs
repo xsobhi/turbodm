@@ -17,9 +17,8 @@ const ROW: i32 = 36;
 
 pub fn open(app: &Rc<App>) {
     let s = app.manager.settings();
-    let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
     let width = PAD + NAMES + 16 + CONTROLS + PAD;
-    let window = Window::new("Preferences", style, WINDOW_EX_STYLE(0), Some(app.main.window.hwnd()), (width, 700));
+    let window = Window::dialog("Preferences", Some(app.main.window.hwnd()), (width, 700), false);
     let folder = Rc::new(RefCell::new(s.download_dir.clone()));
     let (f, w) = (folder.clone(), window.hwnd());
     let button = Rc::new(Cell::new(HWND::default()));

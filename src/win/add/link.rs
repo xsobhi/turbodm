@@ -1,7 +1,7 @@
 //! Checking a new address. Like IDM, the download itself starts behind the dialog, on one
 //! connection and out of sight; with that turned off, the server is just asked about the file.
 
-use super::super::wnd::{set_text, text};
+use super::super::wnd::set_text;
 use super::super::App;
 use super::Form;
 use std::rc::Rc;
@@ -55,13 +55,13 @@ pub fn check(app: &Rc<App>, form: &Rc<Form>) {
         return;
     }
     set_text(form.info.get(), "Checking link…");
-    let name = text(form.name.get()).trim().to_string();
     if app.manager.settings().predownload {
+        let (directory, filename) = form.target(app);
+        let chosen = form.chosen.get();
         let id = app.manager.prefetch(AddRequest {
             url: url.clone(),
-            filename: form.name_edited.get().then_some(name).filter(|n| !n.is_empty()),
-            directory: form.dir_chosen.get().then(|| form.dir.borrow().clone()),
-            connections: text(form.connections.get()).parse().ok(),
+            filename: filename.filter(|_| chosen),
+            directory: chosen.then_some(directory),
             ..form.req.clone()
         });
         *form.early.borrow_mut() = Some((url, id));
@@ -88,6 +88,12 @@ fn watch(app: &Rc<App>, form: &Rc<Form>) {
         let line = match s.status {
             Status::Connecting | Status::Queued => "Checking link…".to_string(),
             Status::Error => format!("Couldn't check the link: {}", s.error.as_deref().unwrap_or("unknown error")),
+            Status::Completed => {
+                if !form.filled.replace(true) {
+                    show_found(app, form, &s.filename, Some(s.directory.clone()));
+                }
+                format!("Downloaded already ({}): it goes where you say when you start it", human_size(s.size))
+            }
             _ => {
                 if !form.filled.replace(true) {
                     show_found(app, form, &s.filename, Some(s.directory.clone()));
@@ -109,13 +115,8 @@ fn watch(app: &Rc<App>, form: &Rc<Form>) {
     }
 }
 
-/// The server's name for the file, and its folder, unless the user chose them.
+/// The server's name for the file, in its folder, unless the user chose where it goes.
 fn show_found(app: &Rc<App>, form: &Rc<Form>, filename: &str, directory: Option<std::path::PathBuf>) {
-    if !form.name_edited.get() {
-        set_text(form.name.get(), filename);
-    }
-    if !form.dir_chosen.get() {
-        *form.dir.borrow_mut() = directory.unwrap_or_else(|| app.manager.settings().folder_for(filename));
-        form.show_folder();
-    }
+    let folder = directory.unwrap_or_else(|| app.manager.settings().folder_for(filename));
+    form.show(&folder, filename);
 }

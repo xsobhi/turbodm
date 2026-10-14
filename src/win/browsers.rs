@@ -29,8 +29,7 @@ pub fn mark_offered(app: &App) {
 pub fn open(_app: &Rc<App>) {
     let dir = find::extension_dir();
     let browsers: Vec<_> = find::installed().into_iter().filter(|_| dir.is_some()).collect();
-    let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
-    let window = Window::new("Add TurboDM to your browser", style, WINDOW_EX_STYLE(0), None, (500, 300));
+    let window = Window::dialog("Add TurboDM to your browser", None, (500, 300), false);
     let heading = window.heading("Catch downloads from your browser");
     let intro = window.note("Add the TurboDM extension to your browser: files you download there then go to TurboDM.");
     let guide = window.note("");

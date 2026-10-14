@@ -62,7 +62,7 @@ impl Details {
         for (i, row) in rows.iter().enumerate() {
             let seg = s.segments.get(i);
             let values = match seg {
-                Some(seg) => [(i + 1).to_string(), human_size(Some(seg.start)), human_size(Some(seg.done)),
+                Some(seg) => [(i + 1).to_string(), human_size(Some(seg.start)), human_size(Some(seg.got())),
                               connection_info(seg, s.status).to_string()],
                 None => Default::default(),
             };

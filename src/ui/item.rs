@@ -7,8 +7,8 @@ use std::cell::{Cell, RefCell};
 use super::sidebar::state_of;
 use turbodm::categories::icon_for;
 use turbodm::engine::Snapshot;
-use turbodm::text::status_text;
-use turbodm::util::{human_eta, human_size, human_speed};
+use turbodm::text::{eta_text, rate_text, status_text};
+use turbodm::util::human_size;
 
 mod imp {
     use super::*;
@@ -86,8 +86,8 @@ impl DownloadItem {
         set("icon", icon_for(&snap.filename).into());
         set("size", human_size(snap.size));
         set("status", status_text(snap));
-        set("speed", human_speed(snap.speed));
-        set("eta", human_eta(snap.eta));
+        set("speed", rate_text(snap));
+        set("eta", eta_text(snap));
         let progress = snap.progress.unwrap_or(0.0).clamp(0.0, 1.0);
         if (self.progress() - progress).abs() > 1e-4 {
             self.set_progress(progress);

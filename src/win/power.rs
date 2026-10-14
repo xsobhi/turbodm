@@ -18,7 +18,9 @@ pub fn countdown(app: &Rc<App>, power: Power, filename: &str) {
     if others > 0 {
         detail.push_str(&format!(" {others} other download(s) will be paused and can be resumed later."));
     }
-    let window = Window::new("TurboDM", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, WS_EX_TOPMOST, None, (420, 150));
+    let window = Window::dialog("TurboDM", None, (420, 150), false);
+    // SAFETY: plain call on our window: above the others, so it's seen before the computer goes
+    unsafe { let _ = SetWindowPos(window.hwnd(), Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE); }
     let title = window.heading("");
     let body = window.note(&detail);
     let fire = {

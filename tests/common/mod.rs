@@ -1,4 +1,8 @@
-//! A tiny HTTP/1.1 test server: byte ranges on/off, throttling, unknown size.
+//! A tiny HTTP/1.1 test server: byte ranges on/off, throttling, unknown size; and the
+//! tests' harness (harness.rs).
+#![allow(dead_code)] // each test file uses part of it
+
+pub mod harness;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};

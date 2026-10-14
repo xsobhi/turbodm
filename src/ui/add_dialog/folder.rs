@@ -1,36 +1,26 @@
-//! The dialog's folder: choosing it, and remembering it for that kind of file.
+//! Choosing where the file goes: the system's save dialog, opened at the path in the field.
 
 use super::Form;
 use gtk::gio;
 use gtk::prelude::*;
+use std::path::PathBuf;
 use std::rc::Rc;
-use turbodm::categories::category_for;
 
-/// The file's category, from its name (or the address while the name isn't known).
-pub fn kind_of(form: &Form) -> &'static str {
-    let name = form.name.text();
-    category_for(if name.is_empty() { form.url.text() } else { name }.as_str())
-}
-
-pub fn update_remember_label(form: &Form) {
-    let name = form.name.text();
-    let kind = turbodm::text::kind_words(if name.is_empty() { form.url.text() } else { name }.as_str());
-    form.remember.set_label(Some(&format!("Always save {kind} to this folder")));
-}
-
-pub fn update_folder_label(form: &Form) {
-    form.folder.set_label(&form.dir.borrow().display().to_string());
-}
-
-pub fn choose_folder(form: &Rc<Form>, parent: &gtk::Window) {
-    let dialog = gtk::FileDialog::builder().title("Save to folder").modal(true)
-        .initial_folder(&gio::File::for_path(&*form.dir.borrow())).build();
+pub fn choose_path(form: &Rc<Form>, parent: &gtk::Window) {
+    let now = PathBuf::from(form.path.text().trim());
+    let mut dialog = gtk::FileDialog::builder().title("Save as").modal(true);
+    // the folder (or the nearest one above it that exists yet), and the name
+    if let Some(folder) = now.parent().and_then(|p| p.ancestors().find(|a| a.is_dir())) {
+        dialog = dialog.initial_folder(&gio::File::for_path(folder));
+    }
+    if let Some(name) = now.file_name() {
+        dialog = dialog.initial_name(name.to_string_lossy().as_ref());
+    }
     let form = form.clone();
-    dialog.select_folder(Some(parent), gio::Cancellable::NONE, move |result| {
+    dialog.build().save(Some(parent), gio::Cancellable::NONE, move |result| {
         if let Some(path) = result.ok().and_then(|f| f.path()) {
-            *form.dir.borrow_mut() = path;
-            form.dir_chosen.set(true);
-            update_folder_label(&form);
+            form.set_path(&path);
+            form.chosen.set(true);
         }
     });
 }

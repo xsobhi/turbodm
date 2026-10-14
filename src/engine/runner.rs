@@ -162,5 +162,9 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
     if info.size.is_none() {
         info.size = Some(segments.total_done());
     }
+    // done, in the same moment as the rename: whatever looks at it next (the add dialog moving it
+    // to the folder chosen there) finds the finished file, never a name that's already gone
+    info.status = Status::Completed;
+    info.completed = Some(unix_now());
     Ok(true)
 }

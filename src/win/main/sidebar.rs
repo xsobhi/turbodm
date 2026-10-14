@@ -105,12 +105,11 @@ impl Sidebar {
                 s.borrow_mut().hover = hover;
                 canvas::redraw(hwnd);
             }
-            if let (Mouse::Down(..), Some(Row::Entry(picked, ..))) = (event, hover.map(|i| &ROWS[i])) {
-                if v.get() != *picked {
-                    v.set(*picked);
-                    canvas::redraw(hwnd);
-                    on_change();
-                }
+            if let (Mouse::Down(..), Some(Row::Entry(picked, ..))) = (event, hover.map(|i| &ROWS[i]))
+                && v.get() != *picked {
+                v.set(*picked);
+                canvas::redraw(hwnd);
+                on_change();
             }
         });
         Sidebar { hwnd, view, state }

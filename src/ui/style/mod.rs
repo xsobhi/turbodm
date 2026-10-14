@@ -5,12 +5,14 @@
 
 mod icons;
 mod system;
+mod tiles;
 
 use gtk::prelude::*;
 use gtk::{gdk, glib};
 use std::sync::OnceLock;
 
 pub use system::Palette;
+pub use tiles::picture;
 
 /// The Windows look is in use.
 pub fn windows_look() -> bool {

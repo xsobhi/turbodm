@@ -1,16 +1,17 @@
-//! "Download file info", like IDM's: check the link, pick name, folder and connections, start.
-//! The download quietly starts on one connection while the dialog is open (out of the list),
-//! so Start feels instant; Cancel throws away what was downloaded.
+//! "Download file info", like IDM's: the link and where to save it (one path: folder and name),
+//! then start. The download quietly starts on one connection while the dialog is open (out of the
+//! list), so Start feels instant, and moves to the path chosen when it's confirmed, even if it
+//! already finished; Cancel throws away what was downloaded. Connections: as in Preferences.
 
 mod link;
 
-use super::theme;
-use super::wnd::{self, is_checked, set_text, text, Rows, Window, FIELD, LINE};
+use super::theme::{self, icon};
+use super::wnd::{self, field, is_checked, set_text, text, Rows, Window, FIELD, LINE};
 use super::{progress, shell, App};
 use std::cell::{Cell, RefCell};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use turbodm::config::MAX_CONNECTIONS;
+use turbodm::categories::category_for;
 use turbodm::engine::manager::Confirm;
 use turbodm::engine::AddRequest;
 use turbodm::text::kind_words;
@@ -22,15 +23,11 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 pub struct Form {
     window: Rc<Window>,
     url: Cell<HWND>,
-    name: Cell<HWND>,
-    folder: Cell<HWND>,
+    path: Cell<HWND>, // where it's saved: folder and name
     remember: Cell<HWND>,
-    connections: Cell<HWND>,
     info: Cell<HWND>,
-    dir: RefCell<PathBuf>,
-    dir_chosen: Cell<bool>,  // the user picked a folder: stop choosing by category
-    name_edited: Cell<bool>, // the user typed a name: don't replace it
-    probe_id: Cell<u64>,     // results of older checks are ignored
+    chosen: Cell<bool>,   // the user typed or picked the path: don't replace it
+    probe_id: Cell<u64>,  // results of older checks are ignored
     early: RefCell<Option<(String, String)>>, // (url, id) of the download started early
     probed: link::Probed, // a check's answer, from the network
     filled: Cell<bool>,   // the early download's name and folder were shown
@@ -52,31 +49,44 @@ impl Form {
         text(self.url.get()).trim().to_string()
     }
 
-    fn show_folder(&self) {
-        set_text(self.folder.get(), &self.dir.borrow().display().to_string());
+    /// The path in the field as (folder, name); a bare name goes to the folder for its kind.
+    fn target(&self, app: &App) -> (PathBuf, Option<String>) {
+        let path = PathBuf::from(text(self.path.get()).trim());
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).filter(|n| !n.trim().is_empty());
+        let folder = match path.parent() {
+            Some(dir) if dir.is_absolute() => dir.to_path_buf(),
+            _ => app.manager.settings().folder_for(name.as_deref().unwrap_or(&filename_from_url(&self.url()))),
+        };
+        (folder, name)
+    }
+
+    /// Show where it goes (unless the user said where).
+    fn show(&self, folder: &Path, name: &str) {
+        if !self.chosen.get() {
+            set_text(self.path.get(), &folder.join(name).display().to_string());
+            to_end(self.path.get());
+            self.update_remember();
+        }
     }
 
     /// "Always save documents to this folder", for this kind of file.
     fn update_remember(&self) {
-        let name = text(self.name.get());
-        let kind = kind_words(if name.is_empty() { self.url() } else { name }.as_str());
-        set_text(self.remember.get(), &format!("Always save {kind} to this folder"));
+        let path = PathBuf::from(text(self.path.get()));
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| self.url());
+        set_text(self.remember.get(), &format!("Always save {} to this folder", kind_words(&name)));
     }
 }
 
 pub fn open(app: &Rc<App>, req: AddRequest) {
     let settings = app.manager.settings();
-    let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
     let owner = app.main.is_visible().then(|| app.main.window.hwnd());
-    let window = Window::new("Download file info", style, WINDOW_EX_STYLE(0), owner, (620, 300));
-    let guess = req.filename.clone().unwrap_or_else(|| filename_from_url(&req.url));
+    let window = Window::dialog("Download file info", owner, (620, 220), false);
+    let guess = req.filename.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| filename_from_url(&req.url));
+    let folder = req.directory.clone().unwrap_or_else(|| settings.folder_for(&guess));
     let form = Rc::new(Form {
         window: window.clone(),
-        url: Cell::default(), name: Cell::default(), folder: Cell::default(), remember: Cell::default(),
-        connections: Cell::default(), info: Cell::default(),
-        dir: RefCell::new(req.directory.clone().unwrap_or_else(|| settings.folder_for(&guess))),
-        dir_chosen: Cell::new(req.directory.is_some()), // e.g. picked in the browser's "Save as"
-        name_edited: Cell::new(req.filename.is_some()),
+        url: Cell::default(), path: Cell::default(), remember: Cell::default(), info: Cell::default(),
+        chosen: Cell::new(req.directory.is_some()), // e.g. picked in the browser's "Save as"
         probe_id: Cell::new(0),
         early: RefCell::new(None),
         probed: Default::default(),
@@ -86,27 +96,30 @@ pub fn open(app: &Rc<App>, req: AddRequest) {
     let f = Rc::downgrade(&form);
     form.url.set(window.edit(&req.url, move || if let Some(f) = f.upgrade() { link::changed(&f) }));
     let f = Rc::downgrade(&form);
-    form.name.set(window.edit(req.filename.as_deref().unwrap_or(""), move || if let Some(f) = f.upgrade() {
-        // SAFETY: plain query
-        f.name_edited.set(unsafe { GetFocus() } == f.name.get());
+    let path = window.edit(&folder.join(&guess).display().to_string(), move || if let Some(f) = f.upgrade() {
+        // SAFETY: plain query (typed by the user, not filled in by us)
+        if unsafe { GetFocus() } == f.path.get() {
+            f.chosen.set(true);
+        }
         f.update_remember();
-    }));
-    // the folder is a button showing it, as on Linux: click it to choose another
+    });
+    form.path.set(path);
     let f = Rc::downgrade(&form);
-    let folder = window.button("", move || {
+    let browse = window.icon_button(icon::FOLDER_OPEN, move || {
         let Some(f) = f.upgrade() else { return };
-        if let Some(dir) = shell::choose_folder(f.window.hwnd(), "Save to folder", &f.dir.borrow().clone()) {
-            *f.dir.borrow_mut() = dir;
-            f.dir_chosen.set(true);
-            f.show_folder();
+        let now = PathBuf::from(text(f.path.get()).trim());
+        if let Some(picked) = shell::choose_save(f.window.hwnd(), "Save as", &now) {
+            set_text(f.path.get(), &picked.display().to_string());
+            to_end(f.path.get());
+            f.chosen.set(true);
+            f.update_remember();
         }
     });
-    form.folder.set(folder);
+    field::make_field(path, vec![browse]); // the folder button inside the field, at its end
     form.remember.set(window.checkbox("", false, |_| {}));
-    form.connections.set(window.spin(1, MAX_CONNECTIONS as i32, settings.connections as i32, |_| {}));
     form.info.set(window.label("Enter a link"));
     window.set_text_color(form.info.get(), theme::DIM);
-    let labels = ["Address", "Save as", "Folder", "Connections"].map(|l| window.name(l));
+    let labels = ["Address", "Save to"].map(|l| window.name(l));
     let (a, f) = (app.clone(), form.clone());
     let start = window.default_button("Start download", move || submit(&a, &f, true));
     let (a, f) = (app.clone(), form.clone());
@@ -125,24 +138,22 @@ pub fn open(app: &Rc<App>, req: AddRequest) {
     window.on_command(IDCANCEL.0 as u16, move |_| w.close());
 
     // laid out as the Linux dialog: names on the right of their column, then the fields
-    let mut rows = Rows::new(18, 18, 100, 584);
+    let mut rows = Rows::new(18, 18, 84, 584);
     rows.field(Some(labels[0]), form.url.get(), FIELD);
-    rows.field(Some(labels[1]), form.name.get(), FIELD);
-    rows.field(Some(labels[2]), folder, FIELD);
+    rows.field(Some(labels[1]), path, FIELD);
     rows.field(None, form.remember.get(), LINE + 6);
-    rows.field(Some(labels[3]), form.connections.get(), FIELD);
     rows.field(None, form.info.get(), LINE);
     rows.gap(6);
     let bottom = rows.buttons(&[cancel, later, start]);
     wnd::set_client_height(window.hwnd(), bottom + 18);
-    form.show_folder();
+    to_end(path);
     form.update_remember();
     link::start_timer(&form, app);
     wnd::center(window.hwnd());
     window.show();
     // SAFETY: plain focus change in our dialog
     unsafe { let _ = SetFocus(Some(form.url.get())); }
-    send_select_all(form.url.get());
+    wnd::send(form.url.get(), 0x00B1, 0, -1); // EM_SETSEL: all
     if req.url.is_empty() {
         // like IDM: a link on the clipboard is the likely one
         if let Some(text) = shell::clipboard_text().map(|t| t.trim().to_string())
@@ -154,8 +165,10 @@ pub fn open(app: &Rc<App>, req: AddRequest) {
     }
 }
 
-fn send_select_all(edit: HWND) {
-    wnd::send(edit, 0x00B1, 0, -1); // EM_SETSEL: all
+/// A long path shows its end, the file's name.
+fn to_end(edit: HWND) {
+    wnd::send(edit, 0x00B1, usize::MAX, -1); // EM_SETSEL: no selection, the caret at the end
+    wnd::send(edit, 0x00B7, 0, 0); // EM_SCROLLCARET
 }
 
 fn submit(app: &Rc<App>, form: &Rc<Form>, start_now: bool) {
@@ -164,18 +177,15 @@ fn submit(app: &Rc<App>, form: &Rc<Form>, start_now: bool) {
         set_text(form.info.get(), "Please enter an http(s) link");
         return;
     }
-    let name = text(form.name.get()).trim().to_string();
-    let filename = (!name.is_empty()).then_some(name);
-    let directory = form.dir.borrow().clone();
-    let connections = text(form.connections.get()).parse().unwrap_or(app.manager.settings().connections)
-        .clamp(1, MAX_CONNECTIONS);
+    let (directory, filename) = form.target(app);
+    let connections = app.manager.settings().connections;
     if is_checked(form.remember.get()) {
-        let kind = turbodm::categories::category_for(filename.as_deref().unwrap_or(&url));
         let mut s = app.manager.settings();
-        s.folders.insert(kind.into(), directory.clone());
+        s.folders.insert(category_for(filename.as_deref().unwrap_or(&url)).into(), directory.clone());
         app.manager.update_settings(s);
     }
     let id = match form.take_early(app, Some(&url)) {
+        // moved to the chosen path when confirmed, finished or not
         Some(id) => {
             app.manager.confirm(&id, Confirm { filename, directory, connections, start: start_now });
             id

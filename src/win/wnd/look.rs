@@ -20,7 +20,7 @@ pub const DROPDOWN: PCWSTR = w!("TurboDM.Dropdown"); // a button that opens a li
 
 pub fn mark(hwnd: HWND, what: PCWSTR) {
     // SAFETY: a property on our own control
-    unsafe { let _ = SetPropW(hwnd, what, Some(HANDLE(1 as *mut _))); }
+    unsafe { let _ = SetPropW(hwnd, what, Some(HANDLE(std::ptr::dangling_mut()))); }
 }
 
 pub(super) fn marked(hwnd: HWND, what: PCWSTR) -> bool {
@@ -32,10 +32,13 @@ impl Window {
     /// Areas (window pixels) painted in other colours than the window's, later ones on top,
     /// such as the page of tabs; the controls on them take their colour.
     pub fn set_surfaces(&self, surfaces: Vec<(RECT, COLORREF)>) {
+        let top = super::moves::content_top(self.hwnd()); // (below its own title bar)
+        let surfaces: Vec<_> = surfaces.into_iter()
+            .map(|(r, color)| (RECT { top: r.top + top, bottom: r.bottom + top, ..r }, color)).collect();
         if *self.surfaces.borrow() != surfaces {
             *self.surfaces.borrow_mut() = surfaces;
-            // SAFETY: plain call on our window
-            unsafe { let _ = RedrawWindow(Some(self.hwnd()), None, None, RDW_INVALIDATE | RDW_ALLCHILDREN); }
+            // SAFETY: plain call on our window (its controls are drawn again as they move)
+            unsafe { let _ = InvalidateRect(Some(self.hwnd()), None, false); }
         }
     }
 
@@ -104,7 +107,9 @@ pub(super) fn handle(win: &Window, msg: u32, wparam: WPARAM, lparam: LPARAM) -> 
             // SAFETY: WM_DRAWITEM comes with a DRAWITEMSTRUCT for the control to draw
             let item = unsafe { &*(lparam.0 as *const DRAWITEMSTRUCT) };
             let bg = surface_at(win, rect_in(item.hwndItem, win.hwnd()));
-            let color = if item.itemState.0 & ODS_DISABLED.0 != 0 { theme::DISABLED }
+            // SAFETY: plain query
+            let enabled = unsafe { windows::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled(item.hwndItem) }.as_bool();
+            let color = if !enabled { theme::DISABLED }
                         else { win.colors.borrow().get(&(item.hwndItem.0 as isize)).copied().unwrap_or(theme::TEXT) };
             super::labels::draw(item, bg, color).then_some(LRESULT(1))
         }

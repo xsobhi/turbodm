@@ -32,8 +32,7 @@ pub fn confirm_delete(app: &Rc<App>, ids: Vec<String>) {
 /// IDM's "Refresh download address": paste a fresh link for an expired one.
 pub fn refresh_address(app: &Rc<App>, id: &str) {
     let Some(snap) = app.manager.get(id) else { return };
-    let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
-    let window = Window::new("Refresh download address", style, WINDOW_EX_STYLE(0), Some(app.main.window.hwnd()), (520, 150));
+    let window = Window::dialog("Refresh download address", Some(app.main.window.hwnd()), (520, 150), false);
     let hint = window.note(&format!("New link for \u{201c}{}\u{201d}. Progress is kept if the server returns the same file.",
                                     snap.filename));
     let field = window.edit(&snap.url, || {});

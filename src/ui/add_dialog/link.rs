@@ -2,7 +2,7 @@
 //! connection and out of sight, so it's already connected when the user presses Start; with
 //! that turned off, the server is just asked about the file.
 
-use super::{update_folder_label, Form};
+use super::Form;
 use crate::ui::Ctx;
 use gtk::glib;
 use gtk::prelude::*;
@@ -14,7 +14,7 @@ use turbodm::util::human_size;
 
 /// A new address: start downloading it right away, or just ask the server about it.
 pub fn check(ctx: &Rc<Ctx>, form: &Rc<Form>, req: &AddRequest) {
-    let url = form.url.text().trim().to_string();
+    let url = form.url();
     form.take_early(ctx, None);
     if !url.starts_with("http") {
         return;
@@ -22,11 +22,12 @@ pub fn check(ctx: &Rc<Ctx>, form: &Rc<Form>, req: &AddRequest) {
     if !ctx.manager.settings().predownload {
         return probe(ctx, form, req);
     }
+    let (directory, filename) = form.target(ctx);
+    let chosen = form.chosen.get();
     let id = ctx.manager.prefetch(AddRequest {
         url: url.clone(),
-        filename: form.name_edited.get().then(|| form.name.text().trim().to_string()).filter(|n| !n.is_empty()),
-        directory: form.dir_chosen.get().then(|| form.dir.borrow().clone()),
-        connections: Some(form.connections.value() as usize),
+        filename: filename.filter(|_| chosen),
+        directory: chosen.then_some(directory),
         ..req.clone()
     });
     *form.early.borrow_mut() = Some((url, id.clone()));
@@ -37,23 +38,18 @@ pub fn check(ctx: &Rc<Ctx>, form: &Rc<Form>, req: &AddRequest) {
             return glib::ControlFlow::Break; // started, cancelled, or another address
         }
         let Some(s) = ctx.manager.get(&id) else { return glib::ControlFlow::Break };
+        let known = !matches!(s.status, Status::Connecting | Status::Queued | Status::Error);
+        if known && !filled {
+            filled = true;
+            form.show(&s.directory, &s.filename); // the server's name, in its folder
+        }
         let text = match s.status {
             Status::Connecting | Status::Queued => "Checking link…".to_string(),
             Status::Error => format!("Couldn't check the link: {}", s.error.as_deref().unwrap_or("unknown error")),
-            _ => {
-                if !filled {
-                    filled = true;
-                    if !form.name_edited.get() {
-                        form.name.set_text(&s.filename);
-                    }
-                    if !form.dir_chosen.get() {
-                        *form.dir.borrow_mut() = s.directory.clone();
-                        update_folder_label(&form);
-                    }
-                }
-                let resume = if s.resumable { "yes" } else { "no (single connection)" };
-                format!("Size: {}   ·   Resume support: {resume}", human_size(s.size))
+            Status::Completed => {
+                format!("Downloaded already ({}): it goes where you say when you start it", human_size(s.size))
             }
+            _ => info(s.size, s.resumable),
         };
         if form.info.text() != text {
             form.info.set_text(&text);
@@ -64,7 +60,7 @@ pub fn check(ctx: &Rc<Ctx>, form: &Rc<Form>, req: &AddRequest) {
 
 /// Ask the server for name, size and resume support (runs on the tokio runtime).
 fn probe(ctx: &Rc<Ctx>, form: &Rc<Form>, req: &AddRequest) {
-    let url = form.url.text().trim().to_string();
+    let url = form.url();
     let id = form.probe_id.get() + 1;
     form.probe_id.set(id);
     form.info.set_text("Checking link…");
@@ -79,20 +75,17 @@ fn probe(ctx: &Rc<Ctx>, form: &Rc<Form>, req: &AddRequest) {
             return; // the address changed meanwhile
         }
         match result {
-            Ok(Ok(info)) => {
-                let resume = if info.resumable { "yes" } else { "no (single connection)" };
-                form.info.set_text(&format!("Size: {}   ·   Resume support: {resume}", human_size(info.size)));
-                if !form.name_edited.get() {
-                    form.name.set_text(&info.filename);
-                }
-                if !form.dir_chosen.get() {
-                    let name = form.name.text();
-                    *form.dir.borrow_mut() = settings.folder_for(&name);
-                    update_folder_label(&form);
-                }
+            Ok(Ok(found)) => {
+                form.info.set_text(&info(found.size, found.resumable));
+                form.show(&settings.folder_for(&found.filename), &found.filename);
             }
             Ok(Err(err)) => form.info.set_text(&format!("Couldn't check the link: {err}")),
             Err(_) => form.info.set_text("Couldn't check the link"),
         }
     });
+}
+
+fn info(size: Option<u64>, resumable: bool) -> String {
+    let resume = if resumable { "yes" } else { "no (single connection)" };
+    format!("Size: {}   ·   Resume support: {resume}", human_size(size))
 }

@@ -41,21 +41,21 @@ impl View {
 }
 
 const STATES: [(View, &str, &str); 4] = [
-    (View::All, "All downloads", "folder-download-symbolic"),
-    (View::Active, "Downloading", "media-playback-start-symbolic"),
-    (View::Unfinished, "Unfinished", "media-playback-pause-symbolic"),
-    (View::Completed, "Completed", "object-select-symbolic"),
+    (View::All, "All downloads", "all"),
+    (View::Active, "Downloading", "downloading"),
+    (View::Unfinished, "Unfinished", "unfinished"),
+    (View::Completed, "Completed", "completed"),
 ];
 
-/// (category, label, icon); categories come from `turbodm::categories`, "General" is the rest.
+/// (category, label, picture); categories come from `turbodm::categories`, "General" is the rest.
 const CATEGORIES: [(&str, &str, &str); 7] = [
-    ("Video", "Video", "video-x-generic-symbolic"),
-    ("Music", "Music", "audio-x-generic-symbolic"),
-    ("Documents", "Documents", "x-office-document-symbolic"),
-    ("Compressed", "Compressed", "package-x-generic-symbolic"),
-    ("Programs", "Programs", "application-x-executable-symbolic"),
-    ("Images", "Images", "image-x-generic-symbolic"),
-    ("General", "Other", "text-x-generic-symbolic"),
+    ("Video", "Video", "video"),
+    ("Music", "Music", "music"),
+    ("Documents", "Documents", "documents"),
+    ("Compressed", "Compressed", "compressed"),
+    ("Programs", "Programs", "programs"),
+    ("Images", "Images", "images"),
+    ("General", "Other", "other"),
 ];
 
 pub struct Sidebar {
@@ -71,10 +71,10 @@ fn heading(text: &str) -> gtk::ListBoxRow {
     gtk::ListBoxRow::builder().child(&label).selectable(false).activatable(false).build()
 }
 
-fn entry(name: &str, icon: &str) -> (gtk::ListBoxRow, gtk::Label) {
+fn entry(name: &str, picture: &str) -> (gtk::ListBoxRow, gtk::Label) {
     let count = gtk::Label::builder().css_classes(["dim-label", "numeric"]).build();
     let row = gtk::Box::builder().spacing(10).margin_start(4).margin_end(4).margin_top(3).margin_bottom(3).build();
-    row.append(&super::style::icon(icon, 16));
+    row.append(&super::style::picture(picture, 20)); // its 3D icon, as on Windows
     row.append(&gtk::Label::builder().label(name).xalign(0.0).hexpand(true).build());
     row.append(&count);
     (gtk::ListBoxRow::builder().child(&row).build(), count)

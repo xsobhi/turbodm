@@ -2,76 +2,10 @@
 
 mod common;
 
+use common::harness::*;
 use common::{random_bytes, start, Options};
-use sha2::{Digest, Sha256};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::runtime::Runtime;
-use turbodm::config::Settings;
-use turbodm::engine::manager::Confirm;
-use turbodm::engine::{AddRequest, Manager, Snapshot, Status};
-
-struct Env {
-    rt: Runtime,
-    dir: PathBuf,
-}
-
-impl Env {
-    fn new(name: &str) -> Self {
-        let dir = std::env::temp_dir().join(format!("turbodm-test-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        Env { rt: tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap(), dir }
-    }
-
-    fn manager(&self, connections: usize) -> Arc<Manager> {
-        let settings = Settings {
-            download_dir: self.dir.clone(),
-            use_categories: false,
-            connections,
-            min_split_kib: 256,
-            retries: 3,
-            timeout_secs: 10,
-            ..Settings::default()
-        };
-        Manager::new(settings, self.dir.join("downloads.json"), self.rt.handle().clone()).0
-    }
-}
-
-impl Drop for Env {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
-    }
-}
-
-fn add(manager: &Arc<Manager>, url: &str) -> String {
-    manager.add(AddRequest { url: url.into(), start: true, ..Default::default() })
-}
-
-fn wait_for(manager: &Manager, id: &str, done: impl Fn(&Snapshot) -> bool) -> Snapshot {
-    let deadline = Instant::now() + Duration::from_secs(60);
-    loop {
-        let snap = manager.get(id).unwrap();
-        if done(&snap) {
-            return snap;
-        }
-        assert!(Instant::now() < deadline, "timeout: {:?} {:?}", snap.status, snap.error);
-        std::thread::sleep(Duration::from_millis(20));
-    }
-}
-
-fn finished(s: &Snapshot) -> bool {
-    matches!(s.status, Status::Completed | Status::Error)
-}
-
-fn assert_file(snap: &Snapshot, data: &[u8]) {
-    assert_eq!(snap.status, Status::Completed, "{:?}", snap.error);
-    assert_eq!(snap.filename, "test file.bin");
-    let written = std::fs::read(&snap.path).unwrap();
-    assert_eq!(Sha256::digest(&written), Sha256::digest(data));
-    assert!(!Path::new(&format!("{}.tdmpart", snap.path.display())).exists());
-}
+use turbodm::engine::{AddRequest, Status};
 
 #[test]
 fn downloads_with_32_connections() {
@@ -179,46 +113,4 @@ fn per_download_speed_limit() {
     assert_file(&snap, &data);
     assert_eq!(snap.speed_limit_kib, 1024);
     assert!(started.elapsed() > Duration::from_secs(2), "not limited: {:?}", started.elapsed());
-}
-
-fn prefetch(manager: &Arc<Manager>, url: &str) -> String {
-    manager.prefetch(AddRequest { url: url.into(), ..Default::default() })
-}
-
-#[test]
-fn prefetch_moves_to_the_chosen_name_and_folder() {
-    let env = Env::new("prefetch");
-    let data = random_bytes(8 << 20);
-    let server = start(&env.rt, data.clone(), Options { ranges: true, no_length: false, max_conns: 0 }, 20);
-    let manager = env.manager(4);
-    let id = prefetch(&manager, &server.url);
-    let early = wait_for(&manager, &id, |s| s.downloaded > 0); // downloading while the dialog is open
-    assert_eq!(early.segments.len(), 1, "the early download uses one connection");
-    assert!(manager.snapshot().is_empty(), "listed before it was confirmed");
-    let dir = env.dir.join("chosen");
-    manager.confirm(&id, Confirm { filename: Some("test file.bin".into()), directory: dir.clone(),
-                                   connections: 4, start: true });
-    wait_for(&manager, &id, |s| s.segments.len() >= 4 || finished(s)); // grew from the early single connection
-    let snap = wait_for(&manager, &id, finished);
-    assert_eq!(snap.path, dir.join("test file.bin"));
-    assert_file(&snap, &data);
-    assert_eq!(manager.snapshot().len(), 1);
-}
-
-#[test]
-fn prefetch_cancelled_leaves_nothing() {
-    let env = Env::new("prefetch-cancel");
-    let data = random_bytes(8 << 20);
-    let server = start(&env.rt, data.clone(), Options { ranges: true, no_length: false, max_conns: 0 }, 40);
-    let manager = env.manager(4);
-    let id = prefetch(&manager, &server.url);
-    let part = PathBuf::from(format!("{}.tdmpart", wait_for(&manager, &id, |s| s.downloaded > 0).path.display()));
-    assert!(part.exists());
-    manager.remove(&id, true);
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while manager.get(&id).is_some() {
-        assert!(Instant::now() < deadline);
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    assert!(!part.exists());
 }

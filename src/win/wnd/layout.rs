@@ -1,5 +1,6 @@
 //! Placing controls (in 96-DPI pixels, scaled to the screen) and windows on the screen.
 
+use super::moves::{content_top, move_window};
 use super::{field, px, send};
 use windows::Win32::UI::Controls::BCM_GETIDEALSIZE;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
@@ -18,12 +19,15 @@ pub fn rect(x: i32, y: i32, width: i32, height: i32) -> RECT {
     RECT { left: px(x), top: px(y), right: px(x) + px(width), bottom: px(y) + px(height) }
 }
 
-/// Put a control at (x, y), `width` × `height` (96-DPI pixels); a text field goes in its frame.
+/// Put a control at (x, y), `width` × `height` (96-DPI pixels, below its window's title bar);
+/// a text field goes in its frame.
 pub fn place(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) {
-    let r = rect(x, y, width, height);
+    // SAFETY: plain query
+    let top = unsafe { GetParent(hwnd) }.map(content_top).unwrap_or(0);
+    let mut r = rect(x, y, width, height);
+    (r.top, r.bottom) = (r.top + top, r.bottom + top);
     if !field::place_field(hwnd, r) {
-        // SAFETY: plain move of our control
-        unsafe { let _ = SetWindowPos(hwnd, None, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOZORDER | SWP_NOACTIVATE); }
+        move_window(hwnd, r);
     }
 }
 
@@ -42,7 +46,8 @@ pub fn client_size(hwnd: HWND) -> (i32, i32) {
     (rect.right * 96 / px(96), rect.bottom * 96 / px(96))
 }
 
-/// Resize the window so its inside is `height` (96-DPI pixels) tall, keeping its width.
+/// Resize the window so its inside is `height` (96-DPI pixels) tall below its title bar, keeping
+/// its width.
 pub fn set_client_height(hwnd: HWND, height: i32) {
     let (mut outer, mut inner) = (RECT::default(), RECT::default());
     // SAFETY: plain calls on our window
@@ -50,7 +55,7 @@ pub fn set_client_height(hwnd: HWND, height: i32) {
         let _ = GetWindowRect(hwnd, &mut outer);
         let _ = GetClientRect(hwnd, &mut inner);
         let frame = (outer.bottom - outer.top) - inner.bottom;
-        let _ = SetWindowPos(hwnd, None, 0, 0, outer.right - outer.left, px(height) + frame,
+        let _ = SetWindowPos(hwnd, None, 0, 0, outer.right - outer.left, px(height) + content_top(hwnd) + frame,
                              SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 }
@@ -59,6 +64,10 @@ pub fn set_client_height(hwnd: HWND, height: i32) {
 pub fn center(hwnd: HWND) {
     // SAFETY: plain queries and a move of our own window
     unsafe {
+        if super::moves::offscreen() {
+            let _ = SetWindowPos(hwnd, None, -30000, 0, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            return;
+        }
         let mut cursor = POINT::default();
         let _ = GetCursorPos(&mut cursor);
         let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
@@ -95,15 +104,6 @@ impl Rows {
         }
         place(field, self.left + self.label_width, self.y, self.width - self.label_width, height);
         self.y += height + 10;
-    }
-
-    /// A field only as wide as `width`, after the labels.
-    pub fn short(&mut self, label: Option<HWND>, field: HWND, width: i32) {
-        if let Some(label) = label {
-            place(label, self.left, self.y + (FIELD - LINE) / 2, self.label_width - 12, LINE);
-        }
-        place(field, self.left + self.label_width, self.y, width, FIELD);
-        self.y += FIELD + 10;
     }
 
     /// Something across the whole width.
