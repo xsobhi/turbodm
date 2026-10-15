@@ -70,6 +70,7 @@ async fn prepare(task: &Task, shared: &Shared, cancel: &CancellationToken) -> Re
     }
     info.size = probe.size;
     info.etag = probe.etag;
+    info.content_type = Some(probe.content_type).filter(|t| !t.is_empty());
     info.resumable = probe.resumable && probe.size.is_some();
     let parts = if info.resumable { info.connections } else { 1 };
     let map = segments.get_or_insert_with(|| Arc::new(SegmentMap::create(info.size, parts, min_split)));

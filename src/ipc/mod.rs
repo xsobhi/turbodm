@@ -31,6 +31,19 @@ pub enum Message {
         #[serde(default)]
         silent: bool, // skip the confirmation dialog
     },
+    /// A video on a web page: the extension's "Download video with TurboDM". (Added in 1.8: an
+    /// older TurboDM answers "bad message", and the extension says it needs updating.)
+    Video {
+        url: String, // the page (or the link to it)
+        #[serde(default)]
+        referrer: Option<String>,
+        #[serde(default)]
+        cookies: Option<String>,
+        #[serde(default)]
+        user_agent: Option<String>,
+        #[serde(default)]
+        silent: bool, // no dialog: the usual quality
+    },
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -74,5 +87,13 @@ mod tests {
             other => panic!("wrong message {other:?}"),
         }
         assert!(matches!(serde_json::from_str::<Message>(r#"{"type":"ping"}"#), Ok(Message::Ping)));
+        let json = r#"{"type":"video","url":"https://youtu.be/x","cookies":"a=1","userAgent":"UA"}"#;
+        match serde_json::from_str::<Message>(json).unwrap() {
+            Message::Video { url, cookies, user_agent, referrer, silent } => {
+                assert_eq!((url.as_str(), cookies.as_deref(), user_agent.as_deref(), referrer, silent),
+                           ("https://youtu.be/x", Some("a=1"), Some("UA"), None, false));
+            }
+            other => panic!("wrong message {other:?}"),
+        }
     }
 }

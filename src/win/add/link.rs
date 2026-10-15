@@ -1,12 +1,15 @@
 //! Checking a new address. Like IDM, the download itself starts behind the dialog, on one
 //! connection and out of sight; with that turned off, the server is just asked about the file.
+//! A video site's page, or any address the server answers with a web page, is looked at for a
+//! video instead (video.rs).
 
 use super::super::wnd::set_text;
 use super::super::App;
-use super::Form;
+use super::{video, Form};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use turbodm::engine::http::{self, Headers, ProbeInfo};
+use turbodm::engine::video::{is_video_site, is_web_page};
 use turbodm::engine::{AddRequest, Status};
 use turbodm::util::human_size;
 use windows::Win32::Foundation::LRESULT;
@@ -45,13 +48,19 @@ pub fn changed(form: &Rc<Form>) {
     unsafe { SetTimer(Some(form.window.hwnd()), TYPING, 350, None) };
 }
 
-/// A new address: start downloading it right away, or just ask the server about it.
+/// A new address: start downloading it right away, or just ask the server about it; a video
+/// site's page (or any, in a dialog opened for a video): look for its video.
 pub fn check(app: &Rc<App>, form: &Rc<Form>) {
     let url = form.url();
     form.take_early(app, None);
     form.probe_id.set(form.probe_id.get() + 1);
     form.filled.set(false);
+    video::leave(form);
     if !url.starts_with("http") {
+        return;
+    }
+    if form.video.wanted || (is_video_site(&url) && !form.video.not_here(&url)) {
+        video::look(app, form, &url);
         return;
     }
     set_text(form.info.get(), "Checking link…");
@@ -81,10 +90,25 @@ fn info(size: Option<u64>, resumable: bool) -> String {
     format!("Size: {}   ·   Resume support: {resume}", human_size(size))
 }
 
+/// The server answered with a web page: look for a video on it (unless there was none).
+fn page(app: &Rc<App>, form: &Rc<Form>, content_type: Option<&str>) -> bool {
+    let url = form.url();
+    if !content_type.is_some_and(is_web_page) || form.video.not_here(&url) {
+        return false;
+    }
+    form.take_early(app, None); // the page itself isn't wanted
+    video::look(app, form, &url);
+    true
+}
+
 /// Show what the early download or the check found out.
 fn watch(app: &Rc<App>, form: &Rc<Form>) {
+    video::watch(app, form);
     let early = form.early.borrow().as_ref().map(|(_, id)| id.clone());
     if let Some(s) = early.and_then(|id| app.manager.get(&id)) {
+        if page(app, form, s.content_type.as_deref()) {
+            return;
+        }
         let line = match s.status {
             Status::Connecting | Status::Queued => "Checking link…".to_string(),
             Status::Error => format!("Couldn't check the link: {}", s.error.as_deref().unwrap_or("unknown error")),
@@ -106,6 +130,7 @@ fn watch(app: &Rc<App>, form: &Rc<Form>) {
     let answer = form.probed.lock().unwrap().take();
     match answer {
         Some((number, _)) if number != form.probe_id.get() => {} // the address changed meanwhile
+        Some((_, Ok(probe))) if page(app, form, Some(&probe.content_type)) => {}
         Some((_, Ok(probe))) => {
             set_text(form.info.get(), &info(probe.size, probe.resumable));
             show_found(app, form, &probe.filename, None);

@@ -7,6 +7,7 @@ pub use confirm::Confirm;
 
 use super::state::{self, Snapshot};
 use super::task::{Status, Task, TaskInfo};
+use super::video::{self, VideoJob};
 use super::{runner, Shared};
 use crate::config::Settings;
 use crate::util::{filename_from_url, sanitize_filename, unique_path};
@@ -28,6 +29,9 @@ pub struct AddRequest {
     pub user_agent: Option<String>,
     pub connections: Option<usize>,
     pub start: bool,
+    /// A video on the page at `url`, downloaded by yt-dlp (an empty format: the usual quality,
+    /// picked once the page is looked at).
+    pub video: Option<VideoJob>,
 }
 
 pub struct Manager {
@@ -88,11 +92,16 @@ impl Manager {
             s.folder_for(&guess)
         });
         let mut info = TaskInfo::new(req.url, dir.clone(), req.connections.unwrap_or(s.connections));
-        info.filename = name.map(|n| unique_path(&dir.join(n)).file_name().unwrap().to_string_lossy().into_owned());
+        info.filename = name.map(|n| self.unused_name(&dir, n));
         if auto_dir && info.filename.is_none() {
             info.category_base = Some(s.download_dir.clone()); // pick the folder once the name is known
         }
         (info.referrer, info.cookies, info.user_agent) = (req.referrer, req.cookies, req.user_agent);
+        if let Some(job) = req.video {
+            (info.connections, info.resumable) = (1, true); // one yt-dlp, which carries on from its part files
+            info.size = job.parts.iter().map(|(_, size)| *size).sum();
+            info.video = Some(job);
+        }
         info.status = if req.start { Status::Queued } else { Status::Paused };
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
         let id = format!("{:x}{:x}", nanos.as_nanos(), self.next_id.fetch_add(1, Ordering::Relaxed));
@@ -103,6 +112,20 @@ impl Manager {
         self.dirty.store(true, Ordering::Relaxed);
         self.schedule();
         id
+    }
+
+    /// `name` in `dir`, or "name (1).ext"… if that file exists or another download will be it.
+    fn unused_name(&self, dir: &std::path::Path, name: String) -> String {
+        let tasks = self.all();
+        let taken = |path: &std::path::Path| tasks.iter().any(|t| t.info.lock().unwrap().path() == path);
+        let mut path = unique_path(&dir.join(&name));
+        let mut n = 1;
+        while taken(&path) {
+            let (stem, ext) = name.rsplit_once('.').map_or((name.as_str(), String::new()), |(s, e)| (s, format!(".{e}")));
+            path = unique_path(&dir.join(format!("{stem} ({n}){ext}")));
+            n += 1;
+        }
+        path.file_name().unwrap().to_string_lossy().into_owned()
     }
 
     pub(super) fn find(&self, id: &str) -> Option<Arc<Task>> {
@@ -120,7 +143,12 @@ impl Manager {
             info.status = Status::Connecting;
             info.error = None;
         }
-        let handle = self.rt.spawn(runner::run(task.clone(), self.shared.clone(), token));
+        let is_video = task.info.lock().unwrap().video.is_some();
+        let handle = if is_video {
+            self.rt.spawn(video::run(task.clone(), self.shared.clone(), token))
+        } else {
+            self.rt.spawn(runner::run(task.clone(), self.shared.clone(), token))
+        };
         *task.runner.lock().unwrap() = Some(handle);
         self.dirty.store(true, Ordering::Relaxed);
     }

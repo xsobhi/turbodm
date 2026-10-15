@@ -180,6 +180,15 @@ fn listen_ipc(ctx: &Rc<Ctx>, rx: async_channel::Receiver<Message>) {
                     let req = AddRequest { url, filename, directory, referrer, cookies, user_agent, ..Default::default() };
                     ctx.handle_download(req, silent);
                 }
+                Message::Video { url, referrer, cookies, user_agent, .. } => {
+                    // no quality dialog here (yet): the usual quality, once the page is looked at
+                    let req = AddRequest { url, referrer, cookies, user_agent, start: true,
+                                           video: Some(Default::default()), ..Default::default() };
+                    let id = ctx.manager.add(req);
+                    if ctx.manager.settings().show_progress_window {
+                        progress::open(&ctx, &id);
+                    }
+                }
             }
         }
     });

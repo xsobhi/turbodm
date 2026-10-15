@@ -3,6 +3,7 @@
 use super::http::Headers;
 use super::limiter::RateLimiter;
 use super::segments::SegmentMap;
+use super::video::VideoJob;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -58,6 +59,10 @@ pub struct TaskInfo {
     pub category_base: Option<PathBuf>, // choose the category folder once the name is known
     #[serde(default)]
     pub speed_limit_kib: u64, // this download only, 0 = unlimited
+    #[serde(default)]
+    pub content_type: Option<String>, // as the server said ("text/html": a web page, maybe with a video)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video: Option<VideoJob>, // a video from a web page, downloaded by yt-dlp
 }
 
 pub fn unix_now() -> u64 {
@@ -84,6 +89,8 @@ impl TaskInfo {
             completed: None,
             category_base: None,
             speed_limit_kib: 0,
+            content_type: None,
+            video: None,
         }
     }
 
@@ -112,6 +119,8 @@ pub struct Task {
     pub pending: AtomicBool,
     /// Wakes the running download to add connections up to `info.connections`.
     pub grow: tokio::sync::Notify,
+    /// What a video download is doing besides downloading ("Joining video and sound…").
+    activity: Mutex<Option<&'static str>>,
     samples: Mutex<VecDeque<(Instant, u64)>>,
     speed: Mutex<f64>,
 }
@@ -127,6 +136,7 @@ impl Task {
             runner: Mutex::new(None),
             pending: AtomicBool::new(false),
             grow: tokio::sync::Notify::new(),
+            activity: Mutex::new(None),
             samples: Mutex::new(VecDeque::new()),
             speed: Mutex::new(0.0),
         })
@@ -140,6 +150,14 @@ impl Task {
         self.info.lock().unwrap().status = status;
     }
 
+    pub fn activity(&self) -> Option<&'static str> {
+        *self.activity.lock().unwrap()
+    }
+
+    pub fn set_activity(&self, what: Option<&'static str>) {
+        *self.activity.lock().unwrap() = what;
+    }
+
     /// Bytes received so far (what progress, speed and time left go by).
     pub fn downloaded(&self) -> u64 {
         let info = self.info.lock().unwrap();
@@ -147,6 +165,9 @@ impl Task {
             && let Some(size) = info.size {
                 return size;
             }
+        if let Some(video) = &info.video {
+            return video.done; // as yt-dlp reports it
+        }
         drop(info);
         self.segments.lock().unwrap().as_ref().map_or(0, |s| s.total_received())
     }

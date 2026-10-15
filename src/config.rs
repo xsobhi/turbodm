@@ -89,6 +89,7 @@ pub struct Settings {
     pub skipped_update: String,    // "Skip this version" in the update dialog
     pub folders: BTreeMap<String, PathBuf>, // category → folder ("Always save … here", like IDM)
     pub browsers_offered: bool,    // the "add the extension to your browser" guide was shown
+    pub video_quality: String,     // the video quality picked last ("720p", "Audio"), offered first next time
 }
 
 impl Default for Settings {
@@ -113,6 +114,7 @@ impl Default for Settings {
             skipped_update: String::new(),
             folders: BTreeMap::new(),
             browsers_offered: false,
+            video_quality: String::new(),
         }
     }
 }
