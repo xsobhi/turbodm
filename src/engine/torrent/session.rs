@@ -1,10 +1,12 @@
 //! The one librqbit session every torrent shares, started when a torrent first needs it, and
 //! which download owns which torrent.
 
-use librqbit::dht::DhtPersistenceConfig;
+use librqbit::dht::{DhtPersistenceConfig, Id20};
 use librqbit::limits::LimitsConfig;
-use librqbit::{DhtSessionConfig, ListenerOptions, Session, SessionOptions, SessionPersistenceConfig};
+use librqbit::{Api, DhtSessionConfig, ListenerOptions, Session, SessionOptions, SessionPersistenceConfig};
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -48,8 +50,25 @@ impl Torrents {
     /// Stop every torrent and the session (closing TurboDM).
     pub async fn stop(&self) {
         if let Some(session) = self.running() {
+            for hash in session.with_torrents(|all| all.map(|(_, t)| t.info_hash()).collect::<Vec<_>>()) {
+                self.save_progress(&session, hash);
+            }
             session.stop().await;
         }
+    }
+
+    /// Write down which of a torrent's pieces are on disk. The session does it ("fast resume")
+    /// only every 16 MB and when a torrent completes, so after a pause, or TurboDM closing, a
+    /// restart would fetch up to 16 MB again. The same file, in the same form, as its own.
+    pub fn save_progress(&self, session: &Arc<Session>, hash: Id20) {
+        let Ok((pieces, _)) = Api::new(session.clone(), None).api_dump_haves(hash.into()) else {
+            return; // still checking its files: nothing new to say
+        };
+        let path = self.dir.join(format!("{}.bitv", hash.as_string()));
+        // in place, not replaced: the session keeps it open to write to
+        let write = || OpenOptions::new().write(true).create(true).truncate(false).open(&path)?
+            .write_all(pieces.as_raw_slice());
+        let _ = write();
     }
 
     /// Note that download `id` has this torrent; false if another download already has it.

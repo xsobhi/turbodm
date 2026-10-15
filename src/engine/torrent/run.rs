@@ -22,8 +22,10 @@ type Handle = Arc<ManagedTorrent>;
 
 /// How often the torrent's numbers are read.
 const WATCH: Duration = Duration::from_millis(250);
+/// Which pieces are on disk is written down every so many of those (30 s).
+const SAVE_EVERY: u64 = 120;
 /// Files listed in the progress window (a torrent can have many thousands).
-const MAX_FILES_SHOWN: usize = 1000;
+pub const MAX_FILES_SHOWN: usize = 1000;
 
 /// Drive a torrent download until it completes, is paused, or fails.
 pub async fn run(task: Arc<Task>, shared: Arc<Shared>, cancel: CancellationToken) {
@@ -102,9 +104,14 @@ fn settle(task: &Task, shared: &Shared, meta: &Meta) -> Result<(), String> {
     if !shared.torrents.claim(&meta.info_hash, &task.id) {
         return Err("This torrent is in the download list already".into());
     }
+    {
+        let mut view = task.torrent.lock().unwrap();
+        view.file_count = meta.files.len();
+        view.files = Arc::new(meta.files.iter().take(MAX_FILES_SHOWN).cloned().collect());
+    }
     let mut info = task.info.lock().unwrap();
     let mut t = info.torrent.take().unwrap_or_default();
-    (t.info_hash, t.files) = (Some(meta.info_hash.clone()), meta.files);
+    (t.info_hash, t.files) = (Some(meta.info_hash.clone()), meta.files.len());
     (info.size, info.resumable) = (Some(meta.size), true);
     if !t.added {
         if info.category_base.is_some() {
@@ -189,7 +196,7 @@ async fn watch(task: &Task, shared: &Shared, session: &Arc<Session>, handle: &Ha
                cancel: &CancellationToken) -> Result<bool, String> {
     let files = files_of(handle);
     let mut tick = tokio::time::interval(WATCH);
-    loop {
+    for ticks in 1u64.. {
         tokio::select! {
             _ = tick.tick() => {}
             _ = cancel.cancelled() => break,
@@ -199,10 +206,13 @@ async fn watch(task: &Task, shared: &Shared, session: &Arc<Session>, handle: &Ha
             show(task, &stats, &files);
             let seed = shared.settings().seed;
             if !seed {
-                pause(session, handle).await; // a download manager: done is done
+                pause(shared, session, handle).await; // a download manager: done is done
             }
             task.torrent.lock().unwrap().seeding = seed;
             return Ok(true);
+        }
+        if ticks % SAVE_EVERY == 0 {
+            shared.torrents.save_progress(session, handle.info_hash()); // little to fetch again after a crash
         }
         match stats.state {
             // paused (by the session starting, or a pause asked for while it checked its files):
@@ -214,14 +224,16 @@ async fn watch(task: &Task, shared: &Shared, session: &Arc<Session>, handle: &Ha
             _ => show(task, &stats, &files),
         }
     }
-    pause(session, handle).await;
+    pause(shared, session, handle).await;
     Ok(false)
 }
 
-/// Pause it for good. One paused while it checks its files still starts once the check is done
-/// (librqbit's way), so then it's paused again, unless it was resumed meanwhile.
-async fn pause(session: &Arc<Session>, handle: &Handle) {
+/// Pause it for good, noting which pieces are on disk. One paused while it checks its files
+/// still starts once the check is done (librqbit's way), so then it's paused again, unless it
+/// was resumed meanwhile.
+async fn pause(shared: &Shared, session: &Arc<Session>, handle: &Handle) {
     let _ = session.pause(handle).await;
+    shared.torrents.save_progress(session, handle.info_hash());
     if matches!(handle.stats().state, TorrentStatsState::Initializing { .. }) {
         let (session, handle) = (session.clone(), handle.clone());
         tokio::spawn(async move {
@@ -239,28 +251,34 @@ fn failure(error: Option<&str>) -> String {
     format!("Torrent stopped: {first}")
 }
 
-/// The torrent's files, without the filler between them (index in the torrent, file).
-fn files_of(handle: &Handle) -> Vec<(usize, TorrentFile)> {
+/// The torrent's files, without the filler some have between them: how many, and the first
+/// MAX_FILES_SHOWN (with their index in the torrent).
+struct Files {
+    count: usize,
+    shown: Vec<(usize, TorrentFile)>,
+}
+
+fn files_of(handle: &Handle) -> Files {
     handle.with_metadata(|meta| {
-        meta.file_infos.iter().enumerate()
-            .filter(|(_, file)| !file.attrs.padding)
-            .take(MAX_FILES_SHOWN)
+        let files = || meta.file_infos.iter().enumerate().filter(|(_, file)| !file.attrs.padding);
+        let shown = files().take(MAX_FILES_SHOWN)
             .map(|(i, file)| (i, TorrentFile {
                 name: file.relative_filename.to_string_lossy().into_owned(),
                 offset: file.offset_in_torrent,
                 size: file.len,
                 have: 0,
             }))
-            .collect()
-    }).unwrap_or_default()
+            .collect();
+        Files { count: files().count(), shown }
+    }).unwrap_or(Files { count: 0, shown: vec![] })
 }
 
 /// What the session says about it, into the task.
-fn show(task: &Task, stats: &TorrentStats, files: &[(usize, TorrentFile)]) {
+fn show(task: &Task, stats: &TorrentStats, files: &Files) {
     let live = stats.live.as_ref();
     let peers = live.map(|l| &l.snapshot.peer_stats);
     let checking = matches!(stats.state, TorrentStatsState::Initializing { .. });
-    let files = files.iter()
+    let shown = files.shown.iter()
         .map(|(i, file)| TorrentFile { have: stats.file_progress.get(*i).copied().unwrap_or(0), ..file.clone() })
         .collect();
     *task.torrent.lock().unwrap() = TorrentView {
@@ -269,7 +287,8 @@ fn show(task: &Task, stats: &TorrentStats, files: &[(usize, TorrentFile)]) {
         uploaded: stats.uploaded_bytes,
         checking,
         seeding: false,
-        files: Arc::new(files),
+        file_count: files.count,
+        files: Arc::new(shown),
         fetched: live.map_or(0, |l| l.snapshot.fetched_bytes),
     };
     let mut info = task.info.lock().unwrap();
@@ -287,14 +306,25 @@ fn show(task: &Task, stats: &TorrentStats, files: &[(usize, TorrentFile)]) {
 /// Forget a download's torrent: the session stops it and forgets it; with `delete_files`,
 /// its files go too (only its own: others in its folder stay).
 pub async fn remove(shared: &Shared, task: &Task, delete_files: bool) {
-    let Some(meta) = task.info.lock().unwrap().torrent.clone() else { return };
-    let Some(hash) = meta.info_hash else { return };
+    let (meta, path) = {
+        let info = task.info.lock().unwrap();
+        (info.torrent.clone(), info.path())
+    };
+    let Some(meta) = meta else { return };
+    let Some(hash) = meta.info_hash.clone() else { return };
     shared.torrents.release(&hash, &task.id);
     if !meta.added {
         return; // the session never had it, and nothing of it is on disk
     }
+    // a folder of files: the session deletes them and then their folder, if that's empty. One
+    // file is deleted here instead: its folder is the user's (Downloads), which the session
+    // would remove too once empty.
+    let session_deletes = delete_files && meta.multi_file();
     if let (Ok(session), Some(id)) = (shared.torrents.session().await, id20(&hash)) {
-        let _ = session.delete(id, delete_files).await;
+        let _ = session.delete(id, session_deletes).await;
+    }
+    if delete_files && !meta.multi_file() {
+        let _ = std::fs::remove_file(path);
     }
 }
 
@@ -308,7 +338,7 @@ pub async fn share(shared: &Shared, tasks: Vec<Arc<Task>>, on: bool) {
         if on {
             let _ = session.unpause(&handle).await;
         } else {
-            pause(&session, &handle).await;
+            pause(shared, &session, &handle).await;
         }
         task.torrent.lock().unwrap().seeding = on;
     }

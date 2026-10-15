@@ -1,7 +1,7 @@
 //! A torrent's details: from its .torrent file (behind a link, or on this computer), or from
 //! peers for a magnet link. Nothing is downloaded or written yet.
 
-use super::is_magnet;
+use super::{is_magnet, TorrentFile};
 use crate::engine::http::{self, Headers};
 use librqbit::{AddTorrent, AddTorrentOptions, AddTorrentResponse, ListOnlyResponse, Session};
 use std::net::SocketAddr;
@@ -17,8 +17,8 @@ pub struct Meta {
     pub name: String,      // its single file, or the folder for its files
     pub main_file: String, // its biggest file's name: what kind of download it is
     pub size: u64,
-    pub files: usize,
-    pub peers: Vec<SocketAddr>, // met while asking for the details: asked first for the data
+    pub files: Vec<TorrentFile>, // without the filler some torrents have between files
+    pub peers: Vec<SocketAddr>,  // met while asking for the details: asked first for the data
 }
 
 /// Get a torrent's details from wherever `url` points.
@@ -61,15 +61,20 @@ async fn read(path: &str) -> Result<Vec<u8>, String> {
 
 fn meta(listed: ListOnlyResponse) -> Result<Meta, String> {
     let info = &listed.info;
-    let files: Vec<(String, u64)> = info.iter_file_details()
-        .filter(|file| !file.attrs().padding) // filler between files, never written
-        .map(|file| (file.filename.to_pathbuf().to_string_lossy().into_owned(), file.len))
+    let files: Vec<TorrentFile> = info.iter_file_details_ext()
+        .filter(|file| !file.details.attrs().padding) // filler between files, never written
+        .map(|file| TorrentFile {
+            name: file.details.filename.to_pathbuf().to_string_lossy().into_owned(),
+            offset: file.offset,
+            size: file.details.len,
+            have: 0,
+        })
         .collect();
-    let (biggest, _) = files.iter().max_by_key(|(_, len)| *len).ok_or("The torrent has no files")?;
-    let main_file = biggest.rsplit(['/', '\\']).next().unwrap_or(biggest).to_string();
+    let biggest = files.iter().max_by_key(|file| file.size).ok_or("The torrent has no files")?;
+    let main_file = biggest.name.rsplit(['/', '\\']).next().unwrap_or(&biggest.name).to_string();
     // one file: the name it's written under; more: the folder they go in
     let name = match (files.len(), info.name()) {
-        (1, _) => files[0].0.clone(),
+        (1, _) => files[0].name.clone(),
         (_, Some(name)) => name.into_owned(),
         _ => listed.info_hash.as_string(),
     };
@@ -79,7 +84,7 @@ fn meta(listed: ListOnlyResponse) -> Result<Meta, String> {
         name,
         main_file,
         size: info.lengths().total_length(),
-        files: files.len(),
+        files,
         peers: listed.seen_peers,
     })
 }

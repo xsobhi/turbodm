@@ -11,7 +11,7 @@ mod run;
 mod session;
 mod source;
 
-pub use run::{remove, run, share};
+pub use run::{remove, run, share, MAX_FILES_SHOWN};
 pub use session::Torrents;
 
 use serde::{Deserialize, Serialize};
@@ -58,7 +58,8 @@ pub struct TorrentView {
     pub uploaded: u64,      // shared with others while it ran
     pub checking: bool,     // checking the pieces already on disk
     pub seeding: bool,      // complete and still shared ("seed" setting)
-    pub files: Arc<Vec<TorrentFile>>,
+    pub file_count: usize,
+    pub files: Arc<Vec<TorrentFile>>, // the first MAX_FILES_SHOWN of them, once known
     /// Bytes received from peers while it runs (unchecked): what the speed goes by, as the
     /// checked total moves in whole pieces.
     pub fetched: u64,

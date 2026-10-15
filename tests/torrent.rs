@@ -2,6 +2,9 @@
 //! files through a tiny tracker, also here, and TurboDM downloads them. TurboDM's session is
 //! passive (`TURBODM_TORRENT_PASSIVE`: no DHT, nothing listening), as the seeder only listens on
 //! 127.0.0.1, so no firewall is asked anything.
+//!
+//! One more, ignored by default, uses the internet: `cargo test --release --test torrent --
+//! --ignored --nocapture`.
 
 mod common;
 
@@ -17,8 +20,11 @@ use std::sync::{Arc, Once};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use turbodm::config::Settings;
 use turbodm::engine::manager::Confirm;
-use turbodm::engine::{AddRequest, Manager, Status};
+use turbodm::engine::{AddRequest, Manager, Snapshot, Status};
+use turbodm::text::{peers_text, status_line};
+use turbodm::util::{human_size, human_speed};
 
 /// Before anything runs: every test calls it first.
 fn passive() {
@@ -119,16 +125,19 @@ fn downloads_a_torrent_file_then_removes_it_with_its_file() {
     let env = Env::new("torrent-file");
     let data = random_bytes(3 << 20);
     let seeder = seed(&env, "test file.bin", &[("test file.bin", &data)], 0);
-    let manager = env.manager(4);
+    let downloads = env.dir.join("Downloads"); // nothing else in it
+    let settings = Settings { download_dir: downloads.clone(), use_categories: false, ..Settings::default() };
+    let (manager, _events) = Manager::new(settings, env.dir.join("downloads.json"), env.rt.handle().clone());
     let id = add_url(&manager, &seeder.torrent_file.display().to_string());
     let snap = wait_for(&manager, &id, finished);
     assert_file(&snap, &data);
-    assert_eq!(snap.path, env.dir.join("test file.bin"));
+    assert_eq!(snap.path, downloads.join("test file.bin"));
     let torrent = snap.torrent.expect("a torrent");
     assert_eq!((torrent.files.len(), torrent.seeding), (1, false));
     manager.remove(&id, true);
     gone(&manager, &id);
     assert!(!snap.path.exists(), "its file is still there");
+    assert!(downloads.is_dir(), "the download folder went with it");
     manager.shutdown();
 }
 
@@ -146,7 +155,9 @@ fn magnet_paused_continues_after_a_restart() {
     manager.pause(&id);
     let before = wait_for(&manager, &id, |s| s.status == Status::Paused).downloaded;
     manager.shutdown(); // closing the app
-    drop(manager);
+    // not dropped: in the app the runtime is gone by then, so nothing librqbit does on drop
+    // (such as writing down which pieces it has) gets to run
+    std::mem::forget(manager);
 
     let sent = uploaded(&seeder);
     let manager = env.manager(4);
@@ -188,5 +199,83 @@ fn a_folder_of_files_goes_where_the_add_dialog_says() {
     let refused = wait_for(&manager, &again, finished);
     assert_eq!(refused.status, Status::Error);
     assert!(refused.error.unwrap_or_default().contains("already"));
+
+    // removed with its files: their folder goes, the one chosen for it stays
+    manager.remove(&again, true);
+    manager.remove(&id, true);
+    gone(&manager, &id);
+    assert!(!chosen.join("My album").exists() && chosen.is_dir());
     manager.shutdown();
+}
+
+/// Debian's installer: legal, well shared, and its tracker hands out plenty of peers (Ubuntu's
+/// gives a client without DHT, as this test's, only Canonical's own seed). Debian replaces
+/// "current" now and then: TURBODM_TEST_TORRENT and TURBODM_TEST_TRACKER give another.
+const TORRENT: &str = "https://cdimage.debian.org/debian-cd/current/amd64/bt-cd/debian-13.7.0-amd64-netinst.iso.torrent";
+const TRACKER: &str = "http://bttracker.debian.org:6969/announce";
+
+/// A real torrent at 1 MiB/s: looked up, a few MB downloaded, paused, resumed, removed with its
+/// file; then the same as a magnet link, looked up from its peers. About 15 MB in all.
+#[test]
+#[ignore = "uses the internet"]
+fn real_torrent_from_the_internet() {
+    passive();
+    let url = std::env::var("TURBODM_TEST_TORRENT").unwrap_or_else(|_| TORRENT.into());
+    let tracker = std::env::var("TURBODM_TEST_TRACKER").unwrap_or_else(|_| TRACKER.into());
+    let env = Env::new("torrent-internet");
+    let settings = Settings { download_dir: env.dir.clone(), use_categories: false, speed_limit_kib: 1024,
+                              ..Settings::default() };
+    let (manager, _events) = Manager::new(settings, env.dir.join("downloads.json"), env.rt.handle().clone());
+    let start = Instant::now();
+    let id = add_url(&manager, &url);
+    let found = watch(&manager, &id, start, "details", |s| s.size.is_some());
+    let live = watch(&manager, &id, start, "6 MB", |s| s.downloaded >= found.downloaded + (6 << 20));
+    assert!(live.speed < 1.5 * 1024.0 * 1024.0, "over the 1 MiB/s limit: {}", human_speed(live.speed));
+    manager.pause(&id);
+    let paused = watch(&manager, &id, start, "paused", |s| s.status == Status::Paused);
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(manager.get(&id).unwrap().downloaded, paused.downloaded, "it went on while paused");
+    manager.resume(&id);
+    let more = watch(&manager, &id, start, "2 MB more", |s| s.downloaded >= paused.downloaded + (2 << 20));
+    assert!(more.path.exists());
+
+    manager.save();
+    let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(env.dir.join("downloads.json")).unwrap()).unwrap();
+    let hash = saved[0]["torrent"]["info_hash"].as_str().expect("info hash saved").to_string();
+    manager.remove(&id, true);
+    gone(&manager, &id);
+    assert!(!more.path.exists(), "its file is still there");
+
+    let magnet = format!("magnet:?xt=urn:btih:{hash}&tr={}", tracker.replace(':', "%3A").replace('/', "%2F"));
+    let start = Instant::now();
+    let id = add_url(&manager, &magnet);
+    let found = watch(&manager, &id, start, "details from peers", |s| s.size.is_some());
+    assert_eq!(found.size, more.size);
+    watch(&manager, &id, start, "1 MB", |s| s.downloaded >= 1 << 20);
+    manager.remove(&id, true);
+    gone(&manager, &id);
+    manager.shutdown();
+}
+
+/// Wait (up to 3 minutes) until `done`, saying how it goes every second.
+fn watch(manager: &Manager, id: &str, start: Instant, what: &str, done: impl Fn(&Snapshot) -> bool) -> Snapshot {
+    let deadline = Instant::now() + Duration::from_secs(180);
+    let mut said = Instant::now();
+    loop {
+        let s = manager.get(id).unwrap();
+        let line = || format!("{:5.1}s  {} / {}  {}  peers: {}  {}", start.elapsed().as_secs_f64(),
+                              human_size(Some(s.downloaded)), human_size(s.size), human_speed(s.speed),
+                              peers_text(&s), status_line(&s));
+        if done(&s) {
+            println!("{what}: {}  ({})", line(), s.filename);
+            return s;
+        }
+        assert_ne!(s.status, Status::Error, "{:?}", s.error);
+        assert!(Instant::now() < deadline, "no {what}: {}", line());
+        if said.elapsed() >= Duration::from_secs(1) {
+            println!("  {}", line());
+            said = Instant::now();
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
