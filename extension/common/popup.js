@@ -2,7 +2,7 @@
 
 const api = globalThis.browser ?? globalThis.chrome;
 const HOST = "com.xsobhi.turbodm";
-const DEFAULTS = { enabled: true, minSizeKB: 0, skipHosts: "" };
+const DEFAULTS = { enabled: true, videoButton: true, minSizeKB: 0, skipHosts: "" };
 const $ = (id) => document.getElementById(id);
 
 async function showStatus() {
@@ -22,6 +22,7 @@ async function showStatus() {
 async function load() {
   const settings = { ...DEFAULTS, ...(await api.storage.local.get(DEFAULTS)) };
   $("enabled").checked = settings.enabled;
+  $("videoButton").checked = settings.videoButton;
   $("minSizeKB").value = settings.minSizeKB;
   $("skipHosts").value = settings.skipHosts;
 }
@@ -29,12 +30,13 @@ async function load() {
 function save() {
   api.storage.local.set({
     enabled: $("enabled").checked,
+    videoButton: $("videoButton").checked,
     minSizeKB: Math.max(0, parseInt($("minSizeKB").value, 10) || 0),
     skipHosts: $("skipHosts").value.trim(),
   });
 }
 
-for (const id of ["enabled", "minSizeKB", "skipHosts"]) {
+for (const id of ["enabled", "videoButton", "minSizeKB", "skipHosts"]) {
   $(id).addEventListener("change", save);
 }
 

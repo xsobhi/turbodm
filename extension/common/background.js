@@ -201,10 +201,14 @@ api.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-// The popup's "Download video on this page" (the popup can't wait for an answer once it closes).
+// The popup's "Download video on this page" (the popup can't wait for an answer once it closes),
+// and the "Download this video" button on videos (videobutton.js).
+// A plain video file playing on a page ("media-file") goes as an ordinary download.
 api.runtime.onMessage.addListener((message, sender, reply) => {
-  if (!message || message.type !== "video") return false;
-  handOffVideo({ url: message.url, storeId: message.storeId })
+  if (!message || !["video", "media-file"].includes(message.type)) return false;
+  const storeId = message.storeId ?? (sender.tab && sender.tab.cookieStoreId);
+  const hand = message.type === "video" ? handOffVideo : handOff;
+  hand({ url: message.url, referrer: message.referrer, storeId })
     .then((ok) => reply({ ok }))
     .catch((err) => reply({ ok: false, error: String(err) }));
   return true; // answering asynchronously
