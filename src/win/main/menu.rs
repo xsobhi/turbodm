@@ -1,7 +1,7 @@
 //! The main window's commands: the menu bar's menus (as IDM's), the right-click menu, keyboard
 //! shortcuts, and what each does.
 
-use super::super::{add, batch, dialogs, progress, settings, shell, App};
+use super::super::{add, batch, dialogs, progress, refresh, settings, shell, App};
 use super::menubar;
 use std::path::Path;
 use std::rc::Rc;
@@ -185,7 +185,7 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
         Cmd::OpenFolder => if let Some(id) = first() { shell::show_download(app, &id) },
         Cmd::Details => if let Some(id) = first() { progress::open(app, &id) },
         Cmd::CopyUrl => if let Some(s) = first().and_then(|id| app.manager.get(&id)) { shell::copy_text(&s.url) },
-        Cmd::Refresh => if let Some(id) = first() { dialogs::refresh_address(app, &id) },
+        Cmd::Refresh => if let Some(id) = first() { refresh::start(app, &id) },
         Cmd::Redownload => dialogs::confirm_redownload(app, selected()),
         Cmd::DownloadFolder => {
             let dir = app.manager.settings().download_dir;

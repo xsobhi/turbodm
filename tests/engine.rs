@@ -114,3 +114,30 @@ fn per_download_speed_limit() {
     assert_eq!(snap.speed_limit_kib, 1024);
     assert!(started.elapsed() > Duration::from_secs(2), "not limited: {:?}", started.elapsed());
 }
+
+#[test]
+fn refreshed_address_goes_on_from_where_it_was() {
+    // IDM's "Refresh download address": a fresh link (and cookies) from the browser for a paused
+    // download, which goes on from where it was, from the new link
+    let env = Env::new("refresh");
+    let data = random_bytes(16 << 20);
+    let server = start(&env.rt, data.clone(), Options { ranges: true, no_length: false, max_conns: 0 }, 40);
+    let manager = env.manager(4);
+    let id = add(&manager, &server.url);
+    wait_for(&manager, &id, |s| s.downloaded as f64 > data.len() as f64 * 0.3);
+    manager.pause(&id);
+    wait_for(&manager, &id, |s| s.status == Status::Paused);
+    server.delay_ms.store(0, std::sync::atomic::Ordering::Relaxed);
+    server.requests.lock().unwrap().clear();
+    let fresh = format!("{}?token=new", server.url);
+    manager.refresh_from(&id, AddRequest { url: fresh.clone(), cookies: Some("session=new".into()), ..AddRequest::default() });
+    let done = wait_for(&manager, &id, finished);
+    assert_file(&done, &data);
+    assert_eq!(done.url, fresh);
+    assert_eq!(manager.request_of(&id).unwrap().cookies.as_deref(), Some("session=new"));
+    let starts: Vec<u64> = server.requests.lock().unwrap().iter().flatten()
+        .filter(|r| r.as_str() != "bytes=0-0")
+        .map(|r| r[6..].split('-').next().unwrap().parse().unwrap())
+        .collect();
+    assert!(!starts.is_empty() && starts.iter().all(|&s| s > 0), "restarted from zero: {starts:?}");
+}

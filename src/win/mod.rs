@@ -10,6 +10,7 @@ mod finish;
 mod main;
 mod power;
 mod progress;
+mod refresh;
 mod settings;
 mod shell;
 mod theme;
@@ -18,7 +19,7 @@ mod update;
 mod wnd;
 
 use std::cell::{OnceCell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
@@ -37,6 +38,8 @@ pub struct App {
     pub main: main::MainWindow,
     pub progress: RefCell<HashMap<String, progress::ProgressWindow>>,
     pub on_done: RefCell<HashMap<String, OnDone>>, // downloads with a progress window
+    pub refreshing: RefCell<Option<refresh::Waiting>>, // waiting for a fresh address from the browser
+    pub offered_refresh: RefCell<HashSet<String>>,     // expired links already offered a refresh
     pub update: RefCell<Option<turbodm::update::Release>>, // found while hidden: shown on show()
     pub background: bool, // started by the browser: quit when idle and nothing is shown
 }
@@ -109,7 +112,10 @@ impl App {
                 }
                 let directory = directory.filter(|d| d.is_absolute());
                 let req = AddRequest { url, filename, directory, referrer, cookies, user_agent, ..Default::default() };
-                self.handle_download(req, silent);
+                // (a download waiting for a fresh address takes it: IDM's "Refresh download address")
+                if !refresh::take(self, &req) {
+                    self.handle_download(req, silent);
+                }
             }
         }
     }
@@ -153,6 +159,8 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
         main: main::MainWindow::new(),
         progress: RefCell::default(),
         on_done: RefCell::default(),
+        refreshing: RefCell::default(),
+        offered_refresh: RefCell::default(),
         update: RefCell::default(),
         background,
     });

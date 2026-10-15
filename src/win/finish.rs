@@ -1,7 +1,7 @@
 //! When a download finishes or fails: the "Download complete" dialog (complete.rs), the
 //! download's "on completion" options, or a notification for downloads nobody was watching.
 
-use super::{power, progress, shell, tray, App};
+use super::{power, progress, refresh, shell, tray, App};
 use std::rc::Rc;
 use turbodm::engine::{Snapshot, Status};
 use turbodm::power::Power;
@@ -9,9 +9,12 @@ use turbodm::power::Power;
 pub fn on_status(app: &Rc<App>, snap: Snapshot) {
     match snap.status {
         Status::Completed => completed(app, snap),
-        Status::Error if app.manager.settings().notify_complete => {
-            let error = snap.error.clone().unwrap_or_default();
-            tray::notify(app, "Download failed", &format!("{}\n{error}", snap.filename), None);
+        Status::Error => {
+            if app.manager.settings().notify_complete {
+                let error = snap.error.clone().unwrap_or_default();
+                tray::notify(app, "Download failed", &format!("{}\n{error}", snap.filename), None);
+            }
+            refresh::offer(app, &snap); // (its link expired: refresh it?)
         }
         _ => {}
     }
