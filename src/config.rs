@@ -45,10 +45,16 @@ pub fn downloads_file() -> PathBuf {
     data_dir().join("downloads.json")
 }
 
-/// Where the running app listens: a user-only Unix socket, or a named pipe on Windows.
+/// Where the running app listens: a user-only Unix socket, or a named pipe on Windows. Each
+/// TURBODM_HOME has a pipe of its own, so two sandboxes never take each other for theirs.
 #[cfg(windows)]
 pub fn socket_path() -> PathBuf {
-    let sandboxed = if sandbox().is_some() { "-sandbox" } else { "" };
+    let sandboxed = match sandbox() {
+        // FNV-1a of the folder: the same name in every process that has it
+        Some(home) => format!("-sandbox-{:08x}", home.to_string_lossy().to_lowercase().bytes()
+            .fold(0x811c_9dc5_u32, |hash, byte| (hash ^ byte as u32).wrapping_mul(0x0100_0193))),
+        None => String::new(),
+    };
     PathBuf::from(format!(r"\\.\pipe\turbodm-{}{sandboxed}", user_name()))
 }
 
