@@ -3,5 +3,5 @@
   "description": "TurboDM",
   "path": "/usr/bin/turbodm",
   "type": "stdio",
-  "allowed_origins": ["chrome-extension://edlkglikdjabdhlailjmdopnlocdegbe/"]
+  "allowed_origins": ["chrome-extension://edlkglikdjabdhlailjmdopnlocdegbe/", "chrome-extension://enaaoegoakgmcdbhepcoflfmpeodipob/"]
 }
