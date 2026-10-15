@@ -137,11 +137,15 @@ fn wants_sign_in(error: &str) -> bool {
 fn looks_outdated(error: &str) -> bool {
     let e = error.to_ascii_lowercase();
     ["unable to extract", "failed to extract", "latest version", "signature", "nsig", "challenge", "precondition",
-     "http error 400", "no video formats"].iter().any(|w| e.contains(w))
+     "http error 400", "no video formats", "no such option"].iter().any(|w| e.contains(w))
 }
 
 /// yt-dlp's last "ERROR: …" line, in a few plain words.
 fn error_of(stderr: &str) -> Option<String> {
+    // an option it doesn't know (an old yt-dlp, such as a distribution's) is said otherwise
+    if let Some(usage) = stderr.lines().find(|l| l.contains("error: no such option")) {
+        return Some(usage.trim().to_string());
+    }
     let line = stderr.lines().rev().find(|l| l.starts_with("ERROR:"))?;
     let mut text = line.trim_start_matches("ERROR:").trim();
     // "[youtube] Z4C82eyhwgU: Sign in…" → "Sign in…"
@@ -271,6 +275,12 @@ mod tests {
         assert_eq!(error_of("ERROR: unable to download video data: HTTP Error 403: Forbidden").as_deref(),
                    Some("unable to download video data: HTTP Error 403: Forbidden"));
         assert_eq!(error_of("nothing here"), None);
+        // a distribution's old yt-dlp, which doesn't know an option of ours: a newer one is fetched
+        let old = "Usage: yt-dlp [OPTIONS] URL [URL...]
+
+yt-dlp: error: no such option: --js-runtimes
+";
+        assert!(looks_outdated(&error_of(old).unwrap()));
     }
 
     #[test]

@@ -8,20 +8,22 @@ use crate::util::{filename_from_url, human_eta, human_size, human_speed};
 /// A download's status column: progress while it runs, why it stopped otherwise.
 pub fn status_text(snap: &Snapshot) -> String {
     let pct = snap.progress.map(|p| format!("{:.1}%", p * 100.0));
-    match snap.status {
-        Status::Downloading => pct.unwrap_or_else(|| human_size(Some(snap.downloaded))),
-        Status::Paused => pct.map_or("Paused".into(), |p| format!("Paused · {p}")),
-        Status::Error => format!("Error: {}", snap.error.as_deref().unwrap_or("unknown")),
-        other => other.label().into(),
+    match (snap.status, snap.activity) {
+        (status, Some(doing)) if status.is_active() => doing.into(), // a video: "Joining video and sound…"
+        (Status::Downloading, _) => pct.unwrap_or_else(|| human_size(Some(snap.downloaded))),
+        (Status::Paused, _) => pct.map_or("Paused".into(), |p| format!("Paused · {p}")),
+        (Status::Error, _) => format!("Error: {}", snap.error.as_deref().unwrap_or("unknown")),
+        (other, _) => other.label().into(),
     }
 }
 
 /// The progress window's "Status" line.
 pub fn status_line(s: &Snapshot) -> String {
-    match (s.status, &s.error) {
-        (Status::Error, Some(e)) => format!("Error: {e}"),
-        (Status::Downloading, _) => "Receiving data…".into(),
-        (status, _) => status.label().into(),
+    match (s.status, &s.error, s.activity) {
+        (Status::Error, Some(e), _) => format!("Error: {e}"),
+        (status, _, Some(doing)) if status.is_active() => doing.into(), // a video: "Joining video and sound…"
+        (Status::Downloading, ..) => "Receiving data…".into(),
+        (status, ..) => status.label().into(),
     }
 }
 
@@ -53,6 +55,27 @@ pub fn connection_info(seg: &Segment, status: Status) -> &'static str {
     } else {
         status.label()
     }
+}
+
+/// What one part of a video download (its video, its sound) is doing, for the connections list.
+pub fn part_info(index: usize, s: &Snapshot) -> String {
+    let what = match (s.segments.len(), index) {
+        (2, 0) => "Video",
+        (2, _) => "Sound",
+        _ if s.video.as_deref().is_some_and(|q| q.starts_with("Audio")) => "Sound",
+        _ => "Video and sound",
+    };
+    let seg = &s.segments[index];
+    let doing = if seg.finished() {
+        "Complete"
+    } else if seg.active {
+        "Receiving data…"
+    } else if s.status.is_active() {
+        "Next"
+    } else {
+        s.status.label()
+    };
+    format!("{what}  ·  {doing}")
 }
 
 /// "documents", "videos"…: the kind of file, for "Always save documents to this folder".

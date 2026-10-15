@@ -9,6 +9,7 @@ use std::process::Stdio;
 use tokio::process::{Child, Command};
 
 /// CREATE_NO_WINDOW: console programs started by TurboDM (which has no console) don't open one.
+#[cfg(windows)]
 pub const NO_WINDOW: u32 = 0x0800_0000;
 
 /// A command for `program`, its output piped to us.

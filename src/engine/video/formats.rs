@@ -144,10 +144,23 @@ pub fn parse(json: &[u8], page_url: &str) -> Result<VideoInfo, String> {
         title: page.title.clone().filter(|t| !t.trim().is_empty()).unwrap_or_else(|| "video".into()),
         thumbnail: page.thumbnail.clone().filter(|t| t.starts_with("http")),
         duration,
-        site: page.extractor_key.clone().unwrap_or_default(),
+        site: site_name(page.extractor_key.as_deref().unwrap_or_default()),
         choices: choices(&page.formats, duration),
         with_cookies: false,
     })
+}
+
+/// yt-dlp's name for the site, as people write it ("Youtube" is YouTube); none for a page it
+/// found a video on without knowing the site.
+fn site_name(key: &str) -> String {
+    match key {
+        "Generic" | "HTML5MediaEmbed" => "", // (a page's own <video>)
+        k if k.starts_with("Youtube") => "YouTube",
+        "DailyMotion" => "Dailymotion",
+        k if k.starts_with("Twitch") => "Twitch",
+        "Twitter" => "X",
+        other => other,
+    }.to_string()
 }
 
 /// Some(true): has it; Some(false): "none"; None: yt-dlp doesn't know.
@@ -346,7 +359,7 @@ mod tests {
         let info = parse(YOUTUBE.as_bytes(), "https://youtu.be/Z4C82eyhwgU").unwrap();
         assert_eq!(info.title, "\"Caminandes 2: Gran Dillama\" - Blender Animated Short");
         assert_eq!(info.url, "https://www.youtube.com/watch?v=Z4C82eyhwgU");
-        assert_eq!(info.duration, Some(146.0));
+        assert_eq!((info.duration, info.site.as_str()), (Some(146.0), "YouTube"));
         let labels: Vec<&str> = info.choices.iter().map(|c| c.label.as_str()).collect();
         assert_eq!(labels, ["1080p MP4", "720p MP4", "480p MP4", "360p MP4", "Audio only (M4A)"]);
         // H.264 over HTTPS with AAC sound, joined

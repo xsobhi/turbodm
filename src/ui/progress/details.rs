@@ -4,7 +4,7 @@ use super::segment_bar::SegmentBar;
 use gtk::prelude::*;
 use std::cell::RefCell;
 use turbodm::engine::Snapshot;
-use turbodm::text::connection_info;
+use turbodm::text::{connection_info, part_info};
 use turbodm::util::human_size;
 
 /// Connection rows shown without scrolling; more scroll.
@@ -63,7 +63,7 @@ impl Details {
             let seg = s.segments.get(i);
             let values = match seg {
                 Some(seg) => [(i + 1).to_string(), human_size(Some(seg.start)), human_size(Some(seg.got())),
-                              connection_info(seg, s.status).to_string()],
+                              if s.video.is_some() { part_info(i, s) } else { connection_info(seg, s.status).to_string() }],
                 None => Default::default(),
             };
             for (label, value) in row.iter().zip(values) {

@@ -47,5 +47,24 @@ $("open").addEventListener("click", async () => {
   }
 });
 
+// "Download video on this page", for web pages
+let page = null;
+api.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+  if (tab && /^https?:/i.test(tab.url || "")) {
+    page = tab;
+    $("video").hidden = false;
+  }
+});
+
+$("video").addEventListener("click", async () => {
+  const answer = await api.runtime.sendMessage({ type: "video", url: page.url, storeId: page.cookieStoreId });
+  if (answer && answer.ok) {
+    window.close();
+  } else {
+    $("status").textContent = "This TurboDM can't download videos yet: update it";
+    $("status").className = "status error";
+  }
+});
+
 load();
 showStatus();

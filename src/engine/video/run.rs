@@ -21,6 +21,7 @@ const TRIES: u32 = 5;
 pub async fn run(task: Arc<Task>, shared: Arc<Shared>, cancel: CancellationToken) {
     let outcome = drive(&task, &shared, &cancel).await;
     task.set_activity(None);
+    task.video_parts.lock().unwrap().iter_mut().for_each(|p| p.active = false);
     let mut info = task.info.lock().unwrap();
     match outcome {
         Ok(true) => {}
@@ -162,6 +163,7 @@ async fn once(task: &Task, shared: &Shared, exe: &std::path::Path, cancel: &Canc
                 Ok(Some(line)) => match progress::parse(&line) {
                     Line::Progress { format, done, total, finished } => {
                         tally.update(&format, done, total, finished);
+                        *task.video_parts.lock().unwrap() = tally.segments();
                         let mut info = task.info.lock().unwrap();
                         if let Some(video) = info.video.as_mut() {
                             video.done = tally.done();

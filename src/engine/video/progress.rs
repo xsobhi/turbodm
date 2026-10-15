@@ -1,6 +1,7 @@
 //! Reading yt-dlp's output: our progress lines (`--progress-template`), the finished file
 //! (`--print after_move:`), and the moment it starts joining video and sound.
 
+use crate::engine::segments::Segment;
 use std::path::PathBuf;
 
 /// What yt-dlp prints for every progress update: "TDM-P status|done|total|estimate|format".
@@ -49,6 +50,7 @@ pub fn parse(line: &str) -> Line {
 #[derive(Clone, Debug, Default)]
 pub struct Tally {
     parts: Vec<Part>,
+    current: Option<usize>, // the part being downloaded
 }
 
 #[derive(Clone, Debug)]
@@ -64,7 +66,7 @@ impl Tally {
     pub fn new(expected: &[(String, Option<u64>)]) -> Self {
         let parts = expected.iter().map(|(format, total)| Part { format: format.clone(), done: 0, total: *total, seen: false })
             .collect();
-        Tally { parts }
+        Tally { parts, current: None }
     }
 
     pub fn update(&mut self, format: &str, done: Option<u64>, total: Option<u64>, finished: bool) {
@@ -89,6 +91,19 @@ impl Tally {
             part.done = part.total.unwrap_or(part.done).max(part.done);
             part.total = Some(part.done);
         }
+        self.current = (!finished).then_some(index);
+    }
+
+    /// The parts one after the other, as the progress window shows a download's connections.
+    pub fn segments(&self) -> Vec<Segment> {
+        let mut start = 0;
+        self.parts.iter().enumerate().map(|(i, p)| {
+            let total = p.total.map(|t| t.max(p.done));
+            let seg = Segment { start, end: total.map(|t| start + t), done: p.done, ahead: 0,
+                                active: self.current == Some(i), heard: None };
+            start += total.unwrap_or(p.done);
+            seg
+        }).collect()
     }
 
     pub fn done(&self) -> u64 {
@@ -131,6 +146,10 @@ mod tests {
         tally.update("137", None, None, true);
         tally.update("140", Some(500), Some(2_365_262), false);
         assert_eq!((tally.done(), tally.total()), (52_740_843, Some(55_105_605)));
+        // shown as two parts, the sound after the video, under way
+        let parts = tally.segments();
+        assert_eq!((parts[0].start, parts[0].end, parts[0].finished(), parts[0].active), (0, Some(52_740_343), true, false));
+        assert_eq!((parts[1].start, parts[1].done, parts[1].active), (52_740_343, 500, true));
         // unknown sizes: no total
         let mut odd = Tally::new(&[("x".into(), None)]);
         odd.update("x", Some(10), None, false);

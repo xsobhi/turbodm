@@ -235,7 +235,7 @@ fn hint(form: &Form, choice: &Choice) -> String {
 /// "FFmpeg is needed for this quality (84.3 MB): download it?"
 fn ask_text(form: &Form) -> String {
     let size = form.video.ffmpeg.size.lock().unwrap().map(|s| human_size(Some(s))).unwrap_or_else(|| "about 85 MB".into());
-    format!("FFmpeg is needed for this quality ({size}): download it? It's needed once, for every video.")
+    format!("FFmpeg is needed for this quality ({size}): download it?")
 }
 
 /// The question about FFmpeg goes (another quality, or it's answered).

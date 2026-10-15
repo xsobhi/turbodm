@@ -89,7 +89,14 @@ pub fn snapshot(task: &Task) -> Snapshot {
     let downloaded = task.downloaded();
     let speed = task.speed();
     let eta = task.eta();
-    let segments = task.segments.lock().unwrap().clone();
+    let (segments, active_connections) = match task.segments.lock().unwrap().clone() {
+        Some(map) => (map.snapshot(), map.active_count()),
+        None => {
+            let parts = task.video_parts.lock().unwrap().clone(); // a video's parts
+            let active = parts.iter().filter(|p| p.active).count();
+            (parts, active)
+        }
+    };
     let info = task.info.lock().unwrap();
     let filename = info.filename.clone().unwrap_or_else(|| "(connecting…)".into());
     let progress = match (info.size, info.status) {
@@ -114,8 +121,8 @@ pub fn snapshot(task: &Task) -> Snapshot {
         resumable: info.resumable,
         connections: info.connections,
         speed_limit_kib: info.speed_limit_kib,
-        active_connections: segments.as_ref().map_or(0, |s| s.active_count()),
-        segments: segments.map(|s| s.snapshot()).unwrap_or_default(),
+        active_connections,
+        segments,
         added: info.added,
         completed: info.completed,
         content_type: info.content_type.clone(),

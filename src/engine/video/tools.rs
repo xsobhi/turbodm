@@ -234,7 +234,9 @@ pub const NO_FFMPEG: &str = "Higher qualities need FFmpeg to join their video an
 pub async fn ffmpeg_size(client: &reqwest::Client) -> Option<u64> {
     let resp = client.head(format!("{FFMPEG_RELEASE}/{FFMPEG_ASSET}")).header("User-Agent", own_user_agent())
         .send().await.ok()?.error_for_status().ok()?;
-    resp.content_length().filter(|n| *n > 0)
+    // (the header: a HEAD answer's body, which content_length() measures, is empty)
+    let length = resp.headers().get(reqwest::header::CONTENT_LENGTH)?.to_str().ok()?;
+    length.parse().ok().filter(|n: &u64| *n > 0)
 }
 
 /// Fetch FFmpeg into tools/ffmpeg (Windows): the zip, checked, then its programs and libraries.

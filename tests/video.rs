@@ -118,8 +118,8 @@ fn joins_video_and_sound_with_ffmpeg() {
     }
     let env = Env::new("video-join");
     let found = probe(&env);
-    let index = found.choice_like("720p").expect("720p or less");
-    assert!(found.choices[index].merge, "{:?}", found.choices[index]);
+    // the smallest that comes as video and sound apart (little to download)
+    let index = found.choices.iter().rposition(|c| c.merge).expect("a quality to join");
     let manager = manager(&env, 0);
     let id = add(&manager, &found, index, &env.dir);
     let done = wait_for(&manager, &id, 300, |s| matches!(s.status, Status::Completed | Status::Error));
@@ -127,6 +127,26 @@ fn joins_video_and_sound_with_ffmpeg() {
     assert!(done.filename.ends_with(".mp4"));
     assert_mp4(&done.path);
     assert_no_leftovers(&env.dir);
+    manager.shutdown();
+}
+
+#[test]
+#[ignore = "needs the network"]
+fn without_its_dialog_it_picks_the_quality_itself() {
+    // (from the browser with the Add dialog turned off, and on Linux): the quality picked last
+    sandboxed();
+    let env = Env::new("video-auto");
+    let settings = Settings { download_dir: env.dir.clone(), use_categories: false, timeout_secs: 20,
+                              video_quality: "Audio".into(), ..Settings::default() };
+    let manager = Manager::new(settings, env.dir.join("downloads.json"), env.rt.handle().clone()).0;
+    let id = manager.add(AddRequest { url: url(), start: true, video: Some(VideoJob::default()), ..Default::default() });
+    let looking = wait_for(&manager, &id, 30, |s| s.activity.is_some() || s.status != Status::Queued);
+    assert!(looking.status.is_active(), "{:?}", looking.status);
+    let done = wait_for(&manager, &id, 180, |s| matches!(s.status, Status::Completed | Status::Error));
+    assert_eq!(done.status, Status::Completed, "{:?}", done.error);
+    assert_eq!(done.video.as_deref(), Some("Audio only (M4A)"));
+    assert!(done.filename.ends_with(".m4a") && done.filename.starts_with("'Caminandes 2"), "{}", done.filename);
+    assert_mp4(&done.path);
     manager.shutdown();
 }
 

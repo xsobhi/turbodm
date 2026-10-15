@@ -202,7 +202,8 @@ fn open_form(app: &Rc<App>, req: AddRequest, video: bool) {
 
 /// A long path shows its end, the file's name.
 fn to_end(edit: HWND) {
-    wnd::send(edit, 0x00B1, usize::MAX, -1); // EM_SETSEL: no selection, the caret at the end
+    let end = text(edit).encode_utf16().count();
+    wnd::send(edit, 0x00B1, end, end as isize); // EM_SETSEL: the caret at the end, nothing selected
     wnd::send(edit, 0x00B7, 0, 0); // EM_SCROLLCARET
 }
 

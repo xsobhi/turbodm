@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use turbodm::engine::segments::Segment;
 use turbodm::engine::Snapshot;
-use turbodm::text::connection_info;
+use turbodm::text::{connection_info, part_info};
 use turbodm::util::human_size;
 use windows::core::{w, HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT};
@@ -23,6 +23,7 @@ pub const LIST: i32 = 28 + VISIBLE_ROWS * 22;
 struct Data {
     size: Option<u64>,
     segments: Vec<Segment>,
+    video: bool, // a video: its parts (video, sound) instead of connections
 }
 
 pub struct Details {
@@ -40,8 +41,9 @@ impl Details {
             let data = d.borrow();
             p.fill(p.rect, theme::VIEW);
             let r = p.rect;
-            p.text(RECT { bottom: px(18), ..r }, "Start positions and progress of each connection", Font::Body,
-                   theme::DIM, Align::Left);
+            let caption = if data.video { "The video and its sound, downloaded one after the other" }
+                          else { "Start positions and progress of each connection" };
+            p.text(RECT { bottom: px(18), ..r }, caption, Font::Body, theme::DIM, Align::Left);
             let bar = RECT { top: r.bottom - px(14), ..r };
             p.fill(bar, theme::TRACK);
             let Some(size) = data.size.filter(|&s| s > 0) else { return };
@@ -96,14 +98,14 @@ impl Details {
     pub fn update(&self, s: &Snapshot) {
         {
             let mut data = self.data.borrow_mut();
-            if data.size != s.size || data.segments != s.segments {
-                *data = Data { size: s.size, segments: s.segments.clone() };
+            if data.size != s.size || data.segments != s.segments || data.video != s.video.is_some() {
+                *data = Data { size: s.size, segments: s.segments.clone(), video: s.video.is_some() };
                 canvas::redraw(self.map);
             }
         }
         let wanted: Vec<[String; 4]> = s.segments.iter().enumerate().map(|(i, seg)| {
             [(i + 1).to_string(), human_size(Some(seg.start)), human_size(Some(seg.got())),
-             connection_info(seg, s.status).to_string()]
+             if s.video.is_some() { part_info(i, s) } else { connection_info(seg, s.status).to_string() }]
         }).collect();
         let mut rows = self.rows.borrow_mut();
         while rows.len() < wanted.len() {

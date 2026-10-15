@@ -2,7 +2,7 @@
 
 use super::http::Headers;
 use super::limiter::RateLimiter;
-use super::segments::SegmentMap;
+use super::segments::{Segment, SegmentMap};
 use super::video::VideoJob;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -121,6 +121,8 @@ pub struct Task {
     pub grow: tokio::sync::Notify,
     /// What a video download is doing besides downloading ("Joining video and sound…").
     activity: Mutex<Option<&'static str>>,
+    /// A video download's parts (its video, its sound), shown as its connections.
+    pub video_parts: Mutex<Vec<Segment>>,
     samples: Mutex<VecDeque<(Instant, u64)>>,
     speed: Mutex<f64>,
 }
@@ -137,6 +139,7 @@ impl Task {
             pending: AtomicBool::new(false),
             grow: tokio::sync::Notify::new(),
             activity: Mutex::new(None),
+            video_parts: Mutex::new(vec![]),
             samples: Mutex::new(VecDeque::new()),
             speed: Mutex::new(0.0),
         })
