@@ -71,12 +71,16 @@ Name: "{autodesktop}\TurboDM"; Filename: "{app}\bin\turbodm.exe"
 [Run]
 ; connect the browser extension for every user of this PC
 Filename: "{app}\bin\turbodm.exe"; Parameters: "--register-system"; Flags: runhidden
+; torrents: peers may reach TurboDM without Windows Firewall asking (as torrent programs do)
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""TurboDM"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""TurboDM"" dir=in action=allow program=""{app}\bin\turbodm.exe"" enable=yes"; Flags: runhidden
 Filename: "{app}\bin\turbodm.exe"; Description: "Open TurboDM"; Flags: nowait postinstall skipifsilent runasoriginaluser
 ; updating from inside TurboDM runs this installer with /SILENT: open the new version afterwards
 Filename: "{app}\bin\turbodm.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
 Filename: "{app}\bin\turbodm.exe"; Parameters: "--unregister-system"; Flags: runhidden; RunOnceId: "Unregister"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""TurboDM"""; Flags: runhidden; RunOnceId: "Firewall"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\native-messaging"

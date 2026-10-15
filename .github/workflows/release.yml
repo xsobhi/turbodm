@@ -132,6 +132,8 @@ jobs:
           if (-not (Test-Path "$env:ProgramFiles\TurboDM\bin\turbodm.exe")) { throw "not installed in Program Files" }
           reg query "HKLM\Software\Mozilla\NativeMessagingHosts\com.xsobhi.turbodm"
           if ($LASTEXITCODE) { throw "browser connector not registered for all users" }
+          netsh advfirewall firewall show rule name=TurboDM
+          if ($LASTEXITCODE) { throw "no firewall rule for torrents" }
           Add-Type -AssemblyName System.Windows.Forms, System.Drawing
           $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
           function Shot($file) {
