@@ -170,6 +170,15 @@ impl MainWindow {
     }
 }
 
+/// Finished downloads dragged out of the list: their files go along, to drop anywhere.
+pub(super) fn drag_out(app: &Rc<App>) {
+    let paths: Vec<std::path::PathBuf> = app.main.list.selected().iter().filter_map(|id| app.manager.get(id))
+        .filter(|s| s.status == Status::Completed).map(|s| s.path).collect();
+    if !paths.is_empty() {
+        shell::drag_files(app.main.window.hwnd(), &paths);
+    }
+}
+
 /// Double-click or Enter on a download: open it when it's done, else its progress window.
 pub(super) fn open_row(app: &Rc<App>, id: &str) {
     match app.manager.get(id).map(|s| s.status) {

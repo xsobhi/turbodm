@@ -76,6 +76,8 @@ impl List {
                         let _ = GetCursorPos(&mut point);
                         on_menu(point);
                     }
+                    // finished downloads dragged out, as their files
+                    LVN_BEGINDRAG => super::drag_out(&super::super::app()),
                     LVN_COLUMNCLICK => {
                         let column = (*(lparam.0 as *const NMLISTVIEW)).iSubItem as usize;
                         let (current, ascending) = sort.get();

@@ -27,7 +27,6 @@ use turbodm::engine::{AddRequest, Manager};
 use turbodm::ipc::{self, Message};
 use turbodm::power::OnDone;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
 use windows::Win32::UI::Controls::{InitCommonControlsEx, ICC_WIN95_CLASSES, ICC_STANDARD_CLASSES, INITCOMMONCONTROLSEX};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -138,7 +137,8 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
     });
     // SAFETY: once, on the UI thread, before any window
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED); // the folder picker, the shell
+        // (OLE: COM as the folder picker and the shell want it, and dragging files out)
+        let _ = windows::Win32::System::Ole::OleInitialize(None);
         let classes = INITCOMMONCONTROLSEX { dwSize: std::mem::size_of::<INITCOMMONCONTROLSEX>() as u32,
                                              dwICC: ICC_WIN95_CLASSES | ICC_STANDARD_CLASSES };
         let _ = InitCommonControlsEx(&classes);

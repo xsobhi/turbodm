@@ -59,6 +59,29 @@ pub fn show_download(app: &Rc<App>, id: &str) {
     });
 }
 
+/// Drag files out, to drop them anywhere files go: a folder, the desktop, a chat (as dragging
+/// them from Explorer). Copied or linked where they're dropped, never moved: the download stays.
+/// Call it while the mouse button is down; it returns once they're dropped (or not).
+pub fn drag_files(owner: HWND, paths: &[PathBuf]) {
+    use windows::Win32::System::Com::IDataObject;
+    use windows::Win32::System::Ole::{DROPEFFECT_COPY, DROPEFFECT_LINK};
+    // SAFETY: item lists for the paths, freed after; Windows' own data object and drag loop
+    unsafe {
+        let items: Vec<_> = paths.iter().filter(|p| p.exists())
+            .map(|p| ILCreateFromPathW(&HSTRING::from(p.as_os_str()))).filter(|i| !i.is_null()).collect();
+        if !items.is_empty() {
+            let list: Vec<_> = items.iter().map(|i| *i as *const _).collect();
+            if let Ok(array) = SHCreateShellItemArrayFromIDLists(&list)
+                && let Ok(data) = array.BindToHandler::<_, IDataObject>(None, &BHID_DataObject) {
+                let _ = SHDoDragDrop(Some(owner), &data, None, DROPEFFECT_COPY | DROPEFFECT_LINK);
+            }
+        }
+        for item in items {
+            ILFree(Some(item));
+        }
+    }
+}
+
 /// Windows' "Open with" chooser.
 pub fn open_with(path: &Path) {
     let _ = std::process::Command::new("rundll32.exe").arg("shell32.dll,OpenAs_RunDLL").arg(path).spawn();
