@@ -16,7 +16,7 @@ const REFRESH_TIMER: usize = 1;
 /// After the app exists: refresh timer, commands, splitter, closing to the tray, clipboard.
 pub fn setup(app: &Rc<App>) {
     let window = &app.main.window;
-    for cmd in menu::ALL {
+    for &cmd in menu::ALL {
         window.on_command(cmd as u16, move |_| menu::run(&super::super::app(), cmd));
     }
     window.on_command(IDOK.0 as u16, |_| {
@@ -90,8 +90,8 @@ pub fn setup(app: &Rc<App>) {
     // SAFETY: a timer on our window
     unsafe { SetTimer(Some(hwnd), REFRESH_TIMER, 100, None) };
     clipboard::start(hwnd);
-    let (w, h) = wnd::client_size(hwnd);
-    app.main.layout(px(w), px(h));
+    let s = app.manager.settings();
+    app.main.show_parts(s.show_categories, s.show_toolbar); // (and lays it out)
 }
 
 /// The mouse (at `point` in the window, or where it is now) is on the splitter.

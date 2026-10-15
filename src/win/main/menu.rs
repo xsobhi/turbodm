@@ -1,10 +1,13 @@
-//! The main window's commands: menu bar, right-click menu, keyboard shortcuts, and what each does.
+//! The main window's commands: the menu bar's menus (as IDM's), the right-click menu, keyboard
+//! shortcuts, and what each does.
 
-use super::super::{add, dialogs, progress, settings, shell, App};
+use super::super::{add, batch, dialogs, progress, settings, shell, App};
+use super::menubar;
+use std::path::Path;
 use std::rc::Rc;
 use turbodm::engine::{AddRequest, Status};
 use windows::core::HSTRING;
-use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::UI::Input::KeyboardAndMouse::{VK_DELETE, VK_F5};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -14,72 +17,141 @@ pub enum Cmd {
     Add = 1000, Resume, Pause, ResumeAll, PauseAll, Remove, DeleteFile, ClearDone, Open, OpenWith,
     OpenFolder, Details, CopyUrl, Refresh, DownloadFolder, Settings, Browsers, CheckUpdates, About,
     Exit, Show, SelectAll, Find,
+    BatchAdd, ClipboardLinks, Import, Export, Redownload,
+    Speed0, Speed256, Speed512, Speed1M, Speed2M, Speed5M, Speed10M,
+    ToggleCategories, ToggleToolbar, ToggleProgress, ToggleComplete,
+    SortName, SortSize, SortStatus, SortSpeed, SortLeft, SortAdded,
+    GitHub, Report, MenuTasks, MenuFile, MenuDownloads, MenuView, MenuHelp,
 }
 
-pub const ALL: [Cmd; 23] = [Cmd::Add, Cmd::Resume, Cmd::Pause, Cmd::ResumeAll, Cmd::PauseAll, Cmd::Remove,
+pub const ALL: &[Cmd] = &[Cmd::Add, Cmd::Resume, Cmd::Pause, Cmd::ResumeAll, Cmd::PauseAll, Cmd::Remove,
     Cmd::DeleteFile, Cmd::ClearDone, Cmd::Open, Cmd::OpenWith, Cmd::OpenFolder, Cmd::Details, Cmd::CopyUrl,
     Cmd::Refresh, Cmd::DownloadFolder, Cmd::Settings, Cmd::Browsers, Cmd::CheckUpdates, Cmd::About,
-    Cmd::Exit, Cmd::Show, Cmd::SelectAll, Cmd::Find];
+    Cmd::Exit, Cmd::Show, Cmd::SelectAll, Cmd::Find,
+    Cmd::BatchAdd, Cmd::ClipboardLinks, Cmd::Import, Cmd::Export, Cmd::Redownload,
+    Cmd::Speed0, Cmd::Speed256, Cmd::Speed512, Cmd::Speed1M, Cmd::Speed2M, Cmd::Speed5M, Cmd::Speed10M,
+    Cmd::ToggleCategories, Cmd::ToggleToolbar, Cmd::ToggleProgress, Cmd::ToggleComplete,
+    Cmd::SortName, Cmd::SortSize, Cmd::SortStatus, Cmd::SortSpeed, Cmd::SortLeft, Cmd::SortAdded,
+    Cmd::GitHub, Cmd::Report, Cmd::MenuTasks, Cmd::MenuFile, Cmd::MenuDownloads, Cmd::MenuView, Cmd::MenuHelp];
 
-/// (command, text) for a menu; `None` is a separator.
-type Items<'a> = &'a [Option<(Cmd, &'a str)>];
+/// The speed limiter's choices: (command, KiB/s, its name).
+const SPEEDS: [(Cmd, u64, &str); 7] = [(Cmd::Speed0, 0, "&No limit"), (Cmd::Speed256, 256, "256 KB/s"),
+    (Cmd::Speed512, 512, "512 KB/s"), (Cmd::Speed1M, 1024, "1 MB/s"), (Cmd::Speed2M, 2048, "2 MB/s"),
+    (Cmd::Speed5M, 5120, "5 MB/s"), (Cmd::Speed10M, 10240, "10 MB/s")];
 
-fn popup(items: Items) -> HMENU {
-    // SAFETY: a new menu filled with our items; Windows frees it with its window or after use
+/// "Arrange files": (command, the list's column, its name, ascending at first).
+const SORTS: [(Cmd, usize, &str, bool); 6] = [(Cmd::SortName, 0, "By file &name", true),
+    (Cmd::SortSize, 1, "By &size", false), (Cmd::SortStatus, 2, "By s&tatus", true),
+    (Cmd::SortSpeed, 3, "By transfer &rate", false), (Cmd::SortLeft, 4, "By time &left", true),
+    (Cmd::SortAdded, 5, "By &date added", false)];
+
+const GITHUB: &str = "https://github.com/xsobhi/turbodm";
+
+/// A menu's line.
+enum Item {
+    Do(Cmd, &'static str, bool),    // a command (false: greyed)
+    Tick(Cmd, &'static str, bool),  // with a tick when it's on
+    Sub(&'static str, Vec<Item>),
+    Line,
+}
+
+use Item::{Do, Line, Sub, Tick};
+
+fn build(items: &[Item]) -> HMENU {
+    // SAFETY: a new menu filled with our items; Windows frees it with its parent, or after use
     unsafe {
         let menu = CreatePopupMenu().unwrap_or_default();
         for item in items {
             let _ = match item {
-                Some((cmd, text)) => AppendMenuW(menu, MF_STRING, *cmd as usize, &HSTRING::from(*text)),
-                None => AppendMenuW(menu, MF_SEPARATOR, 0, None),
+                Do(cmd, text, on) => {
+                    let flags = if *on { MF_STRING } else { MF_STRING | MF_GRAYED };
+                    AppendMenuW(menu, flags, *cmd as usize, &HSTRING::from(*text))
+                }
+                Tick(cmd, text, on) => {
+                    let flags = if *on { MF_STRING | MF_CHECKED } else { MF_STRING };
+                    AppendMenuW(menu, flags, *cmd as usize, &HSTRING::from(*text))
+                }
+                Sub(text, items) => AppendMenuW(menu, MF_POPUP, build(items).0 as usize, &HSTRING::from(*text)),
+                Line => AppendMenuW(menu, MF_SEPARATOR, 0, None),
             };
         }
         menu
     }
 }
 
-/// The main menu (the button at the end of the toolbar), as on Linux.
-pub fn app_menu(app: &Rc<App>) {
-    let items: Items = &[Some((Cmd::Add, "&Add URL...	Ctrl+N")), Some((Cmd::ResumeAll, "&Resume all	F5")),
-        Some((Cmd::PauseAll, "&Pause all")), Some((Cmd::ClearDone, "Remove &completed from list")),
-        Some((Cmd::DownloadFolder, "Open download &folder")), None,
-        Some((Cmd::Settings, "Pr&eferences	Ctrl+,")), Some((Cmd::Browsers, "Add to your &browser...")),
-        Some((Cmd::CheckUpdates, "Check for &updates")), Some((Cmd::About, "Abou&t TurboDM")), None,
-        Some((Cmd::Exit, "&Quit	Ctrl+Q"))];
-    let mut button = RECT::default();
-    // SAFETY: plain query; the menu opens under the button, its right edges lined up
-    unsafe { let _ = GetWindowRect(app.main.menu_button(), &mut button); }
-    show(app.main.window.hwnd(), popup(items), POINT { x: button.right, y: button.bottom }, TPM_RIGHTALIGN);
+/// The menu bar's menu `index` (as `menubar::MENUS`), for what's selected now.
+pub fn bar_menu(app: &Rc<App>, index: usize) -> HMENU {
+    let s = app.manager.settings();
+    let selected: Vec<_> = app.main.list.selected().iter().filter_map(|id| app.manager.get(id)).collect();
+    let any = !selected.is_empty();
+    let done = selected.first().is_some_and(|s| s.status == Status::Completed);
+    let items = match index {
+        0 => vec![Do(Cmd::Add, "&Add new download...\tCtrl+N", true),
+                  Do(Cmd::BatchAdd, "Add &batch download...", true),
+                  Do(Cmd::ClipboardLinks, "Add batch download from &clipboard", true), Line,
+                  Sub("&Import", vec![Do(Cmd::Import, "From &text file (one address a line)...", true)]),
+                  Sub("&Export", vec![Do(Cmd::Export, "To &text file...", true)]), Line,
+                  Do(Cmd::Exit, "E&xit\tCtrl+Q", true)],
+        1 => vec![Do(Cmd::Open, "&Open", done), Do(Cmd::OpenWith, "Open &with...", done),
+                  Do(Cmd::OpenFolder, "Open f&older", any), Line,
+                  Do(Cmd::Redownload, "Re&download...", any),
+                  Do(Cmd::Refresh, "Refresh download &address...", any),
+                  Do(Cmd::CopyUrl, "&Copy address", any), Line,
+                  Do(Cmd::Details, "&Properties (progress details)\tCtrl+I", any), Line,
+                  Do(Cmd::Remove, "&Remove from list\tDel", any), Do(Cmd::DeleteFile, "&Delete with file...", any)],
+        2 => vec![Do(Cmd::Resume, "&Resume\tCtrl+R", any), Do(Cmd::Pause, "&Pause\tCtrl+P", any), Line,
+                  Do(Cmd::ResumeAll, "Resume a&ll\tF5", true), Do(Cmd::PauseAll, "Pa&use all", true),
+                  Do(Cmd::ClearDone, "Delete all &completed (from the list)", true), Line,
+                  Do(Cmd::Find, "&Find...\tCtrl+F", true),
+                  Sub("&Speed limiter", SPEEDS.iter().map(|&(cmd, kib, name)| Tick(cmd, name, s.speed_limit_kib == kib)).collect()),
+                  Line, Do(Cmd::DownloadFolder, "Open download f&older", true),
+                  Do(Cmd::Settings, "&Options...\tCtrl+,", true)],
+        3 => {
+            let (column, _) = app.main.list.sorting();
+            vec![Tick(Cmd::ToggleCategories, "&Categories", s.show_categories),
+                 Tick(Cmd::ToggleToolbar, "&Toolbar", s.show_toolbar), Line,
+                 Sub("&Arrange files", SORTS.iter().map(|&(cmd, c, name, _)| Tick(cmd, name, column == c)).collect()),
+                 Line, Tick(Cmd::ToggleProgress, "Show download &progress window", s.show_progress_window),
+                 Tick(Cmd::ToggleComplete, "Show download comp&lete window", s.show_complete_dialog)]
+        }
+        _ => vec![Do(Cmd::GitHub, "TurboDM on &GitHub", true), Do(Cmd::Report, "&Report a problem...", true), Line,
+                  Do(Cmd::Browsers, "Add to your &browser...", true), Do(Cmd::CheckUpdates, "Check for &updates...", true),
+                  Line, Do(Cmd::About, "&About TurboDM", true)],
+    };
+    build(&items)
 }
 
 /// The downloads list's right-click menu, at `point` (screen pixels).
 pub fn context(owner: HWND, point: POINT) {
-    let items: Items = &[Some((Cmd::Open, "&Open")), Some((Cmd::OpenWith, "Open &with...")),
-        Some((Cmd::OpenFolder, "Open f&older")), Some((Cmd::Details, "Progress &details")), None,
-        Some((Cmd::Resume, "&Resume")), Some((Cmd::Pause, "&Pause")),
-        Some((Cmd::Refresh, "Refresh download &address...")), Some((Cmd::CopyUrl, "&Copy address")), None,
-        Some((Cmd::Remove, "Remove from &list")), Some((Cmd::DeleteFile, "Delete with &file..."))];
-    show(owner, popup(items), point, TRACK_POPUP_MENU_FLAGS(0));
+    let items = [Do(Cmd::Open, "&Open", true), Do(Cmd::OpenWith, "Open &with...", true),
+        Do(Cmd::OpenFolder, "Open f&older", true), Do(Cmd::Details, "Progress &details", true), Line,
+        Do(Cmd::Resume, "&Resume", true), Do(Cmd::Pause, "&Pause", true), Do(Cmd::Redownload, "Re&download...", true),
+        Do(Cmd::Refresh, "Refresh download &address...", true), Do(Cmd::CopyUrl, "&Copy address", true), Line,
+        Do(Cmd::Remove, "Remove from &list", true), Do(Cmd::DeleteFile, "Delete with &file...", true)];
+    show(owner, build(&items), point);
 }
 
-fn show(owner: HWND, menu: HMENU, point: POINT, align: TRACK_POPUP_MENU_FLAGS) {
+fn show(owner: HWND, menu: HMENU, point: POINT) {
     // SAFETY: shows our menu; its choice arrives as WM_COMMAND
     unsafe {
         let _ = SetForegroundWindow(owner);
-        let _ = TrackPopupMenu(menu, TPM_RIGHTBUTTON | align, point.x, point.y, None, owner, None);
+        let _ = TrackPopupMenu(menu, TPM_RIGHTBUTTON, point.x, point.y, None, owner, None);
         let _ = DestroyMenu(menu);
     }
 }
 
-/// Keyboard shortcuts of the main window.
+/// Keyboard shortcuts of the main window (Alt and a menu's letter opens it).
 pub fn shortcuts() -> HACCEL {
     let ctrl = FVIRTKEY | FCONTROL;
+    let alt = FVIRTKEY | FALT;
     let key = |flags: ACCEL_VIRT_FLAGS, key: u16, cmd: Cmd| ACCEL { fVirt: flags, key, cmd: cmd as u16 };
     let table = [key(ctrl, b'N' as u16, Cmd::Add), key(ctrl, b'R' as u16, Cmd::Resume), key(ctrl, b'P' as u16, Cmd::Pause),
         key(ctrl, b'I' as u16, Cmd::Details), key(ctrl, b'Q' as u16, Cmd::Exit), key(ctrl, b'A' as u16, Cmd::SelectAll),
         key(ctrl, 0xBC, Cmd::Settings), // Ctrl+, (VK_OEM_COMMA)
         key(ctrl, b'F' as u16, Cmd::Find),
-        key(FVIRTKEY, VK_DELETE.0, Cmd::Remove), key(FVIRTKEY, VK_F5.0, Cmd::ResumeAll)];
+        key(FVIRTKEY, VK_DELETE.0, Cmd::Remove), key(FVIRTKEY, VK_F5.0, Cmd::ResumeAll),
+        key(alt, b'T' as u16, Cmd::MenuTasks), key(alt, b'F' as u16, Cmd::MenuFile), key(alt, b'D' as u16, Cmd::MenuDownloads),
+        key(alt, b'V' as u16, Cmd::MenuView), key(alt, b'H' as u16, Cmd::MenuHelp)];
     // SAFETY: a table built from our array
     unsafe { CreateAcceleratorTableW(&table).unwrap_or_default() }
 }
@@ -88,6 +160,11 @@ pub fn shortcuts() -> HACCEL {
 pub fn run(app: &Rc<App>, cmd: Cmd) {
     let selected = || app.main.list.selected();
     let first = || selected().into_iter().next();
+    let settings = |change: &dyn Fn(&mut turbodm::config::Settings)| {
+        let mut s = app.manager.settings();
+        change(&mut s);
+        app.manager.update_settings(s);
+    };
     match cmd {
         Cmd::Add => add::open(app, AddRequest::default()),
         Cmd::Resume => selected().iter().for_each(|id| {
@@ -109,6 +186,7 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
         Cmd::Details => if let Some(id) = first() { progress::open(app, &id) },
         Cmd::CopyUrl => if let Some(s) = first().and_then(|id| app.manager.get(&id)) { shell::copy_text(&s.url) },
         Cmd::Refresh => if let Some(id) = first() { dialogs::refresh_address(app, &id) },
+        Cmd::Redownload => dialogs::confirm_redownload(app, selected()),
         Cmd::DownloadFolder => {
             let dir = app.manager.settings().download_dir;
             let _ = std::fs::create_dir_all(&dir);
@@ -126,5 +204,36 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
             unsafe { let _ = windows::Win32::UI::Input::KeyboardAndMouse::SetFocus(Some(app.main.search)); }
             super::super::wnd::send(app.main.search, 0x00B1, 0, -1); // EM_SETSEL: all
         }
+        Cmd::BatchAdd => batch::pattern(app),
+        Cmd::ClipboardLinks => batch::from_clipboard(app),
+        Cmd::Import => batch::import(app),
+        Cmd::Export => batch::export(app),
+        Cmd::Speed0 | Cmd::Speed256 | Cmd::Speed512 | Cmd::Speed1M | Cmd::Speed2M | Cmd::Speed5M | Cmd::Speed10M => {
+            if let Some(&(_, kib, _)) = SPEEDS.iter().find(|(c, _, _)| *c == cmd) {
+                settings(&|s| s.speed_limit_kib = kib);
+            }
+        }
+        Cmd::ToggleCategories | Cmd::ToggleToolbar => {
+            settings(&|s| if cmd == Cmd::ToggleCategories { s.show_categories ^= true } else { s.show_toolbar ^= true });
+            let s = app.manager.settings();
+            app.main.show_parts(s.show_categories, s.show_toolbar);
+        }
+        Cmd::ToggleProgress => settings(&|s| s.show_progress_window ^= true),
+        Cmd::ToggleComplete => settings(&|s| s.show_complete_dialog ^= true),
+        Cmd::SortName | Cmd::SortSize | Cmd::SortStatus | Cmd::SortSpeed | Cmd::SortLeft | Cmd::SortAdded => {
+            if let Some(&(_, column, _, ascending)) = SORTS.iter().find(|(c, ..)| *c == cmd) {
+                // (the same again turns it around, as clicking a column's header does)
+                let (now, up) = app.main.list.sorting();
+                app.main.list.sort_by(column, if now == column { !up } else { ascending });
+                super::refresh(app);
+            }
+        }
+        Cmd::GitHub => shell::open(Path::new(GITHUB)),
+        Cmd::Report => shell::open(Path::new(&format!("{GITHUB}/issues/new"))),
+        Cmd::MenuTasks => menubar::open(app, 0),
+        Cmd::MenuFile => menubar::open(app, 1),
+        Cmd::MenuDownloads => menubar::open(app, 2),
+        Cmd::MenuView => menubar::open(app, 3),
+        Cmd::MenuHelp => menubar::open(app, 4),
     }
 }

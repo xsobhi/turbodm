@@ -163,6 +163,17 @@ impl List {
         send(self.hwnd, LVM_SETITEMSTATE, index as usize, &item as *const _ as isize);
     }
 
+    /// The column it's sorted by now, and whether going up.
+    pub fn sorting(&self) -> (usize, bool) {
+        self.sort.get()
+    }
+
+    /// Sort by `column` (shown at the next refresh).
+    pub fn sort_by(&self, column: usize, ascending: bool) {
+        self.sort.set((column, ascending));
+        self.show_sort_arrow();
+    }
+
     /// The header's arrow on the sorted column.
     fn show_sort_arrow(&self) {
         let header = HWND(send(self.hwnd, LVM_GETHEADER, 0, 0) as *mut _);

@@ -1,6 +1,6 @@
-//! The main window, as on Linux Mint (and like IDM's): the toolbar with search and the menu,
-//! the sidebar, the downloads list, a status line; closing it keeps TurboDM in the notification
-//! area.
+//! The main window, as on Linux Mint (and like IDM's): the title bar with search, IDM's menu bar,
+//! the toolbar, the sidebar, the downloads list, a status line; closing it keeps TurboDM in the
+//! notification area.
 
 mod cells;
 mod clipboard;
@@ -8,10 +8,11 @@ mod draw;
 mod events;
 mod list;
 pub mod menu;
+mod menubar;
 mod sidebar;
 mod toolbar;
 
-use super::theme::{self, icon, Align, Font};
+use super::theme::{self, Align, Font};
 use super::wnd::caption::{self, Button, Caption};
 use super::wnd::{self, canvas, field, px, send, Window};
 pub use events::{message_loop, setup};
@@ -32,11 +33,12 @@ pub struct MainWindow {
     caption: Caption,
     sidebar: sidebar::Sidebar,
     toolbar: toolbar::Toolbar,
+    menubar: menubar::MenuBar,
     pub search: HWND,
-    menu: HWND,
     status: HWND,
     status_text: Rc<RefCell<String>>,
     split: Rc<Cell<i32>>, // width of the sidebar, 96-DPI pixels
+    shown: Cell<(bool, bool)>, // (categories, toolbar): View's options
 }
 
 /// The splitter between the sidebar and the list, and the status line (96-DPI pixels).
@@ -53,7 +55,7 @@ impl MainWindow {
         let refresh_soon = || super::post(refresh);
         let search = window.edit("", refresh_soon);
         send(search, EM_SETCUEBANNER, 1, HSTRING::from("Search downloads").as_ptr() as isize);
-        let menu = window.icon_button(icon::MENU, || super::post(menu::app_menu));
+        let menubar = menubar::MenuBar::new(&window);
         let sidebar = sidebar::Sidebar::new(&window, refresh_soon);
         let list = list::List::new(&window, |id| super::post(move |app| open_row(app, &id)),
                                    |point| menu::context(super::app().main.window.hwnd(), point), refresh_soon);
@@ -64,8 +66,8 @@ impl MainWindow {
             let r = RECT { left: px(12), right: p.rect.right - px(12), ..p.rect };
             p.text(r, &text.borrow(), Font::Body, theme::TEXT, Align::Left);
         });
-        let main = MainWindow { window, list, caption, sidebar, toolbar, search, menu, status, status_text,
-                                split: Rc::new(Cell::new(210)) };
+        let main = MainWindow { window, list, caption, sidebar, toolbar, menubar, search, status, status_text,
+                                split: Rc::new(Cell::new(210)), shown: Cell::new((true, true)) };
         wnd::center(main.window.hwnd());
         main
     }
@@ -86,46 +88,78 @@ impl MainWindow {
         unsafe { IsWindowVisible(self.window.hwnd()).as_bool() }
     }
 
-    /// Where the splitter is (screen pixels, in the window): the strip between sidebar and list.
+    /// Where the splitter is (screen pixels, in the window): the strip between sidebar and list
+    /// (none while the categories are hidden).
     pub(super) fn grip(&self, height: i32) -> RECT {
-        let split = px(self.split.get());
-        RECT { left: split, top: px(caption::HEIGHT + toolbar::HEIGHT), right: split + px(GAP), bottom: height - px(STATUS) }
+        let (split, top) = (px(self.sidebar_width()), self.body_top());
+        let right = if split > 0 { split + px(GAP) } else { 0 };
+        RECT { left: split, top, right, bottom: height - px(STATUS) }
+    }
+
+    /// The sidebar's width now (96-DPI pixels): 0 while View → Categories is off.
+    fn sidebar_width(&self) -> i32 {
+        if self.shown.get().0 { self.split.get() } else { 0 }
+    }
+
+    /// Where the sidebar and the list start (screen pixels): under the title bar, the menu bar
+    /// and the toolbar (if it's shown).
+    fn body_top(&self) -> i32 {
+        let toolbar = if self.shown.get().1 { toolbar::HEIGHT } else { 0 };
+        px(caption::HEIGHT + menubar::HEIGHT + toolbar)
+    }
+
+    /// Show the categories and the toolbar, or not (View's options), and lay out again.
+    pub fn show_parts(&self, categories: bool, toolbar: bool) {
+        self.shown.set((categories, toolbar));
+        self.relayout();
+    }
+
+    fn relayout(&self) {
+        let (w, h) = wnd::client_size(self.window.hwnd());
+        self.layout(px(w), px(h));
+        wnd::moves::paint_now(self.window.hwnd());
     }
 
     /// Place everything in the window's inside (screen pixels).
     pub(super) fn layout(&self, width: i32, height: i32) {
-        // the title bar (with the search and the menu, as GTK's header bar), the toolbar, the rest
+        // the title bar (with the search, as GTK's header bar), the menu bar, the toolbar, the rest
         let bar = px(caption::HEIGHT);
-        let (top, bottom) = (bar + px(toolbar::HEIGHT), (height - px(STATUS)).max(bar + px(toolbar::HEIGHT)));
-        let split = px(self.split.get());
+        let menus = bar + px(menubar::HEIGHT);
+        let top = self.body_top();
+        let bottom = (height - px(STATUS)).max(top);
+        let split = px(self.sidebar_width());
         let buttons = width - self.caption.buttons_width();
-        let menu = RECT { left: buttons - px(42), top: (bar - px(34)) / 2, right: buttons - px(8), bottom: (bar + px(34)) / 2 };
-        let search = RECT { left: menu.left - px(8) - px(260), top: (bar - px(32)) / 2, right: menu.left - px(8),
+        let search = RECT { left: buttons - px(8) - px(260), top: (bar - px(32)) / 2, right: buttons - px(8),
                             bottom: (bar + px(32)) / 2 };
         let place = wnd::moves::move_window;
+        let show = |hwnd: HWND, on: bool| {
+            // SAFETY: plain calls on our own controls
+            unsafe { let _ = ShowWindow(hwnd, if on { SW_SHOWNA } else { SW_HIDE }); }
+        };
         wnd::batch(|| {
             self.caption.place(width, search.left - px(8));
             field::place_field(self.search, search);
-            place(self.menu, menu);
-            place(self.toolbar.hwnd, RECT { left: 0, top: bar, right: width, bottom: top });
+            place(self.menubar.hwnd, RECT { left: 0, top: bar, right: width, bottom: menus });
+            show(self.toolbar.hwnd, top > menus);
+            place(self.toolbar.hwnd, RECT { left: 0, top: menus, right: width, bottom: top.max(menus) });
             // as on Mint: white content between grey bars, thin lines between the parts (the one
             // between sidebar and list in a white strip that moves it)
-            let (body, line) = (top + 1, split + px(GAP) / 2);
-            self.window.set_surfaces(vec![
-                (RECT { left: 0, top, right: width, bottom: body }, theme::BORDER),
-                (RECT { left: split, top: body, right: split + px(GAP), bottom }, theme::VIEW),
-                (RECT { left: line, top: body, right: line + 1, bottom }, theme::BORDER),
-                (RECT { left: 0, top: bottom, right: width, bottom: bottom + 1 }, theme::BORDER),
-            ]);
+            let body = top + 1;
+            let gap = if split > 0 { px(GAP) } else { 0 };
+            let line = split + gap / 2;
+            let mut surfaces = vec![(RECT { left: 0, top, right: width, bottom: body }, theme::BORDER),
+                                    (RECT { left: 0, top: bottom, right: width, bottom: bottom + 1 }, theme::BORDER)];
+            if split > 0 {
+                surfaces.push((RECT { left: split, top: body, right: split + gap, bottom }, theme::VIEW));
+                surfaces.push((RECT { left: line, top: body, right: line + 1, bottom }, theme::BORDER));
+            }
+            self.window.set_surfaces(surfaces);
+            show(self.sidebar.hwnd, split > 0);
             place(self.sidebar.hwnd, RECT { left: 0, top: body, right: split, bottom });
-            place(self.list.hwnd, RECT { left: split + px(GAP), top: body, right: width, bottom });
+            place(self.list.hwnd, RECT { left: split + gap, top: body, right: width, bottom });
             place(self.status, RECT { left: 0, top: bottom + 1, right: width, bottom: height });
         });
         self.list.fit(); // (by its new size)
-    }
-
-    pub fn menu_button(&self) -> HWND {
-        self.menu
     }
 
     fn set_status(&self, text: String) {

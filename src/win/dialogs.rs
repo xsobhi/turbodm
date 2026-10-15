@@ -29,6 +29,26 @@ pub fn confirm_delete(app: &Rc<App>, ids: Vec<String>) {
     }
 }
 
+/// IDM's Redownload: the file deleted, and downloaded again from the start.
+pub fn confirm_redownload(app: &Rc<App>, ids: Vec<String>) {
+    if ids.is_empty() {
+        return;
+    }
+    let what = match ids.len() {
+        1 => app.manager.get(&ids[0]).map_or("it".into(), |s| format!("\u{201c}{}\u{201d}", s.filename)),
+        n => format!("{n} downloads"),
+    };
+    let body = format!("Download {what} again from the start?\n\nWhat's downloaded so far is deleted.");
+    // SAFETY: a modal question box
+    let answer = unsafe {
+        MessageBoxW(Some(app.main.window.hwnd()), &HSTRING::from(body), &HSTRING::from("Redownload"),
+                    MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2)
+    };
+    if answer == IDYES {
+        ids.iter().for_each(|id| app.manager.redownload(id));
+    }
+}
+
 /// IDM's "Refresh download address": paste a fresh link for an expired one.
 pub fn refresh_address(app: &Rc<App>, id: &str) {
     let Some(snap) = app.manager.get(id) else { return };

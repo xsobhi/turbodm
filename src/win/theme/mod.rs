@@ -165,7 +165,6 @@ pub fn brush(color: COLORREF) -> HBRUSH {
 /// Small line icons from Windows' icon font, for buttons (the toolbar's and the sidebar's are
 /// `pictures`).
 pub mod icon {
-    pub const MENU: char = '\u{E700}';
     pub const ADD: char = '\u{E710}';
     pub const REMOVE: char = '\u{E738}'; // minus
     pub const CHECK: char = '\u{E73E}';

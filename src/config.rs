@@ -89,6 +89,8 @@ pub struct Settings {
     pub skipped_update: String,    // "Skip this version" in the update dialog
     pub folders: BTreeMap<String, PathBuf>, // category → folder ("Always save … here", like IDM)
     pub browsers_offered: bool,    // the "add the extension to your browser" guide was shown
+    pub show_categories: bool,     // the main window's categories (View → Categories)
+    pub show_toolbar: bool,        // and its toolbar (View → Toolbar)
 }
 
 impl Default for Settings {
@@ -113,6 +115,8 @@ impl Default for Settings {
             skipped_update: String::new(),
             folders: BTreeMap::new(),
             browsers_offered: false,
+            show_categories: true,
+            show_toolbar: true,
         }
     }
 }

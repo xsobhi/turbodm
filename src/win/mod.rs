@@ -2,6 +2,7 @@
 //! Windows draws in the style of the version it runs on, like IDM. Linux has GTK (src/ui).
 
 mod add;
+mod batch;
 mod browsers;
 mod complete;
 mod dialogs;

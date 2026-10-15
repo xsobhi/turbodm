@@ -10,6 +10,7 @@ use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFre
                                   COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
 use windows::Win32::System::DataExchange::*;
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
 use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
@@ -72,6 +73,30 @@ pub fn choose_folder(owner: HWND, title: &str, initial: &Path) -> Option<PathBuf
         let _ = dialog.SetTitle(&HSTRING::from(title));
         if let Ok(folder) = SHCreateItemFromParsingName::<_, _, IShellItem>(&HSTRING::from(initial.as_os_str()), None) {
             let _ = dialog.SetFolder(&folder);
+        }
+        dialog.Show(Some(owner)).ok()?; // cancelled: an error
+        let name = dialog.GetResult().ok()?.GetDisplayName(SIGDN_FILESYSPATH).ok()?;
+        let path = PathBuf::from(name.to_string().ok()?);
+        CoTaskMemFree(Some(name.0 as *const _));
+        Some(path)
+    }
+}
+
+/// Windows' Open dialog for one file, starting in `folder`, showing files of `kind` (its name,
+/// its pattern: "Text files", "*.txt") or all.
+pub fn choose_open(owner: HWND, title: &str, folder: &Path, kind: (&str, &str)) -> Option<PathBuf> {
+    // SAFETY: Windows' file dialog (COM, initialized on this thread at start)
+    unsafe {
+        let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        dialog.SetOptions(FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST).ok()?;
+        let _ = dialog.SetTitle(&HSTRING::from(title));
+        let (name, pattern) = (HSTRING::from(kind.0), HSTRING::from(kind.1));
+        let (all, every) = (HSTRING::from("All files"), HSTRING::from("*.*"));
+        let types = [COMDLG_FILTERSPEC { pszName: PCWSTR(name.as_ptr()), pszSpec: PCWSTR(pattern.as_ptr()) },
+                     COMDLG_FILTERSPEC { pszName: PCWSTR(all.as_ptr()), pszSpec: PCWSTR(every.as_ptr()) }];
+        let _ = dialog.SetFileTypes(&types);
+        if let Ok(item) = SHCreateItemFromParsingName::<_, _, IShellItem>(&HSTRING::from(folder.as_os_str()), None) {
+            let _ = dialog.SetFolder(&item);
         }
         dialog.Show(Some(owner)).ok()?; // cancelled: an error
         let name = dialog.GetResult().ok()?.GetDisplayName(SIGDN_FILESYSPATH).ok()?;
