@@ -14,8 +14,14 @@ done
 # (packaging/firefox/, made with `web-ext sign --channel=unlisted`) when there is one
 version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' extension/firefox/manifest.json | head -1)
 rm -f dist/turbodm-firefox.xpi
+signed=$(ls packaging/firefox/turbodm-*.xpi 2>/dev/null | sort -V | tail -1)
 if [ -f "packaging/firefox/turbodm-$version.xpi" ]; then
     cp "packaging/firefox/turbodm-$version.xpi" dist/turbodm-firefox.xpi
+elif [ -n "$signed" ]; then
+    # this version isn't signed yet: Firefox gets the last signed one meanwhile (it won't
+    # install an unsigned one)
+    echo "warning: no signed Firefox extension $version, shipping $signed" >&2
+    cp "$signed" dist/turbodm-firefox.xpi
 elif command -v zip >/dev/null 2>&1; then
     (cd dist/firefox && zip -qr ../turbodm-firefox.xpi .) # unsigned: for about:debugging only
 fi
