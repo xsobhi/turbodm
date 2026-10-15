@@ -12,7 +12,9 @@ categories = ["network-programming"]
 async-channel = "2.5.0"
 dirs = "7.0.0"
 futures-util = "0.3.34"
-librqbit = { version = "9.0.1", default-features = false, features = ["rust-tls"] }
+# torrents (src/engine/torrent), with rustls; 9.0.x only: TurboDM writes its fast-resume file
+# the way 9.0 does (torrent/session.rs, save_progress), so check that before moving on
+librqbit = { version = "~9.0.1", default-features = false, features = ["rust-tls"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
