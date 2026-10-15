@@ -48,6 +48,7 @@ pub fn setup(app: &Rc<App>) {
         }
         WM_SIZE => {
             super::super::app().main.layout((lparam.0 & 0xffff) as i32, ((lparam.0 >> 16) & 0xffff) as i32);
+            wnd::moves::paint_now(hwnd);
             Some(LRESULT(0))
         }
         WM_GETMINMAXINFO => {
@@ -75,6 +76,7 @@ pub fn setup(app: &Rc<App>) {
             split.set(x.clamp(160, 500));
             let (w, h) = wnd::client_size(hwnd);
             super::super::app().main.layout(px(w), px(h));
+            wnd::moves::paint_now(hwnd);
             Some(LRESULT(0))
         }
         WM_LBUTTONUP if dragging.get() => {

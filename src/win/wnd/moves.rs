@@ -32,9 +32,11 @@ pub fn forget(window: HWND) {
 }
 
 /// Move a control to `r` (screen pixels in its window): with the others, during `batch`.
+/// Without Windows copying its old picture to the new place first (that copy is what showed
+/// as ghosted text and icons while resizing): it's drawn again whole (see `paint_now`).
 pub fn move_window(hwnd: HWND, r: RECT) {
     let (width, height) = (r.right - r.left, r.bottom - r.top);
-    let flags = SWP_NOZORDER | SWP_NOACTIVATE;
+    let flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS;
     let batch = BATCH.with(Cell::get);
     // SAFETY: plain moves of our own controls
     unsafe {
@@ -46,6 +48,14 @@ pub fn move_window(hwnd: HWND, r: RECT) {
         }
         let _ = SetWindowPos(hwnd, None, r.left, r.top, width, height, flags);
     }
+}
+
+/// Draw what moving left to draw, now: not after the next mouse moves (while resizing or
+/// dragging a splitter, the old picture would show meanwhile).
+pub fn paint_now(window: HWND) {
+    use windows::Win32::Graphics::Gdi::{RedrawWindow, RDW_ALLCHILDREN, RDW_UPDATENOW};
+    // SAFETY: plain repaint of our own window
+    unsafe { let _ = RedrawWindow(Some(window), None, None, RDW_UPDATENOW | RDW_ALLCHILDREN); }
 }
 
 /// Lay out at once: the moves `f` makes happen together when it returns.
