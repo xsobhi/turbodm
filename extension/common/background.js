@@ -153,7 +153,8 @@ createMenus(); // Firefox recreates menus each time the background page loads
 
 api.contextMenus.onClicked.addListener((info, tab) => {
   const url = info.linkUrl || info.srcUrl;
-  if (url && /^https?:/i.test(url)) {
+  // magnet links too: TurboDM downloads torrents
+  if (url && /^(https?|magnet):/i.test(url)) {
     handOff({ url, referrer: info.pageUrl || (tab && tab.url) }).catch((err) =>
       console.warn("TurboDM is not reachable:", err),
     );

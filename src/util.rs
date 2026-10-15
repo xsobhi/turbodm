@@ -85,6 +85,16 @@ pub fn name_guess(url: &str) -> String {
     }
 }
 
+/// The add dialog's first name for a download: the one the browser gave (but not a .torrent
+/// file's: that's not what's in it), or a guess from the link.
+pub fn name_for(url: &str, filename: Option<&str>) -> String {
+    match filename.filter(|n| !n.is_empty()) {
+        Some(name) if crate::engine::torrent::is_torrent(url, Some(name)) => name_guess(name),
+        Some(name) => name.to_string(),
+        None => name_guess(url),
+    }
+}
+
 /// File name from a Content-Disposition header (RFC 6266, incl. filename*=UTF-8'').
 pub fn filename_from_disposition(value: &str) -> Option<String> {
     let lower = value.to_ascii_lowercase();
@@ -177,5 +187,7 @@ mod tests {
         assert_eq!(name_guess("/home/me/Big Buck Bunny.torrent"), "Big Buck Bunny");
         assert_eq!(name_guess("magnet:?xt=urn:btih:abc&dn=Sintel"), "Sintel");
         assert_eq!(name_guess("magnet:?xt=urn:btih:abc"), "");
+        assert_eq!(name_for("https://x.org/get?id=1", Some("Sintel.torrent")), "Sintel");
+        assert_eq!(name_for("https://x.org/get?id=1", Some("report.pdf")), "report.pdf");
     }
 }

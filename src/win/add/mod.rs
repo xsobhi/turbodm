@@ -18,7 +18,7 @@ use turbodm::engine::manager::Confirm;
 use turbodm::engine::torrent::{is_magnet, is_torrent};
 use turbodm::engine::AddRequest;
 use turbodm::text::kind_words;
-use turbodm::util::name_guess;
+use turbodm::util::{name_for, name_guess};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -89,7 +89,7 @@ pub fn open(app: &Rc<App>, req: AddRequest) {
     let settings = app.manager.settings();
     let owner = app.main.is_visible().then(|| app.main.window.hwnd());
     let window = Window::dialog("Download file info", owner, (620, 220), false);
-    let guess = first_guess(&req);
+    let guess = name_for(&req.url, req.filename.as_deref());
     let folder = req.directory.clone().unwrap_or_else(|| settings.folder_for(&guess));
     let form = Rc::new(Form {
         window: window.clone(),
@@ -190,16 +190,6 @@ fn to_end(edit: HWND) {
 /// Something the dialog can download: a web link, a magnet link or a .torrent file.
 fn is_link(url: &str) -> bool {
     url.starts_with("http") || is_torrent(url, None)
-}
-
-/// The name to show before the download knows better (the name a browser gives a .torrent
-/// file is that file's, not what's in it).
-fn first_guess(req: &AddRequest) -> String {
-    match req.filename.as_deref().filter(|n| !n.is_empty()) {
-        Some(name) if is_torrent(&req.url, Some(name)) => name_guess(name),
-        Some(name) => name.to_string(),
-        None => name_guess(&req.url),
-    }
 }
 
 fn submit(app: &Rc<App>, form: &Rc<Form>, start_now: bool) {

@@ -2,6 +2,7 @@
 //! then start. The download quietly starts on one connection while the dialog is open (out of the
 //! list), so Start feels instant, and moves to the path chosen when it's confirmed, even if it
 //! already finished; Cancel throws away what was downloaded. Connections: as in Preferences.
+//! A torrent (magnet link, .torrent file) is only looked up meanwhile: what's in it and how big.
 
 mod folder;
 mod link;
@@ -17,9 +18,10 @@ use std::rc::Rc;
 use std::time::Duration;
 use turbodm::categories::category_for;
 use turbodm::engine::manager::Confirm;
+use turbodm::engine::torrent::{is_magnet, is_torrent};
 use turbodm::engine::AddRequest;
 use turbodm::text::kind_words;
-use turbodm::util::filename_from_url;
+use turbodm::util::{name_for, name_guess};
 
 struct Form {
     url: gtk::Entry,
@@ -47,13 +49,18 @@ impl Form {
         self.url.text().trim().to_string()
     }
 
-    /// The path in the field as (folder, name); a bare name goes to the folder for its kind.
+    /// The path in the field as (folder, name); a bare name goes to the folder for its kind. A
+    /// folder alone (ending in "/"): a torrent whose name isn't known yet goes in it.
     fn target(&self, ctx: &Ctx) -> (PathBuf, Option<String>) {
-        let path = PathBuf::from(self.path.text().trim());
+        let typed = self.path.text().trim().to_string();
+        let path = PathBuf::from(&typed);
+        if typed.ends_with('/') && path.is_absolute() {
+            return (path, None);
+        }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).filter(|n| !n.trim().is_empty());
         let folder = match path.parent() {
             Some(dir) if dir.is_absolute() => dir.to_path_buf(),
-            _ => ctx.manager.settings().folder_for(name.as_deref().unwrap_or(&filename_from_url(&self.url()))),
+            _ => ctx.manager.settings().folder_for(name.as_deref().unwrap_or(&name_guess(&self.url()))),
         };
         (folder, name)
     }
@@ -88,7 +95,7 @@ fn row(grid: &gtk::Grid, y: i32, label: &str, widget: &impl IsA<gtk::Widget>) {
 
 pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
     let settings = ctx.manager.settings();
-    let guess = req.filename.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| filename_from_url(&req.url));
+    let guess = name_for(&req.url, req.filename.as_deref());
     let folder = req.directory.clone().unwrap_or_else(|| settings.folder_for(&guess));
     let form = Rc::new(Form {
         url: gtk::Entry::builder().text(&req.url).hexpand(true).placeholder_text("https://…")
@@ -150,8 +157,8 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
     let submit = |start_now: bool, form: Rc<Form>, ctx: Rc<Ctx>, dialog: gtk::Window, req: AddRequest| {
         move |_: &gtk::Button| {
             let url = form.url();
-            if !url.starts_with("http") {
-                form.info.set_text("Please enter an http(s) link");
+            if !url.starts_with("http") && !is_torrent(&url, None) {
+                form.info.set_text("Please enter a link: http(s), a magnet link or a .torrent file");
                 return;
             }
             let (directory, filename) = form.target(&ctx);
@@ -201,7 +208,7 @@ fn paste_from_clipboard(form: &Rc<Form>, dialog: &gtk::Window) {
     dialog.clipboard().read_text_async(gio::Cancellable::NONE, move |text| {
         if let Ok(Some(text)) = text {
             let text = text.trim();
-            if text.starts_with("http://") || text.starts_with("https://") {
+            if text.starts_with("http://") || text.starts_with("https://") || is_magnet(text) {
                 form.url.set_text(text); // triggers a probe
             }
         }
