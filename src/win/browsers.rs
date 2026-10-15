@@ -1,6 +1,7 @@
 //! "Add TurboDM to your browser", like IDM's guide: shown on the first start and from the menu.
-//! Firefox is handed the signed extension and asks to add it (one click). Chrome, Edge and Brave
-//! only add extensions from their stores by themselves: the window says how to load it.
+//! Firefox is handed the signed extension and asks to add it (one click); on the first start it's
+//! asked straight away, as IDM does. Chrome, Edge and Brave add it from their store by themselves
+//! once it's listed there (register.rs), asking first; else the window says how to load it.
 
 use super::wnd::{self, place, set_text, set_visible, Rows, Window, FIELD, LINE};
 use super::{shell, App};
@@ -9,9 +10,21 @@ use std::rc::Rc;
 use turbodm::browsers as find;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-/// The first time TurboDM starts (until the extension is seen working).
+/// The first time TurboDM starts (until the extension is seen working): Firefox asks to add it,
+/// and the guide opens unless every browser has it already.
 pub fn offer(app: &Rc<App>) {
     if !app.manager.settings().browsers_offered {
+        let missing = find::installed().into_iter().filter(|b| !b.has_extension()).collect::<Vec<_>>();
+        if missing.is_empty() {
+            return mark_offered(app);
+        }
+        if let (Some(firefox), Some(xpi)) = (missing.iter().find(|b| b.is_firefox()),
+                                            find::extension_dir().and_then(|dir| find::firefox_extension(&dir))) {
+            // (not from a test copy: it would open the real Firefox)
+            if !wnd::moves::offscreen() && turbodm::config::sandbox().is_none() {
+                run(&firefox.program, Some(xpi.as_os_str()));
+            }
+        }
         open(app);
         mark_offered(app);
     }
@@ -31,7 +44,13 @@ pub fn open(_app: &Rc<App>) {
     let browsers: Vec<_> = find::installed().into_iter().filter(|_| dir.is_some()).collect();
     let window = Window::dialog("Add TurboDM to your browser", None, (500, 300), false);
     let heading = window.heading("Catch downloads from your browser");
-    let intro = window.note("Add the TurboDM extension to your browser: files you download there then go to TurboDM.");
+    let from_store = turbodm::config::CHROME_STORE_ID.is_some();
+    let intro = window.note(if from_store {
+        "Add the TurboDM extension to your browser: files you download there then go to TurboDM. \
+         Chrome, Edge and Brave also ask by themselves: click \"Enable extension\" when they do."
+    } else {
+        "Add the TurboDM extension to your browser: files you download there then go to TurboDM."
+    });
     let guide = window.note("");
     set_visible(guide, false);
     let copy = window.button("Copy folder path", || {
@@ -47,14 +66,16 @@ pub fn open(_app: &Rc<App>) {
     }));
     let mut rows = Rows::new(18, 16, 0, 464);
     rows.full(heading, 24);
-    rows.full(intro, 32);
+    rows.full(intro, if from_store { 48 } else { 32 });
     for browser in browsers {
-        let name = window.label(browser.name);
+        let added = browser.has_extension();
+        let name = window.label(&if added { format!("{}: added", browser.name) } else { browser.name.to_string() });
         let dir = dir.clone().unwrap_or_default();
-        let add = window.button("Add", move || {
+        let by_hand = browser.extensions_page.is_some() && browser.store_page().is_none();
+        let add = window.button(if added { "Add again" } else { "Add" }, move || {
             set_text(guide, &add_to(&browser, &dir).replace('\n', "\r\n"));
             set_visible(guide, true);
-            set_visible(copy, browser.extensions_page.is_some());
+            set_visible(copy, by_hand);
         });
         place(name, 18, rows.y + 4, 300, LINE);
         place(add, 394, rows.y, 88, FIELD);
@@ -93,6 +114,19 @@ fn add_to(browser: &find::Browser, dir: &Path) -> String {
             _ => "Couldn't open Firefox.".into(),
         };
     };
+    // in the store: its page opens in that browser, with the store's own Add button
+    if let Some(store) = browser.store_page() {
+        if !run(&browser.program, Some(std::ffi::OsStr::new(&store))) {
+            return format!("Couldn't open {}.", browser.name);
+        }
+        return match (browser.name == "Microsoft Edge", store.contains("chromewebstore")) {
+            (true, false) => "Edge opens TurboDM in Edge Add-ons: click \"Get\", then \"Add extension\".".into(),
+            (true, true) => "Edge opens TurboDM in the Chrome Web Store: click \"Allow extensions from other \
+                             stores\", then \"Add to Chrome\", then \"Add extension\".".into(),
+            _ => format!("{} opens TurboDM in the Chrome Web Store: click \"Add to\u{2026}\", then \"Add extension\".",
+                         browser.name),
+        };
+    }
     // browsers don't open their own pages for other programs: the user pastes its address
     shell::copy_text(page);
     if !run(&browser.program, None) {

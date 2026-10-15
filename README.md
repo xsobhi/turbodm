@@ -136,6 +136,9 @@ The extension comes with TurboDM, in:
   *Browser extension folder*)
 
 TurboDM connects itself to the browsers when it starts (`turbodm --register` does it by hand).
+On Windows, the first time it starts, Firefox asks to add the signed extension. Once the
+extension is in the Chrome Web Store, Chrome, Edge and Brave will ask by themselves too
+([docs/extension-stores.md](docs/extension-stores.md)). Until then, load it by hand:
 
 - **Chrome / Brave / Chromium / Edge**: open `chrome://extensions` (or `brave://extensions`), turn on
   *Developer mode*, click *Load unpacked* and pick the `chrome` folder from above.

@@ -42,6 +42,7 @@ pub struct App {
     pub refreshing: RefCell<Option<refresh::Waiting>>, // waiting for a fresh address from the browser
     pub offered_refresh: RefCell<HashSet<String>>,     // expired links already offered a refresh
     pub queue: RefCell<Option<Rc<wnd::Window>>>,      // the hidden download windows' taskbar button
+    from_browser: RefCell<Option<(String, std::time::Instant)>>, // the extension's last link, and when
     pub update: RefCell<Option<turbodm::update::Release>>, // found while hidden: shown on show()
     pub background: bool, // started by the browser: quit when idle and nothing is shown
 }
@@ -111,6 +112,13 @@ impl App {
             Message::Download { url, filename, directory, referrer, cookies, user_agent, silent, .. } => {
                 if user_agent.is_some() {
                     browsers::mark_offered(self); // from the extension
+                    // (the same link again at once: a second copy of the extension in the browser,
+                    // the one loaded by hand and the store's)
+                    let now = std::time::Instant::now();
+                    let last = self.from_browser.replace(Some((url.clone(), now)));
+                    if last.is_some_and(|(last, at)| last == url && now - at < std::time::Duration::from_secs(3)) {
+                        return;
+                    }
                 }
                 let directory = directory.filter(|d| d.is_absolute());
                 let req = AddRequest { url, filename, directory, referrer, cookies, user_agent, ..Default::default() };
@@ -164,6 +172,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
         refreshing: RefCell::default(),
         offered_refresh: RefCell::default(),
         queue: RefCell::default(),
+        from_browser: RefCell::default(),
         update: RefCell::default(),
         background,
     });

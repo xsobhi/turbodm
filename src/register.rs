@@ -3,7 +3,7 @@
 //! whichever way TurboDM was installed or moved — a package, install.sh, an AppImage, the
 //! Windows installer — and by `turbodm --register` / `--unregister` from installers.
 
-use crate::config::{CHROME_EXTENSION_ID, FIREFOX_EXTENSION_ID, NATIVE_HOST};
+use crate::config::{chrome_extension_ids, FIREFOX_EXTENSION_ID, NATIVE_HOST};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
@@ -25,7 +25,8 @@ fn manifest(path: &Path, firefox: bool) -> String {
     if firefox {
         value["allowed_extensions"] = json!([FIREFOX_EXTENSION_ID]);
     } else {
-        value["allowed_origins"] = json!([format!("chrome-extension://{CHROME_EXTENSION_ID}/")]);
+        let origins: Vec<String> = chrome_extension_ids().iter().map(|id| format!("chrome-extension://{id}/")).collect();
+        value["allowed_origins"] = json!(origins);
     }
     serde_json::to_string_pretty(&value).unwrap_or_default() + "\n"
 }
@@ -81,7 +82,8 @@ mod platform {
 #[cfg(windows)]
 mod platform {
     use super::*;
-    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use crate::config::{CHROME_STORE_ID, EDGE_STORE_ID};
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, KEY_WOW64_32KEY, KEY_WRITE};
     use winreg::{HKEY, RegKey};
 
     /// Registry keys browsers look up hosts under (in HKCU or HKLM), and whether it's Firefox.
@@ -93,6 +95,26 @@ mod platform {
         (r"Software\Microsoft\Edge\NativeMessagingHosts", false),
         (r"Software\Vivaldi\NativeMessagingHosts", false),
     ];
+
+    /// Chromium browsers add an extension from their store by themselves, asking first ("New
+    /// extension added"), when it's listed under these keys, as IDM's is: Chrome's key is read
+    /// by Brave, Vivaldi and Chromium too; Edge has its own, and takes Chrome Web Store ones.
+    /// (key, update URL); none until the extension is in a store.
+    pub(super) fn store_entries() -> Vec<(String, &'static str)> {
+        const CHROME_STORE: &str = "https://clients2.google.com/service/update2/crx";
+        const EDGE_STORE: &str = "https://edge.microsoft.com/extensionwebstorebase/v1/crx";
+        let edge = match (EDGE_STORE_ID, CHROME_STORE_ID) {
+            (Some(id), _) => Some((id, EDGE_STORE)),
+            (None, chrome) => chrome.map(|id| (id, CHROME_STORE)),
+        };
+        let chrome = CHROME_STORE_ID.map(|id| (format!(r"Software\Google\Chrome\Extensions\{id}"), CHROME_STORE));
+        chrome.into_iter().chain(edge.map(|(id, url)| (format!(r"Software\Microsoft\Edge\Extensions\{id}"), url))).collect()
+    }
+
+    /// The browsers read the machine's list from its 32-bit view.
+    fn view(hive: HKEY) -> u32 {
+        if hive == HKEY_LOCAL_MACHINE { KEY_WOW64_32KEY } else { 0 }
+    }
 
     /// Where the registration lives: for this user, or (installer, as admin) for everyone,
     /// with the manifests next to the installed program.
@@ -128,6 +150,12 @@ mod platform {
                 host.set_value("", &file)?;
             }
         }
+        for (key, url) in store_entries() {
+            let (entry, _) = hive.create_subkey_with_flags(key, KEY_READ | KEY_WRITE | view(scope.hive))?;
+            if entry.get_value::<String, _>("update_url").ok().as_deref() != Some(url) {
+                entry.set_value("update_url", &url)?;
+            }
+        }
         Ok(())
     }
 
@@ -135,6 +163,10 @@ mod platform {
         let hive = RegKey::predef(scope.hive);
         for (key, _) in KEYS {
             let _ = hive.delete_subkey_all(format!(r"{key}\{NATIVE_HOST}"));
+        }
+        // (the browsers then remove the extension they added from the store)
+        for (key, _) in store_entries() {
+            let _ = hive.delete_subkey_with_flags(key, view(scope.hive));
         }
         for firefox in [true, false] {
             let _ = std::fs::remove_file(manifest_file(scope, firefox));
@@ -193,6 +225,18 @@ mod tests {
         assert_eq!(firefox["allowed_extensions"][0], FIREFOX_EXTENSION_ID);
         assert_eq!(firefox["path"], "/usr/bin/turbodm");
         let chrome: serde_json::Value = serde_json::from_str(&manifest(Path::new("/x"), false)).unwrap();
-        assert_eq!(chrome["allowed_origins"][0], format!("chrome-extension://{CHROME_EXTENSION_ID}/"));
+        let origins = chrome["allowed_origins"].as_array().unwrap();
+        assert_eq!(origins[0], format!("chrome-extension://{}/", crate::config::CHROME_EXTENSION_ID));
+        assert_eq!(origins.len(), chrome_extension_ids().len());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn store_entries_name_the_stores_extension() {
+        for (key, url) in platform::store_entries() {
+            let id = key.rsplit('\\').next().unwrap();
+            assert!(chrome_extension_ids().contains(&id) && id != crate::config::CHROME_EXTENSION_ID, "{key}");
+            assert!(url.starts_with("https://") && (key.contains(r"\Google\Chrome\") || key.contains(r"\Microsoft\Edge\")));
+        }
     }
 }

@@ -41,6 +41,13 @@ jobs:
           path: |
             target/debian/*.deb
             target/generate-rpm/*.rpm
+      # the extension as the Chrome Web Store and Edge Add-ons take it (docs/extension-stores.md)
+      - uses: actions/upload-artifact@v4
+        if: matrix.arch == 'amd64'
+        with:
+          name: extension-for-stores
+          path: dist/turbodm-extension-*-for-stores.zip
+          if-no-files-found: error
 
   rpm-test:
     name: Fedora install test
