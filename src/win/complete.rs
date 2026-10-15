@@ -84,7 +84,7 @@ pub fn open(app: &Rc<App>, snap: &Snapshot) {
     let bottom = footer.buttons(&[with, folder, open]);
     wnd::set_client_height(window.hwnd(), bottom + 16);
     wnd::center(window.hwnd());
-    window.show();
+    window.show_in_front();
 }
 
 /// "Drag the file": pressed and moved, the file goes along with the mouse, to drop anywhere.

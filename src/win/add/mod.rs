@@ -79,8 +79,9 @@ impl Form {
 
 pub fn open(app: &Rc<App>, req: AddRequest) {
     let settings = app.manager.settings();
-    let owner = app.main.is_visible().then(|| app.main.window.hwnd());
-    let window = Window::dialog("Download file info", owner, (620, 220), false);
+    // a window of its own (with its own taskbar button), not the main window's: that may be
+    // minimized or behind other programs when a download comes from the browser
+    let window = Window::dialog("Download file info", None, (620, 220), false);
     let guess = req.filename.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| filename_from_url(&req.url));
     let folder = req.directory.clone().unwrap_or_else(|| settings.folder_for(&guess));
     let form = Rc::new(Form {
@@ -150,7 +151,7 @@ pub fn open(app: &Rc<App>, req: AddRequest) {
     form.update_remember();
     link::start_timer(&form, app);
     wnd::center(window.hwnd());
-    window.show();
+    window.show_in_front();
     // SAFETY: plain focus change in our dialog
     unsafe { let _ = SetFocus(Some(form.url.get())); }
     wnd::send(form.url.get(), 0x00B1, 0, -1); // EM_SETSEL: all

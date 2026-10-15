@@ -30,6 +30,14 @@ fn write_message(output: &mut impl Write, reply: &Reply) -> std::io::Result<()> 
 }
 
 pub fn run() -> i32 {
+    // the browser (in use) started us: let TurboDM bring its windows to the front for what we
+    // pass on (a download caught there), as Windows otherwise doesn't let a program in the back
+    #[cfg(windows)]
+    // SAFETY: plain call, no pointers
+    unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY};
+        let _ = AllowSetForegroundWindow(ASFW_ANY);
+    }
     let mut input = std::io::stdin().lock();
     let mut output = std::io::stdout().lock();
     while let Some(raw) = read_message(&mut input) {

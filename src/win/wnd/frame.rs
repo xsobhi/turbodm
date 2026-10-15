@@ -43,6 +43,23 @@ impl Window {
         }
     }
 
+    /// Show it in front of every other program's windows: something TurboDM did by itself (a
+    /// download caught from the browser, one that finished) while another program is in use.
+    /// Windows may not let it take the keyboard then, so it's lifted above the others anyway.
+    pub fn show_in_front(&self) {
+        self.show();
+        if moves::offscreen() {
+            return;
+        }
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+        // SAFETY: plain calls on our own window: on top of all, then back among the others (first)
+        unsafe {
+            let _ = SetWindowPos(self.hwnd(), Some(HWND_TOPMOST), 0, 0, 0, 0, flags);
+            let _ = SetWindowPos(self.hwnd(), Some(HWND_NOTOPMOST), 0, 0, 0, 0, flags);
+            let _ = SetForegroundWindow(self.hwnd());
+        }
+    }
+
     /// A dialog with TurboDM's own title bar (`minimize`: with a minimize button too); what's
     /// in it is laid out below the bar, as if the bar weren't there.
     pub fn dialog(title: &str, owner: Option<HWND>, size: (i32, i32), minimize: bool) -> Rc<Window> {
