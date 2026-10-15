@@ -23,15 +23,20 @@ use tokio::net::TcpListener;
 use turbodm::config::Settings;
 use turbodm::engine::manager::Confirm;
 use turbodm::engine::{AddRequest, Manager, Snapshot, Status};
-use turbodm::text::{peers_text, status_line};
+use turbodm::text::{peers_text, status_line, status_text};
 use turbodm::util::{human_size, human_speed};
 
-/// Before anything runs: every test calls it first.
+/// Before anything runs: every test calls it first. Also a TurboDM of its own (TURBODM_HOME),
+/// so settings saved by a test never touch the real ones.
 fn passive() {
     static ONCE: Once = Once::new();
+    let home = std::env::temp_dir().join(format!("turbodm-test-home-{}", std::process::id()));
     // SAFETY: each test waits here before starting anything, so no other thread is reading the
     // environment meanwhile
-    ONCE.call_once(|| unsafe { std::env::set_var("TURBODM_TORRENT_PASSIVE", "1") });
+    ONCE.call_once(|| unsafe {
+        std::env::set_var("TURBODM_TORRENT_PASSIVE", "1");
+        std::env::set_var("TURBODM_HOME", home);
+    });
 }
 
 struct Seeder {
@@ -206,6 +211,32 @@ fn a_folder_of_files_goes_where_the_add_dialog_says() {
     gone(&manager, &id);
     assert!(!chosen.join("My album").exists() && chosen.is_dir());
     manager.shutdown();
+}
+
+#[test]
+fn shares_when_seeding_is_on_and_stops_when_it_goes_off() {
+    passive();
+    let env = Env::new("torrent-seed");
+    let data = random_bytes(1 << 20);
+    let seeder = seed(&env, "test file.bin", &[("test file.bin", &data)], 0);
+    let settings = Settings { download_dir: env.dir.clone(), use_categories: false, seed: true, ..Settings::default() };
+    let (manager, _events) = Manager::new(settings, env.dir.join("downloads.json"), env.rt.handle().clone());
+    let id = add_url(&manager, &seeder.magnet);
+    let snap = wait_for(&manager, &id, finished);
+    assert_file(&snap, &data);
+    assert_eq!(status_text(&snap), "Complete · sharing");
+    let running = || {
+        let session = manager.shared.torrents.running().expect("the torrent session");
+        session.with_torrents(|all| all.filter(|(_, t)| t.live().is_some()).count())
+    };
+    assert_eq!(running(), 1, "complete, and not shared");
+    let mut settings = manager.settings();
+    settings.seed = false;
+    manager.update_settings(settings);
+    wait_for(&manager, &id, |s| s.torrent.as_ref().is_some_and(|t| !t.seeding));
+    assert_eq!(running(), 0, "still shared");
+    manager.shutdown();
+    let _ = std::fs::remove_dir_all(turbodm::config::sandbox().expect("the tests' own TURBODM_HOME"));
 }
 
 /// Debian's installer: legal, well shared, and its tracker hands out plenty of peers (Ubuntu's

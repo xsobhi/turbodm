@@ -215,9 +215,13 @@ async fn watch(task: &Task, shared: &Shared, session: &Arc<Session>, handle: &Ha
             shared.torrents.save_progress(session, handle.info_hash()); // little to fetch again after a crash
         }
         match stats.state {
-            // paused (by the session starting, or a pause asked for while it checked its files):
+            // paused (by the session starting, or a pause asked for while it checked its files),
+            // or stopped by an error before this resume (it checks its files and starts again):
             // it should be running
             TorrentStatsState::Paused => {
+                let _ = session.unpause(handle).await;
+            }
+            TorrentStatsState::Error if ticks == 1 => {
                 let _ = session.unpause(handle).await;
             }
             TorrentStatsState::Error => return Err(failure(stats.error.as_deref())),
