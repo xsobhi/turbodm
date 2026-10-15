@@ -90,10 +90,8 @@ pub fn show_pending(app: &Rc<App>) {
 /// Download the installer with TurboDM, in a progress window, kept out of the list; `downloaded`
 /// runs it when it's here.
 fn install(app: &Rc<App>, url: &str, version: &str) {
-    // (CI: this build's installer, from a server on the test machine)
-    let url = std::env::var("TURBODM_TEST_INSTALLER").unwrap_or_else(|_| url.to_string());
     let id = app.manager.add_unlisted(AddRequest {
-        url,
+        url: url.to_string(),
         filename: Some(format!("TurboDM-{version}-setup.exe")),
         directory: Some(std::env::temp_dir()),
         ..Default::default()

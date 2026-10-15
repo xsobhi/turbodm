@@ -10,8 +10,8 @@ use std::rc::Rc;
 use turbodm::browsers as find;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-/// The first time TurboDM starts (until the extension is seen working): Firefox asks to add it,
-/// and the guide opens unless every browser has it already.
+/// The first time TurboDM starts (until the extension is seen working): Firefox, when it's the
+/// default browser, asks to add it; the guide opens unless every browser has it already.
 pub fn offer(app: &Rc<App>) {
     if !app.manager.settings().browsers_offered {
         let missing = find::installed().into_iter().filter(|b| !b.has_extension()).collect::<Vec<_>>();
@@ -21,7 +21,7 @@ pub fn offer(app: &Rc<App>) {
         if let (Some(firefox), Some(xpi)) = (missing.iter().find(|b| b.is_firefox()),
                                             find::extension_dir().and_then(|dir| find::firefox_extension(&dir))) {
             // (not from a test copy: it would open the real Firefox)
-            if !wnd::moves::offscreen() && turbodm::config::sandbox().is_none() {
+            if !wnd::moves::offscreen() && turbodm::config::sandbox().is_none() && firefox_is_default() {
                 run(&firefox.program, Some(xpi.as_os_str()));
             }
         }
@@ -137,6 +137,14 @@ fn add_to(browser: &find::Browser, dir: &Path) -> String {
              2.  Turn on Developer mode.\n\
              3.  Click \"Load unpacked\" and choose this folder:\n      {folder}",
             name = browser.name, folder = dir.join("chrome").display())
+}
+
+/// Does the user browse with Firefox? (Opening it by itself is only welcome then.)
+fn firefox_is_default() -> bool {
+    let key = r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice";
+    winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER).open_subkey(key)
+        .and_then(|k| k.get_value::<String, _>("ProgId"))
+        .is_ok_and(|id| id.starts_with("Firefox"))
 }
 
 fn run(program: &Path, arg: Option<&std::ffi::OsStr>) -> bool {

@@ -61,7 +61,9 @@ async fn get(client: &reqwest::Client, url: &str) -> Result<reqwest::Response, S
 
 /// The latest release, if it's newer than this TurboDM.
 pub async fn check(client: &reqwest::Client) -> Result<Option<Release>, String> {
-    let bytes = get(client, LATEST).await?.bytes().await.map_err(|e| e.to_string())?;
+    // TURBODM_TEST_RELEASE: GitHub's answer served by the test (CI machines get rate-limited)
+    let latest = std::env::var("TURBODM_TEST_RELEASE").unwrap_or_else(|_| LATEST.to_string());
+    let bytes = get(client, &latest).await?.bytes().await.map_err(|e| e.to_string())?;
     let api: ApiRelease = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
     // TURBODM_PRETEND_VERSION: tests the whole update with the current release (CI)
     let current = std::env::var("TURBODM_PRETEND_VERSION").unwrap_or_else(|_| VERSION.to_string());

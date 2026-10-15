@@ -20,14 +20,20 @@ Get-Process turbodm -ErrorAction SilentlyContinue | Stop-Process
 $env:TURBODM_PRETEND_VERSION = "0.0.1"
 if ($Installer) {
     # instead of the release's: this build's installer, served from this machine (TurboDM
-    # downloads it as it would the release's)
-    $server = Start-Process python -ArgumentList "-m", "http.server", "8765", "--bind", "127.0.0.1",
-        "--directory", (Split-Path $Installer) -PassThru -WindowStyle Hidden
+    # downloads it as it would the release's), with GitHub's answer about it (GitHub limits how
+    # often a test machine may ask)
+    $dir = Split-Path $Installer
+    $base = "http://127.0.0.1:8766"
+    @{ tag_name = "v$latest"; html_url = "$base/"; body = "## What's new`n`n- This build";
+       assets = @(@{ name = (Split-Path $Installer -Leaf); browser_download_url = "$base/$(Split-Path $Installer -Leaf)" }) } |
+        ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 "$dir\release.json"
+    $server = Start-Process python -ArgumentList "-m", "http.server", "8766", "--bind", "127.0.0.1",
+        "--directory", $dir -PassThru -WindowStyle Hidden
     Start-Sleep 2
-    $env:TURBODM_TEST_INSTALLER = "http://127.0.0.1:8765/$(Split-Path $Installer -Leaf)"
+    $env:TURBODM_TEST_RELEASE = "$base/release.json"
 }
 Start-Process $Exe
-Remove-Item Env:\TURBODM_PRETEND_VERSION, Env:\TURBODM_TEST_INSTALLER -ErrorAction SilentlyContinue
+Remove-Item Env:\TURBODM_PRETEND_VERSION, Env:\TURBODM_TEST_RELEASE -ErrorAction SilentlyContinue
 $shell = New-Object -ComObject WScript.Shell
 $deadline = (Get-Date).AddSeconds(30)
 while (-not $shell.AppActivate("TurboDM update")) {
