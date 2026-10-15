@@ -22,6 +22,9 @@ impl Manager {
     /// downloaded to the chosen name and folder, then list it like any other download.
     pub fn confirm(self: &Arc<Self>, id: &str, choice: Confirm) {
         let Some(task) = self.find(id) else { return };
+        if task.is_torrent() {
+            return self.confirm_torrent(&task, choice);
+        }
         // from the early single connection to all of them, without reconnecting (set right
         // away: the progress window opening next shows that many)
         task.info.lock().unwrap().connections = choice.connections;
@@ -46,6 +49,24 @@ impl Manager {
             task.pending.store(false, Ordering::Relaxed); // listed, saved, events from here on
             me.dirty.store(true, Ordering::Relaxed);
         });
+    }
+}
+
+impl Manager {
+    /// A torrent waits for its dialog having only looked itself up: nothing to move, it just
+    /// takes the place chosen (for one file, only its folder: the torrent names the file).
+    fn confirm_torrent(self: &Arc<Self>, task: &Arc<Task>, choice: Confirm) {
+        if !choice.start {
+            task.pause(); // first: it mustn't start downloading on being let go
+        }
+        let name = choice.filename.as_deref().filter(|n| !n.trim().is_empty()).map(sanitize_filename);
+        set_place(&mut task.info.lock().unwrap(), name, &choice.directory);
+        task.pending.store(false, Ordering::Relaxed); // listed, saved, events from here on
+        task.grow.notify_one(); // its runner carries on
+        self.dirty.store(true, Ordering::Relaxed);
+        if choice.start {
+            self.start_task(task); // no-op if its runner is waiting; again if it had failed
+        }
     }
 }
 

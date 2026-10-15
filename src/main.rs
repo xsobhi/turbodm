@@ -1,7 +1,7 @@
 //! TurboDM entry point.
 //!
 //!   turbodm                     open the window (or show the running one)
-//!   turbodm URL...              add downloads (to the running instance if any)
+//!   turbodm URL...              add downloads, magnet links, .torrent files (to the running TurboDM)
 //!   turbodm --background        start hidden in the tray (used by the browser)
 //!   turbodm --native-host       browser native-messaging host
 //!   turbodm --register          (re)connect the browser extension; --unregister undoes it
@@ -18,6 +18,17 @@ mod win; // Windows' own controls
 use win as ui;
 
 use turbodm::ipc::{self, Message};
+
+/// A link, a magnet link or a .torrent file (made absolute: the running TurboDM that gets it
+/// may be in another folder).
+fn download_arg(arg: &str) -> Option<String> {
+    use turbodm::engine::torrent::is_torrent;
+    if arg.starts_with("http://") || arg.starts_with("https://") || arg.starts_with("magnet:") {
+        return Some(arg.to_string());
+    }
+    let local = is_torrent(arg, None) && std::path::Path::new(arg).is_file();
+    local.then(|| std::path::absolute(arg).map_or(arg.to_string(), |p| p.display().to_string()))
+}
 
 fn is_native_host_call(args: &[String]) -> bool {
     // Chrome passes the caller's origin; Firefox passes the manifest path and addon id.
@@ -78,9 +89,9 @@ fn main() {
                 let background = args.iter().any(|a| a == "--background");
                 let messages = args
                     .iter()
-                    .filter(|a| a.starts_with("http://") || a.starts_with("https://"))
+                    .filter_map(|a| download_arg(a))
                     .map(|url| Message::Download {
-                        url: url.clone(),
+                        url,
                         filename: None,
                         directory: None,
                         referrer: None,

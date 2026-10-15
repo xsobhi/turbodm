@@ -1,4 +1,4 @@
-//! Download engine: segmented multi-connection HTTP downloads on tokio.
+//! Download engine: segmented multi-connection HTTP downloads on tokio, and torrents.
 
 pub mod http;
 pub mod limiter;
@@ -8,10 +8,12 @@ mod disk;
 pub mod segments;
 pub mod state;
 pub mod task;
+pub mod torrent;
 mod worker;
 
 use crate::config::Settings;
 use limiter::RateLimiter;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -24,13 +26,16 @@ pub struct Shared {
     client: RwLock<reqwest::Client>,
     settings: RwLock<Settings>,
     pub limiter: Arc<RateLimiter>,
+    /// The torrent session, kept in `torrent_dir`.
+    pub torrents: torrent::Torrents,
 }
 
 impl Shared {
-    pub fn new(settings: Settings) -> Self {
+    pub fn new(settings: Settings, torrent_dir: PathBuf) -> Self {
         Shared {
             client: RwLock::new(http::build_client(Duration::from_secs(settings.timeout_secs))),
             limiter: Arc::new(RateLimiter::new(settings.speed_limit_kib * 1024)),
+            torrents: torrent::Torrents::new(torrent_dir, settings.speed_limit_kib * 1024),
             settings: RwLock::new(settings),
         }
     }
@@ -49,6 +54,7 @@ impl Shared {
             *self.client.write().unwrap() = http::build_client(Duration::from_secs(settings.timeout_secs));
         }
         self.limiter.set_rate(settings.speed_limit_kib * 1024);
+        self.torrents.set_speed_limit(settings.speed_limit_kib * 1024);
         *self.settings.write().unwrap() = settings;
     }
 }

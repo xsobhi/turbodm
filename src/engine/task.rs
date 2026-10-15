@@ -3,6 +3,7 @@
 use super::http::Headers;
 use super::limiter::RateLimiter;
 use super::segments::SegmentMap;
+use super::torrent::{TorrentMeta, TorrentView};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -58,6 +59,9 @@ pub struct TaskInfo {
     pub category_base: Option<PathBuf>, // choose the category folder once the name is known
     #[serde(default)]
     pub speed_limit_kib: u64, // this download only, 0 = unlimited
+    /// A torrent's own details; None for other downloads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub torrent: Option<TorrentMeta>,
 }
 
 pub fn unix_now() -> u64 {
@@ -84,6 +88,7 @@ impl TaskInfo {
             completed: None,
             category_base: None,
             speed_limit_kib: 0,
+            torrent: None,
         }
     }
 
@@ -110,8 +115,11 @@ pub struct Task {
     /// Started while its "Download file info" dialog is still open (like IDM): not listed,
     /// not saved, no events, until the dialog confirms it.
     pub pending: AtomicBool,
-    /// Wakes the running download to add connections up to `info.connections`.
+    /// Wakes the running download to add connections up to `info.connections` (a torrent
+    /// waiting for its add dialog: that it was confirmed).
     pub grow: tokio::sync::Notify,
+    /// A torrent's live numbers, from its runner.
+    pub torrent: Mutex<TorrentView>,
     samples: Mutex<VecDeque<(Instant, u64)>>,
     speed: Mutex<f64>,
 }
@@ -127,6 +135,7 @@ impl Task {
             runner: Mutex::new(None),
             pending: AtomicBool::new(false),
             grow: tokio::sync::Notify::new(),
+            torrent: Mutex::new(TorrentView::default()),
             samples: Mutex::new(VecDeque::new()),
             speed: Mutex::new(0.0),
         })
@@ -140,15 +149,28 @@ impl Task {
         self.info.lock().unwrap().status = status;
     }
 
-    /// Bytes received so far (what progress, speed and time left go by).
+    pub fn is_torrent(&self) -> bool {
+        self.info.lock().unwrap().torrent.is_some()
+    }
+
+    /// Bytes received so far (what progress and time left go by).
     pub fn downloaded(&self) -> u64 {
         let info = self.info.lock().unwrap();
         if info.status == Status::Completed
             && let Some(size) = info.size {
                 return size;
             }
+        if let Some(torrent) = &info.torrent {
+            return torrent.have;
+        }
         drop(info);
         self.segments.lock().unwrap().as_ref().map_or(0, |s| s.total_received())
+    }
+
+    /// What the speed goes by: what arrived, or for a torrent, what arrived from its peers
+    /// (its checked total grows a whole piece at a time).
+    fn transferred(&self) -> u64 {
+        if self.is_torrent() { self.torrent.lock().unwrap().fetched } else { self.downloaded() }
     }
 
     pub fn speed(&self) -> f64 {
@@ -157,7 +179,7 @@ impl Task {
 
     /// Update the speed from a 2-second sliding window (called 10 times a second).
     pub fn tick(&self, now: Instant) {
-        let total = self.downloaded();
+        let total = self.transferred();
         let mut samples = self.samples.lock().unwrap();
         samples.push_back((now, total));
         while samples.len() > 2 && now.duration_since(samples[0].0).as_secs_f64() > 2.0 {

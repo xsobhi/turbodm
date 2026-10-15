@@ -4,6 +4,7 @@ use super::Manager;
 use crate::config::Settings;
 use crate::engine::state::{self, Snapshot};
 use crate::engine::task::{Status, Task};
+use crate::engine::torrent;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -47,7 +48,9 @@ impl Manager {
         let me = self.clone();
         self.rt.spawn(async move {
             me.stop_and_wait(&task).await;
-            if delete_files {
+            if task.is_torrent() {
+                torrent::remove(&me.shared, &task, delete_files).await;
+            } else if delete_files {
                 state::remove_files(&task);
             }
             me.tasks.lock().unwrap().retain(|t| t.id != task.id);
@@ -74,7 +77,8 @@ impl Manager {
         });
     }
 
-    /// Speed limit for one download (KiB/s, 0 = unlimited); applies immediately.
+    /// Speed limit for one download (KiB/s, 0 = unlimited); applies immediately. (Not to
+    /// torrents: they go by the limit for all downloads.)
     pub fn set_speed_limit(&self, id: &str, kib: u64) {
         let Some(task) = self.find(id) else { return };
         task.info.lock().unwrap().speed_limit_kib = kib;
@@ -96,8 +100,32 @@ impl Manager {
 
     pub fn update_settings(&self, settings: Settings) {
         let _ = settings.save();
+        let seed = (settings.seed != self.settings().seed).then_some(settings.seed);
         self.shared.set_settings(settings);
+        if let Some(on) = seed {
+            self.share_finished(on);
+        }
         self.schedule();
+    }
+
+    /// Note which torrent each saved download has (two downloads never share one).
+    pub(super) fn claim_torrents(&self) {
+        for task in self.all() {
+            let info = task.info.lock().unwrap();
+            if let Some(hash) = info.torrent.as_ref().and_then(|t| t.info_hash.as_deref()) {
+                self.shared.torrents.claim(hash, &task.id);
+            }
+        }
+    }
+
+    /// Keep sharing finished torrents (the "seed" setting), or stop.
+    pub(super) fn share_finished(&self, on: bool) {
+        let done: Vec<Arc<Task>> = self.all().into_iter()
+            .filter(|t| t.is_torrent() && t.status() == Status::Completed).collect();
+        if !done.is_empty() {
+            let shared = self.shared.clone();
+            self.rt.spawn(async move { torrent::share(&shared, done, on).await });
+        }
     }
 
     pub(super) fn all(&self) -> Vec<Arc<Task>> {
