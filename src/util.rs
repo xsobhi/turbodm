@@ -106,6 +106,7 @@ pub fn add_extension(name: String, content_type: &str) -> String {
         "image/png" => "png",
         "application/vnd.debian.binary-package" => "deb",
         "application/x-iso9660-image" => "iso",
+        "text/html" => "html", // a web page
         _ => return name,
     };
     format!("{name}.{ext}")

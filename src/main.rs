@@ -6,6 +6,7 @@
 //!   turbodm --native-host       browser native-messaging host
 //!   turbodm --register          (re)connect the browser extension; --unregister undoes it
 //!   turbodm get URL [-c N] [-d DIR]   download in the terminal, no window
+//!   turbodm video URL [-q 720p] [-d DIR] [--list] [--ffmpeg]   a video from a web page, the same way
 
 #![cfg_attr(windows, windows_subsystem = "windows")] // no console window behind the app
 
@@ -41,7 +42,7 @@ fn attach_console() {}
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if matches!(args.first().map(String::as_str), Some("get" | "--version" | "-V" | "--help" | "-h")) {
+    if matches!(args.first().map(String::as_str), Some("get" | "video" | "--version" | "-V" | "--help" | "-h")) {
         attach_console();
     }
     let code = if is_native_host_call(&args) {
@@ -49,6 +50,7 @@ fn main() {
     } else {
         match args.first().map(String::as_str) {
             Some("get") => cli::get(&args[1..]),
+            Some("video") => cli::video(&args[1..]),
             Some(flag @ ("--register" | "--unregister" | "--register-system" | "--unregister-system")) => {
                 use turbodm::register::*;
                 let result = match flag {
@@ -70,7 +72,7 @@ fn main() {
                 0
             }
             Some("--help" | "-h") => {
-                println!("{}", include_str!("main.rs").lines().skip(2).take(7)
+                println!("{}", include_str!("main.rs").lines().skip(2).take(8)
                     .map(|l| l.trim_start_matches("//!")).collect::<Vec<_>>().join("\n"));
                 0
             }

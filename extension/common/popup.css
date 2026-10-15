@@ -57,3 +57,7 @@ button {
   border-radius: 6px;
   cursor: pointer;
 }
+button.secondary {
+  color: inherit;
+  background: rgba(127, 127, 127, 0.18);
+}

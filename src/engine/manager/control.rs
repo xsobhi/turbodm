@@ -101,7 +101,7 @@ impl Manager {
             me.statuses.lock().unwrap().remove(&task.id);
             me.add(AddRequest { url: info.url, filename: info.filename, directory: Some(info.directory),
                                 referrer: info.referrer, cookies: info.cookies, user_agent: info.user_agent,
-                                connections: Some(info.connections), start: true });
+                                connections: Some(info.connections), start: true, video: info.video });
             me.dirty.store(true, Ordering::Relaxed);
         });
     }
@@ -112,7 +112,7 @@ impl Manager {
         let info = self.find(id)?.info.lock().unwrap().clone();
         Some(AddRequest { url: info.url, filename: info.filename, directory: Some(info.directory), referrer: info.referrer,
                           cookies: info.cookies, user_agent: info.user_agent, connections: Some(info.connections),
-                          start: false })
+                          start: false, video: info.video })
     }
 
     /// Speed limit for one download (KiB/s, 0 = unlimited); applies immediately.

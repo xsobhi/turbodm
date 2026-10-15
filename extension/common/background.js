@@ -66,6 +66,32 @@ async function handOff({ url, filename, directory, referrer, fileSize, cookies, 
   return Boolean(reply && reply.ok);
 }
 
+// A video on a web page (YouTube and the many sites TurboDM's yt-dlp knows): TurboDM looks at the
+// page and offers its qualities. An older TurboDM doesn't know this message ("bad message"): the
+// button says so instead of failing silently.
+async function handOffVideo({ url, referrer, storeId }) {
+  const reply = await sendNative({
+    type: "video",
+    url,
+    referrer: referrer || null,
+    cookies: (await cookieHeader(url, storeId)) || null,
+    userAgent: navigator.userAgent,
+  });
+  if (reply && reply.ok) return true;
+  if (/bad message/.test((reply && reply.error) || "")) {
+    const button = api.action ?? api.browserAction;
+    button.setBadgeText({ text: "!" });
+    button.setTitle({ title: "Update TurboDM to download videos (this version can't yet)" });
+  }
+  return false;
+}
+
+// What "Download video with TurboDM" means where it was clicked: a link to a video's page, the
+// embedded player a video plays in, or the page itself.
+function videoPage(info, tab) {
+  return info.linkUrl || info.frameUrl || info.pageUrl || (tab && tab.url);
+}
+
 function wanted(url, size, settings) {
   if (!settings.enabled || !/^https?:/i.test(url) || isSkippedHost(url, settings)) return false;
   return !(settings.minSizeKB > 0 && size > 0 && size < settings.minSizeKB * 1024);
@@ -145,6 +171,11 @@ function createMenus() {
       title: "Download media with TurboDM",
       contexts: ["video", "audio", "image"],
     });
+    api.contextMenus.create({
+      id: "tdm-video",
+      title: "Download video with TurboDM",
+      contexts: ["page", "frame", "link", "video"],
+    });
   });
 }
 
@@ -152,10 +183,28 @@ api.runtime.onInstalled.addListener(createMenus);
 createMenus(); // Firefox recreates menus each time the background page loads
 
 api.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "tdm-video") {
+    const url = videoPage(info, tab);
+    if (url && /^https?:/i.test(url)) {
+      handOffVideo({ url, referrer: info.pageUrl, storeId: tab && tab.cookieStoreId }).catch((err) =>
+        console.warn("TurboDM is not reachable:", err),
+      );
+    }
+    return;
+  }
   const url = info.linkUrl || info.srcUrl;
   if (url && /^https?:/i.test(url)) {
     handOff({ url, referrer: info.pageUrl || (tab && tab.url) }).catch((err) =>
       console.warn("TurboDM is not reachable:", err),
     );
   }
+});
+
+// The popup's "Download video on this page" (the popup can't wait for an answer once it closes).
+api.runtime.onMessage.addListener((message, sender, reply) => {
+  if (!message || message.type !== "video") return false;
+  handOffVideo({ url: message.url, storeId: message.storeId })
+    .then((ok) => reply({ ok }))
+    .catch((err) => reply({ ok: false, error: String(err) }));
+  return true; // answering asynchronously
 });

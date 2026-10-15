@@ -15,7 +15,8 @@ futures-util = "0.3.34"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util", "signal"] }
+sha2 = "0.11.0" # checking the tools fetched for videos (yt-dlp, FFmpeg)
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "io-util", "signal", "process"] }
 tokio-util = "0.7.19"
 
 # the Linux interface (Windows has its own, with Windows' controls: src/win)
@@ -32,8 +33,9 @@ windows-numerics = "0.2" # (Direct2D's points)
 windows = { version = "0.61", features = [
     "Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Direct2D", "Win32_Graphics_Direct2D_Common",
     "Win32_Graphics_DirectWrite", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Gdi", "Win32_Graphics_GdiPlus",
-    "Win32_Storage_FileSystem",
-    "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Ole",
+    "Win32_Security", "Win32_Storage_FileSystem",
+    "Win32_System_Com", "Win32_System_DataExchange", "Win32_System_JobObjects", "Win32_System_LibraryLoader",
+    "Win32_System_Memory", "Win32_System_Ole",
     "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_Storage_EnhancedStorage",
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Time", "Win32_UI_Controls",
@@ -103,5 +105,4 @@ codegen-units = 16
 strip = true
 
 [dev-dependencies]
-sha2 = "0.11.0"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "time", "io-util"] }

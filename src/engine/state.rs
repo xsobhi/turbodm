@@ -47,6 +47,10 @@ pub fn load(path: &Path, auto_resume: bool, min_split: u64) -> Vec<Arc<Task>> {
 
 pub fn remove_files(task: &Task) {
     let info = task.info.lock().unwrap();
+    if info.video.is_some() {
+        super::video::remove_files(&info); // yt-dlp's own partial files
+        return;
+    }
     let _ = std::fs::remove_file(part_path(&info.path()));
     if info.status == Status::Completed {
         let _ = std::fs::remove_file(info.path());
@@ -76,13 +80,23 @@ pub struct Snapshot {
     pub segments: Vec<Segment>,
     pub added: u64,
     pub completed: Option<u64>,
+    pub content_type: Option<String>, // as the server said ("text/html": a web page)
+    pub video: Option<String>, // a video from a web page: its quality ("720p MP4")
+    pub activity: Option<&'static str>, // what it's doing besides downloading ("Joining video and sound…")
 }
 
 pub fn snapshot(task: &Task) -> Snapshot {
     let downloaded = task.downloaded();
     let speed = task.speed();
     let eta = task.eta();
-    let segments = task.segments.lock().unwrap().clone();
+    let (segments, active_connections) = match task.segments.lock().unwrap().clone() {
+        Some(map) => (map.snapshot(), map.active_count()),
+        None => {
+            let parts = task.video.parts(); // a video's parts
+            let active = parts.iter().filter(|p| p.active).count();
+            (parts, active)
+        }
+    };
     let info = task.info.lock().unwrap();
     let filename = info.filename.clone().unwrap_or_else(|| "(connecting…)".into());
     let progress = match (info.size, info.status) {
@@ -107,9 +121,12 @@ pub fn snapshot(task: &Task) -> Snapshot {
         resumable: info.resumable,
         connections: info.connections,
         speed_limit_kib: info.speed_limit_kib,
-        active_connections: segments.as_ref().map_or(0, |s| s.active_count()),
-        segments: segments.map(|s| s.snapshot()).unwrap_or_default(),
+        active_connections,
+        segments,
         added: info.added,
         completed: info.completed,
+        content_type: info.content_type.clone(),
+        video: info.video.as_ref().map(|v| v.quality.clone()),
+        activity: task.video.activity(),
     }
 }

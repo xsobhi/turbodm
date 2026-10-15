@@ -2,14 +2,16 @@
 
 mod confirm;
 mod control;
+mod names;
 
 pub use confirm::Confirm;
 
 use super::state::{self, Snapshot};
 use super::task::{Status, Task, TaskInfo};
+use super::video::VideoJob;
 use super::{runner, Shared};
 use crate::config::Settings;
-use crate::util::{filename_from_url, sanitize_filename, unique_path};
+use crate::util::{filename_from_url, sanitize_filename};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -28,6 +30,9 @@ pub struct AddRequest {
     pub user_agent: Option<String>,
     pub connections: Option<usize>,
     pub start: bool,
+    /// A video on the page at `url`, downloaded by yt-dlp (an empty format: the usual quality,
+    /// picked once the page is looked at).
+    pub video: Option<VideoJob>,
 }
 
 pub struct Manager {
@@ -88,11 +93,14 @@ impl Manager {
             s.folder_for(&guess)
         });
         let mut info = TaskInfo::new(req.url, dir.clone(), req.connections.unwrap_or(s.connections));
-        info.filename = name.map(|n| unique_path(&dir.join(n)).file_name().unwrap().to_string_lossy().into_owned());
+        info.filename = name.map(|n| self.unused_name(&dir, n));
         if auto_dir && info.filename.is_none() {
             info.category_base = Some(s.download_dir.clone()); // pick the folder once the name is known
         }
         (info.referrer, info.cookies, info.user_agent) = (req.referrer, req.cookies, req.user_agent);
+        if let Some(job) = req.video {
+            job.attach(&mut info);
+        }
         info.status = if req.start { Status::Queued } else { Status::Paused };
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
         let id = format!("{:x}{:x}", nanos.as_nanos(), self.next_id.fetch_add(1, Ordering::Relaxed));

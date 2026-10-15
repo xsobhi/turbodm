@@ -100,6 +100,7 @@ pub struct Settings {
     pub browsers_offered: bool,    // the "add the extension to your browser" guide was shown
     pub show_categories: bool,     // the main window's categories (View → Categories)
     pub show_toolbar: bool,        // and its toolbar (View → Toolbar)
+    pub video_quality: String,     // the video quality picked last ("720p", "Audio"), offered first next time
 }
 
 impl Default for Settings {
@@ -126,6 +127,7 @@ impl Default for Settings {
             browsers_offered: false,
             show_categories: true,
             show_toolbar: true,
+            video_quality: String::new(),
         }
     }
 }

@@ -8,6 +8,7 @@ mod disk;
 pub mod segments;
 pub mod state;
 pub mod task;
+pub mod video;
 mod worker;
 
 use crate::config::Settings;

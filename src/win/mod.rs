@@ -127,6 +127,9 @@ impl App {
                     self.handle_download(req, silent);
                 }
             }
+            Message::Video { url, referrer, cookies, user_agent, silent } => { // (add/video.rs)
+                self.handle_video(AddRequest { url, referrer, cookies, user_agent, ..Default::default() }, silent);
+            }
         }
     }
 }

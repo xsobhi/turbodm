@@ -51,6 +51,15 @@ work while you're logged in keep working.
   it's then moved to the name and folder you chose when you press *Start*. The dialog has one
   *Save to* path (type it, or pick it with the folder button), and uses the number of connections
   from Preferences.
+- **Videos from web pages**, like IDM's *Download this video*: for YouTube and the other sites
+  [yt-dlp](https://github.com/yt-dlp/yt-dlp) knows (or any page with a `<video>`), the *Add URL*
+  dialog shows the video's title and its qualities with their sizes (*1080p MP4*, *720p MP4*…,
+  *Audio only (M4A)*), and the extension adds *Download video with TurboDM* to the right-click menu
+  of pages, links and videos, and to its popup. yt-dlp is fetched when first needed (checked against
+  its release's checksums) and kept up to date. The higher qualities come as video and sound apart,
+  joined by FFmpeg: on Windows TurboDM asks before fetching it (~85 MB, once); on Linux it uses
+  yours (`sudo apt install ffmpeg`) and otherwise offers what needs none. Videos pause, resume (after
+  a restart too) and show their progress like any download.
 - **Queue** with a limit on simultaneous downloads, and a **global speed limit**.
 - **Categories**: Video, Music, Documents, Compressed, Programs and Images go to their own sub-folders.
 - **Main window with a sidebar**: downloads by state (all, downloading, unfinished, completed) and
@@ -67,7 +76,8 @@ work while you're logged in keep working.
   (on Linux panels with a tray; otherwise closing the window minimizes it while downloading).
 - Servers that reject a browser user-agent (anti-bot checks comparing it with the TLS fingerprint)
   are retried with TurboDM's own honest one.
-- **Command line**: `turbodm get URL -c 16 -d ~/Downloads`.
+- **Command line**: `turbodm get URL -c 16 -d ~/Downloads`, and `turbodm video URL -q 720p` (`--list`
+  shows the qualities).
 
 ### One look on Linux and Windows
 
@@ -169,12 +179,17 @@ Debug connection behaviour with `TURBODM_DEBUG=1 turbodm get URL`.
 
 Cookies from the browser are only sent to the server of the download they came with. TurboDM has no
 telemetry. Besides your downloads, it only asks GitHub for the latest release (at start and once a
-day) to tell you about updates; turn *Check for updates* off in Preferences to stop that.
+day) to tell you about updates; turn *Check for updates* off in Preferences to stop that. For videos
+it fetches yt-dlp (and FFmpeg, if you agree) from their GitHub releases and checks for a newer
+yt-dlp every few days; yt-dlp talks to the video's site, with the browser's cookies for that site
+only when the site asks for them (YouTube) or from the start (other sites).
 
 ## Development
 
 ```sh
 cargo test --release     # unit tests + end-to-end engine tests against a local HTTP server
+TURBODM_HOME=/tmp/tdm-test cargo test --release --test video -- --ignored --test-threads 1
+                         # videos with yt-dlp and a real site (needs the network)
 ```
 
 To try a build without touching your own downloads, settings or browser setup, give it a folder of
@@ -188,6 +203,7 @@ Icons: `python3 tools/icons.py` draws the toolbar's and sidebar's icons, the app
 
 ```
 src/engine/   segmentation, connections, task runner, manager, persistence (no GUI)
+src/engine/video/  videos from web pages: yt-dlp, FFmpeg, qualities, progress
 src/ipc/      extension ↔ app: native-messaging host, Unix socket / named pipe client/server
 src/register.rs  registers the native-messaging host (manifests; registry on Windows)
 packaging/    .deb/.rpm files, Windows installer (Inno Setup), apt repository script
