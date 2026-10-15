@@ -6,7 +6,7 @@ use super::super::App;
 use super::ProgressWindow;
 use std::rc::Rc;
 use turbodm::engine::{Manager, Status};
-use turbodm::text::{eta_text, rate_text, status_line, status_text};
+use turbodm::text::{eta_text, peers_text, rate_text, status_line, status_text};
 use turbodm::util::human_size;
 
 impl ProgressWindow {
@@ -23,7 +23,12 @@ impl ProgressWindow {
             status if status.is_active() => theme::ACCENT,
             _ => theme::TEXT,
         };
-        let resume = if s.resumable { "Yes" } else { "No (single connection, can't pause and resume)" };
+        let resume = match &s.torrent {
+            Some(t) if t.uploaded > 0 => format!("{}   ·   shared {}", peers_text(&s), human_size(Some(t.uploaded))),
+            Some(_) => peers_text(&s),
+            None if s.resumable => "Yes".into(),
+            None => "No (single connection, can't pause and resume)".into(),
+        };
         self.info.set(vec![
             (s.url.clone(), theme::TEXT),
             (s.path.display().to_string(), theme::TEXT),
@@ -32,7 +37,7 @@ impl ProgressWindow {
             (downloaded, theme::TEXT),
             (rate_text(&s), theme::TEXT),
             (eta_text(&s), theme::TEXT),
-            (resume.into(), theme::TEXT),
+            (resume, theme::TEXT),
         ]);
         let title = match s.progress {
             Some(p) => format!("{:.0}% {}", p * 100.0, s.filename),

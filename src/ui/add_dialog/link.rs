@@ -1,6 +1,7 @@
 //! Checking a new address. Like IDM, the download itself starts behind the dialog, on one
 //! connection and out of sight, so it's already connected when the user presses Start; with
-//! that turned off, the server is just asked about the file.
+//! that turned off, the server is just asked about the file. A torrent is always looked up that
+//! way: it waits for Start before downloading anything.
 
 use super::Form;
 use crate::ui::Ctx;
@@ -8,17 +9,20 @@ use gtk::glib;
 use std::rc::Rc;
 use std::time::Duration;
 use turbodm::engine::http::{self, Headers};
+use turbodm::engine::torrent::is_torrent;
 use turbodm::engine::{AddRequest, Status};
+use turbodm::text::torrent_info;
 use turbodm::util::human_size;
 
 /// A new address: start downloading it right away, or just ask the server about it.
 pub fn check(ctx: &Rc<Ctx>, form: &Rc<Form>, req: &AddRequest) {
     let url = form.url();
     form.take_early(ctx, None);
-    if !url.starts_with("http") {
+    let torrent = is_torrent(&url, None);
+    if !url.starts_with("http") && !torrent {
         return;
     }
-    if !ctx.manager.settings().predownload {
+    if !ctx.manager.settings().predownload && !torrent {
         return probe(ctx, form, req);
     }
     let (directory, filename) = form.target(ctx);
@@ -37,12 +41,17 @@ pub fn check(ctx: &Rc<Ctx>, form: &Rc<Form>, req: &AddRequest) {
             return glib::ControlFlow::Break; // started, cancelled, or another address
         }
         let Some(s) = ctx.manager.get(&id) else { return glib::ControlFlow::Break };
-        let known = !matches!(s.status, Status::Connecting | Status::Queued | Status::Error);
+        let known = if s.torrent.is_some() {
+            s.size.is_some() && s.status != Status::Error // looked up: it waits for Start
+        } else {
+            !matches!(s.status, Status::Connecting | Status::Queued | Status::Error)
+        };
         if known && !filled {
             filled = true;
             form.show(&s.directory, &s.filename); // the server's name, in its folder
         }
         let text = match s.status {
+            _ if s.torrent.is_some() => torrent_info(&s),
             Status::Connecting | Status::Queued => "Checking link…".to_string(),
             Status::Error => format!("Couldn't check the link: {}", s.error.as_deref().unwrap_or("unknown error")),
             Status::Completed => {

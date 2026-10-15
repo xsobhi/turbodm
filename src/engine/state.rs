@@ -2,6 +2,7 @@
 
 use super::segments::{Segment, SegmentMap};
 use super::task::{Status, Task, TaskInfo};
+use super::torrent::{name_hint, TorrentView};
 use crate::categories::category_for;
 use crate::config::write_json_atomic;
 use crate::util::part_path;
@@ -45,10 +46,14 @@ pub fn load(path: &Path, auto_resume: bool, min_split: u64) -> Vec<Arc<Task>> {
         .collect()
 }
 
+/// Delete what a download wrote (a torrent's files are the torrent session's to delete).
 pub fn remove_files(task: &Task) {
     let info = task.info.lock().unwrap();
     if info.video.is_some() {
         super::video::remove_files(&info); // yt-dlp's own partial files
+        return;
+    }
+    if info.torrent.is_some() {
         return;
     }
     let _ = std::fs::remove_file(part_path(&info.path()));
@@ -83,12 +88,15 @@ pub struct Snapshot {
     pub content_type: Option<String>, // as the server said ("text/html": a web page)
     pub video: Option<String>, // a video from a web page: its quality ("720p MP4")
     pub activity: Option<&'static str>, // what it's doing besides downloading ("Joining video and sound…")
+    /// A torrent's own numbers (peers, files…); None for other downloads.
+    pub torrent: Option<TorrentView>,
 }
 
 pub fn snapshot(task: &Task) -> Snapshot {
     let downloaded = task.downloaded();
     let speed = task.speed();
     let eta = task.eta();
+    let torrent = task.is_torrent().then(|| task.torrent.lock().unwrap().clone());
     let (segments, active_connections) = match task.segments.lock().unwrap().clone() {
         Some(map) => (map.snapshot(), map.active_count()),
         None => {
@@ -98,7 +106,12 @@ pub fn snapshot(task: &Task) -> Snapshot {
         }
     };
     let info = task.info.lock().unwrap();
-    let filename = info.filename.clone().unwrap_or_else(|| "(connecting…)".into());
+    let filename = info.filename.clone().unwrap_or_else(|| match &torrent {
+        Some(_) => name_hint(&info.url).unwrap_or_else(|| "(getting the torrent's details…)".into()),
+        None => "(connecting…)".into(),
+    });
+    // a torrent's connections are its peers
+    let peers = torrent.as_ref().map(|t| t.peers);
     let progress = match (info.size, info.status) {
         (Some(size), _) if size > 0 => Some(downloaded as f64 / size as f64),
         (_, Status::Completed) => Some(1.0),
@@ -118,15 +131,16 @@ pub fn snapshot(task: &Task) -> Snapshot {
         eta,
         status: info.status,
         error: info.error.clone(),
-        resumable: info.resumable,
-        connections: info.connections,
+        resumable: info.resumable || torrent.is_some(),
+        connections: peers.unwrap_or(info.connections),
         speed_limit_kib: info.speed_limit_kib,
-        active_connections,
+        active_connections: peers.unwrap_or(active_connections),
         segments,
         added: info.added,
         completed: info.completed,
         content_type: info.content_type.clone(),
         video: info.video.as_ref().map(|v| v.quality.clone()),
         activity: task.video.activity(),
+        torrent,
     }
 }

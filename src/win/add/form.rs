@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use turbodm::engine::AddRequest;
 use turbodm::text::kind_words;
-use turbodm::util::filename_from_url;
+use turbodm::util::name_guess;
 use windows::Win32::Foundation::HWND;
 
 pub struct Form {
@@ -45,13 +45,18 @@ impl Form {
         text(self.url.get()).trim().to_string()
     }
 
-    /// The path in the field as (folder, name); a bare name goes to the folder for its kind.
+    /// The path in the field as (folder, name); a bare name goes to the folder for its kind. A
+    /// folder alone (ending in "\"): a torrent whose name isn't known yet goes in it.
     pub(super) fn target(&self, app: &App) -> (PathBuf, Option<String>) {
-        let path = PathBuf::from(text(self.path.get()).trim());
+        let typed = text(self.path.get()).trim().to_string();
+        let path = PathBuf::from(&typed);
+        if typed.ends_with(['\\', '/']) && path.is_absolute() {
+            return (path, None);
+        }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).filter(|n| !n.trim().is_empty());
         let folder = match path.parent() {
             Some(dir) if dir.is_absolute() => dir.to_path_buf(),
-            _ => app.manager.settings().folder_for(name.as_deref().unwrap_or(&filename_from_url(&self.url()))),
+            _ => app.manager.settings().folder_for(name.as_deref().unwrap_or(&name_guess(&self.url()))),
         };
         (folder, name)
     }

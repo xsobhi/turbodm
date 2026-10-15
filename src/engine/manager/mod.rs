@@ -9,6 +9,7 @@ pub use confirm::Confirm;
 use super::state::{self, Snapshot};
 use super::task::{Status, Task, TaskInfo};
 use super::video::VideoJob;
+use super::torrent::{self, TorrentMeta};
 use super::{runner, Shared};
 use crate::config::Settings;
 use crate::util::{filename_from_url, sanitize_filename};
@@ -48,13 +49,15 @@ pub struct Manager {
 }
 
 impl Manager {
-    /// Load saved downloads and start the monitor. Events carry status changes.
+    /// Load saved downloads and start the monitor. Events carry status changes. Torrents keep
+    /// their session's records in a `torrents` folder beside `store`.
     pub fn new(settings: Settings, store: PathBuf, rt: Handle) -> (Arc<Self>, async_channel::Receiver<Snapshot>) {
         let tasks = state::load(&store, settings.auto_resume, settings.min_split_kib * 1024);
         let statuses = tasks.iter().map(|t| (t.id.clone(), t.status())).collect();
         let (tx, rx) = async_channel::unbounded();
+        let torrent_dir = store.parent().unwrap_or(std::path::Path::new(".")).join("torrents");
         let manager = Arc::new(Manager {
-            shared: Arc::new(Shared::new(settings)),
+            shared: Arc::new(Shared::new(settings, torrent_dir)),
             tasks: Mutex::new(tasks),
             statuses: Mutex::new(statuses),
             rt: rt.clone(),
@@ -64,8 +67,12 @@ impl Manager {
             next_id: AtomicU64::new(0),
             store,
         });
+        manager.claim_torrents();
         rt.spawn(manager.clone().monitor());
         manager.schedule();
+        if manager.settings().seed {
+            manager.share_finished(true);
+        }
         (manager, rx)
     }
 
@@ -86,14 +93,22 @@ impl Manager {
 
     fn insert(self: &Arc<Self>, req: AddRequest, pending: bool) -> String {
         let s = self.shared.settings();
-        let name = req.filename.as_deref().filter(|n| !n.is_empty()).map(sanitize_filename);
+        let is_torrent = torrent::is_torrent(&req.url, req.filename.as_deref());
+        // (a browser's name for a link to a .torrent file is that file's, not the torrent's)
+        let name = req.filename.as_deref().filter(|n| !n.is_empty()).map(sanitize_filename)
+            .filter(|n| !(is_torrent && n.to_ascii_lowercase().ends_with(".torrent")));
         let auto_dir = req.directory.is_none();
         let dir = req.directory.clone().unwrap_or_else(|| {
             let guess = name.clone().unwrap_or_else(|| filename_from_url(&req.url));
             s.folder_for(&guess)
         });
-        let mut info = TaskInfo::new(req.url, dir.clone(), req.connections.unwrap_or(s.connections));
-        info.filename = name.map(|n| self.unused_name(&dir, n));
+        let mut info = TaskInfo::new(req.url.trim().to_string(), dir.clone(), req.connections.unwrap_or(s.connections));
+        info.filename = if is_torrent {
+            name // its place is settled once its files are known (the runner)
+        } else {
+            name.map(|n| self.unused_name(&dir, n))
+        };
+        info.torrent = is_torrent.then(TorrentMeta::default);
         if auto_dir && info.filename.is_none() {
             info.category_base = Some(s.download_dir.clone()); // pick the folder once the name is known
         }
@@ -128,7 +143,11 @@ impl Manager {
             info.status = Status::Connecting;
             info.error = None;
         }
-        let handle = self.rt.spawn(runner::run(task.clone(), self.shared.clone(), token));
+        let handle = if task.is_torrent() {
+            self.rt.spawn(torrent::run(task.clone(), self.shared.clone(), token))
+        } else {
+            self.rt.spawn(runner::run(task.clone(), self.shared.clone(), token))
+        };
         *task.runner.lock().unwrap() = Some(handle);
         self.dirty.store(true, Ordering::Relaxed);
     }
@@ -152,6 +171,7 @@ impl Manager {
                 state::remove_files(&task); // its dialog never confirmed it
             }
         }
+        self.rt.block_on(self.shared.torrents.stop());
         self.save();
     }
 

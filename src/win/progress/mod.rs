@@ -63,11 +63,12 @@ pub fn open(app: &Rc<App>, id: &str) {
     let Some(snap) = app.manager.get(id) else { return };
     app.on_done.borrow_mut().entry(id.to_string()).or_default(); // being watched: say when it's done
     let window = Window::dialog(&snap.filename, None, (WIDTH, 400), true);
-    let info = Info::new(&window);
+    let torrent = snap.torrent.is_some();
+    let info = Info::new(&window, if torrent { &info::TORRENT_FIELDS } else { &info::FIELDS });
     wnd::place(info.hwnd, PAD, TOP, WIDTH - 2 * PAD, info::FIELDS.len() as i32 * info::ROW);
     let bar = Bar::new(&window);
     wnd::place(bar.hwnd, PAD, BAR_Y, WIDTH - 2 * PAD, BAR);
-    let details = Rc::new(Details::new(&window));
+    let details = Rc::new(Details::new(&window, torrent));
     let limiter = options::speed_limiter(&window, app, &snap, PAD, TOP);
     let completion = options::on_completion(&window, app, id, PAD, TOP);
 

@@ -169,5 +169,6 @@ pub mod icon {
     pub const REMOVE: char = '\u{E738}'; // minus
     pub const CHECK: char = '\u{E73E}';
     pub const FOLDER_OPEN: char = '\u{ED25}';
+    pub const OPEN_FILE: char = '\u{E8E5}';
     pub const CHEVRON_DOWN: char = '\u{E70D}';
 }

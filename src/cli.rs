@@ -1,5 +1,5 @@
-//! Headless mode: `turbodm get URL [-c CONNECTIONS] [-d DIR]`, and `turbodm video URL` for a
-//! video on a web page.
+//! Headless mode: `turbodm get URL [-c CONNECTIONS] [-d DIR]` (a link, a magnet link or a
+//! .torrent file), and `turbodm video URL` for a video on a web page.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -25,19 +25,20 @@ pub fn get(args: &[String]) -> i32 {
         }
     }
     let Some(url) = url else {
-        eprintln!("usage: turbodm get URL [-c CONNECTIONS] [-d DIR]");
+        eprintln!("usage: turbodm get URL|MAGNET|FILE.torrent [-c CONNECTIONS] [-d DIR]");
         return 2;
     };
     settings.use_categories = false;
     let settings = settings.clamp();
     let connections = settings.connections;
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime");
-    let store = std::env::temp_dir().join(format!("turbodm-cli-{}.json", std::process::id()));
-    let (manager, _events) = Manager::new(settings, store.clone(), rt.handle().clone());
+    // its own list (and torrent session) for this run only
+    let home = std::env::temp_dir().join(format!("turbodm-cli-{}", std::process::id()));
+    let (manager, _events) = Manager::new(settings, home.join("downloads.json"), rt.handle().clone());
     let id = manager.add(AddRequest { url, start: true, ..Default::default() });
     let started = Instant::now();
     let snap = follow(&manager, &id);
-    let _ = std::fs::remove_file(store);
+    let _ = std::fs::remove_dir_all(home);
     let secs = started.elapsed().as_secs_f64();
     if snap.status == Status::Completed {
         let avg = snap.downloaded as f64 / secs;

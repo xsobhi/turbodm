@@ -2,6 +2,7 @@
 
 use crate::categories::{category_for, is_downloadable};
 use crate::engine::segments::Segment;
+use crate::engine::torrent::{is_magnet, is_torrent};
 use crate::engine::{Snapshot, Status};
 use crate::util::{filename_from_url, human_eta, human_size, human_speed};
 
@@ -13,6 +14,8 @@ pub fn status_text(snap: &Snapshot) -> String {
         (Status::Downloading, _) => pct.unwrap_or_else(|| human_size(Some(snap.downloaded))),
         (Status::Paused, _) => pct.map_or("Paused".into(), |p| format!("Paused · {p}")),
         (Status::Error, _) => format!("Error: {}", snap.error.as_deref().unwrap_or("unknown")),
+        (Status::Completed, _) if snap.torrent.as_ref().is_some_and(|t| t.seeding) => "Complete · sharing".into(),
+        (Status::Connecting, _) if snap.torrent.is_some() => torrent_stage(snap).into(),
         (other, _) => other.label().into(),
     }
 }
@@ -22,8 +25,41 @@ pub fn status_line(s: &Snapshot) -> String {
     match (s.status, &s.error, s.activity) {
         (Status::Error, Some(e), _) => format!("Error: {e}"),
         (status, _, Some(doing)) if status.is_active() => doing.into(), // a video: "Joining video and sound…"
+        (Status::Downloading, ..) if s.torrent.is_some() => "Receiving data from peers…".into(),
         (Status::Downloading, ..) => "Receiving data…".into(),
+        (Status::Connecting, ..) if s.torrent.is_some() => torrent_stage(s).into(),
         (status, ..) => status.label().into(),
+    }
+}
+
+/// What a torrent that isn't downloading yet is busy with.
+fn torrent_stage(s: &Snapshot) -> &'static str {
+    match (&s.torrent, s.size) {
+        (Some(t), _) if t.checking => "Checking what's on disk…",
+        (_, None) if is_magnet(&s.url) => "Getting the torrent's details from peers…",
+        (_, None) => "Reading the torrent file…",
+        _ => "Looking for peers…",
+    }
+}
+
+/// A torrent's peers, while it runs: "12 connected (of 85 found)".
+pub fn peers_text(s: &Snapshot) -> String {
+    match &s.torrent {
+        Some(t) if s.status.is_active() => format!("{} connected (of {} found)", t.peers, t.known_peers),
+        Some(t) if t.seeding => "Sharing with others".into(),
+        _ => String::new(),
+    }
+}
+
+/// The add dialog's line about a torrent it looked up: what's in it, or what it's waiting for.
+pub fn torrent_info(s: &Snapshot) -> String {
+    match (s.status, s.size, &s.torrent) {
+        (Status::Error, _, _) => format!("Couldn't open the torrent: {}", s.error.as_deref().unwrap_or("unknown error")),
+        (_, Some(size), Some(t)) => {
+            let files = if t.file_count == 1 { "1 file".to_string() } else { format!("{} files", t.file_count) };
+            format!("Torrent: {}   ·   {files}", human_size(Some(size)))
+        }
+        _ => status_line(s),
     }
 }
 
@@ -100,11 +136,11 @@ pub fn finished_line(s: &Snapshot) -> String {
     parts.join("  ·  ")
 }
 
-/// A copied link worth offering to download (clipboard monitoring).
+/// A copied link worth offering to download (clipboard monitoring): to a file, to a .torrent
+/// file, or a magnet link.
 pub fn looks_like_file_link(text: &str) -> bool {
-    (text.starts_with("http://") || text.starts_with("https://"))
-        && !text.contains(char::is_whitespace)
-        && is_downloadable(&filename_from_url(text))
+    let web = (text.starts_with("http://") || text.starts_with("https://")) && !text.contains(char::is_whitespace);
+    (web && (is_downloadable(&filename_from_url(text)) || is_torrent(text, None))) || is_magnet(text)
 }
 
 #[cfg(test)]
@@ -115,5 +151,8 @@ mod tests {
         assert!(super::looks_like_file_link("http://x.org/movie.mkv?token=1"));
         assert!(!super::looks_like_file_link("https://x.org/page.html"));
         assert!(!super::looks_like_file_link("not a link.zip"));
+        assert!(super::looks_like_file_link("https://x.org/ubuntu.iso.torrent"));
+        assert!(super::looks_like_file_link("magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Sintel"));
+        assert!(!super::looks_like_file_link(r"C:\Users\me\sintel.torrent")); // a copied path isn't a link
     }
 }

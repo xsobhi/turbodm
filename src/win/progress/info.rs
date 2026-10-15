@@ -12,23 +12,26 @@ use windows::Win32::Graphics::Gdi::{DT_END_ELLIPSIS, DT_NOPREFIX, DT_PATH_ELLIPS
 
 pub const FIELDS: [&str; 8] = ["Address", "Saved to", "Status", "File size", "Downloaded", "Transfer rate",
                                "Time left", "Resume capability"];
+/// A torrent's (it can always be resumed; its peers are what's worth knowing).
+pub const TORRENT_FIELDS: [&str; 8] = ["Address", "Saved to", "Status", "Size", "Downloaded", "Transfer rate",
+                                       "Time left", "Peers"];
 /// A row's height, the names' width (96-DPI pixels).
 pub const ROW: i32 = 24;
 const NAMES: i32 = 128;
 
-/// The rows: (value, its colour) for each of FIELDS.
+/// The rows: (value, its colour) for each of `names` (FIELDS or TORRENT_FIELDS).
 pub struct Info {
     pub hwnd: HWND,
     values: Rc<RefCell<Vec<(String, COLORREF)>>>,
 }
 
 impl Info {
-    pub fn new(window: &Window) -> Self {
-        let values: Rc<RefCell<Vec<(String, COLORREF)>>> = Rc::new(RefCell::new(vec![Default::default(); FIELDS.len()]));
+    pub fn new(window: &Window, names: &'static [&'static str; 8]) -> Self {
+        let values: Rc<RefCell<Vec<(String, COLORREF)>>> = Rc::new(RefCell::new(vec![Default::default(); names.len()]));
         let v = values.clone();
         let hwnd = window.canvas(move |p| {
             p.fill(p.rect, theme::VIEW);
-            for (i, (name, (value, color))) in FIELDS.iter().zip(v.borrow().iter()).enumerate() {
+            for (i, (name, (value, color))) in names.iter().zip(v.borrow().iter()).enumerate() {
                 let (top, bottom) = (px(ROW) * i as i32, px(ROW) * (i as i32 + 1));
                 p.text(RECT { left: 0, top, right: px(NAMES), bottom }, name, Font::Body, theme::DIM, Align::Right);
                 let r = RECT { left: px(NAMES + 14), top, right: p.rect.right, bottom };

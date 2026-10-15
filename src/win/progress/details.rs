@@ -1,5 +1,6 @@
 //! "Show details": the map of every connection's part and the list of connections, as on Linux
-//! and like IDM's. Both count what arrived, not only what's written, so they move live.
+//! and like IDM's. Both count what arrived, not only what's written, so they move live. A
+//! torrent's peers come and go by the dozen: it shows its files instead.
 
 use super::super::theme::{self, Align, Font, Painter};
 use super::super::wnd::{canvas, place, px, send, set_visible, Window};
@@ -34,15 +35,15 @@ pub struct Details {
 }
 
 impl Details {
-    pub fn new(window: &Window) -> Self {
+    pub fn new(window: &Window, torrent: bool) -> Self {
         let data: Rc<RefCell<Data>> = Rc::default();
         let d = data.clone();
+        let caption = if torrent { "Progress of each file" } else { "Start positions and progress of each connection" };
         let map = window.canvas(move |p| {
             let data = d.borrow();
             p.fill(p.rect, theme::VIEW);
             let r = p.rect;
-            let caption = if data.video { "The video and its sound, downloaded one after the other" }
-                          else { "Start positions and progress of each connection" };
+            let caption = if data.video { "The video and its sound, downloaded one after the other" } else { caption };
             p.text(RECT { bottom: px(18), ..r }, caption, Font::Body, theme::DIM, Align::Left);
             let bar = RECT { top: r.bottom - px(14), ..r };
             p.fill(bar, theme::TRACK);
@@ -64,8 +65,9 @@ impl Details {
         unsafe { let _ = SetWindowTheme(list, w!("Explorer"), PCWSTR::null()); }
         send(list, LVM_SETBKCOLOR, 0, theme::VIEW.0 as isize);
         send(list, LVM_SETTEXTBKCOLOR, 0, CLR_NONE as isize);
-        for (i, (title, width, right)) in [("N.", 44, true), ("Starts at", 110, true), ("Downloaded", 110, true),
-                                           ("Info", 300, false)].iter().enumerate() {
+        let (second, last) = if torrent { ("Size", "File") } else { ("Starts at", "Info") };
+        let columns = [("N.", 44, true), (second, 110, true), ("Downloaded", 110, true), (last, 300, false)];
+        for (i, (title, width, right)) in columns.iter().enumerate() {
             let text = HSTRING::from(*title);
             let column = LVCOLUMNW { mask: LVCF_TEXT | LVCF_WIDTH | LVCF_FMT, cx: px(*width),
                                      fmt: if *right { LVCFMT_RIGHT } else { LVCFMT_LEFT },
@@ -96,17 +98,29 @@ impl Details {
     }
 
     pub fn update(&self, s: &Snapshot) {
+        // a torrent's files drawn as parts of it: where each starts and how much of it is here
+        let files = s.torrent.as_ref().map(|t| t.files.clone()).unwrap_or_default();
+        let segments: Vec<Segment> = match &s.torrent {
+            Some(_) => files.iter().map(|f| Segment { start: f.offset, end: Some(f.offset + f.size), done: f.have,
+                                                       ahead: 0, active: false, heard: None }).collect(),
+            None => s.segments.clone(),
+        };
         {
             let mut data = self.data.borrow_mut();
-            if data.size != s.size || data.segments != s.segments || data.video != s.video.is_some() {
-                *data = Data { size: s.size, segments: s.segments.clone(), video: s.video.is_some() };
+            if data.size != s.size || data.segments != segments || data.video != s.video.is_some() {
+                *data = Data { size: s.size, segments: segments.clone(), video: s.video.is_some() };
                 canvas::redraw(self.map);
             }
         }
-        let wanted: Vec<[String; 4]> = s.segments.iter().enumerate().map(|(i, seg)| {
-            [(i + 1).to_string(), human_size(Some(seg.start)), human_size(Some(seg.got())),
-             if s.video.is_some() { part_info(i, s) } else { connection_info(seg, s.status).to_string() }]
-        }).collect();
+        let wanted: Vec<[String; 4]> = match &s.torrent {
+            Some(_) => files.iter().enumerate().map(|(i, f)| {
+                [(i + 1).to_string(), human_size(Some(f.size)), human_size(Some(f.have)), f.name.clone()]
+            }).collect(),
+            None => segments.iter().enumerate().map(|(i, seg)| {
+                [(i + 1).to_string(), human_size(Some(seg.start)), human_size(Some(seg.got())),
+                 if s.video.is_some() { part_info(i, s) } else { connection_info(seg, s.status).to_string() }]
+            }).collect(),
+        };
         let mut rows = self.rows.borrow_mut();
         while rows.len() < wanted.len() {
             let item = LVITEMW { mask: LVIF_TEXT, iItem: rows.len() as i32, pszText: PWSTR(w!("").as_ptr() as *mut _),
