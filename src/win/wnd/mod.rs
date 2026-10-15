@@ -8,7 +8,7 @@ mod class;
 mod controls;
 pub mod field;
 mod frame;
-mod labels;
+pub mod labels;
 mod layout;
 pub mod look;
 pub mod moves;

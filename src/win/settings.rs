@@ -1,24 +1,37 @@
-//! Preferences, laid out as on Linux: what each setting is on the left, its switch, number or
-//! folder on the right; with OK and Cancel, as in Windows' own dialogs.
+//! Options, as IDM's: tabs (General, Save to, Connection), each a few short groups with a
+//! heading, what each setting is on the left and its switch, number or folder on the right;
+//! OK and Cancel at the bottom, as in Windows' own dialogs.
 
-use super::wnd::{self, enable, is_checked, place, set_text, text, Window, FIELD, LINE};
-use super::{shell, App};
+use super::theme::{self, Font};
+use super::wnd::labels::Kind;
+use super::wnd::tabs::TABS;
+use super::wnd::{self, enable, is_checked, place, rect, set_text, set_visible, text, Window, FIELD, LINE};
+use super::{browsers, shell, App};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use turbodm::config::MAX_CONNECTIONS;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-/// The names' column and the controls' (96-DPI pixels).
-const NAMES: i32 = 340;
-const CONTROLS: i32 = 230;
-const PAD: i32 = 18;
-const ROW: i32 = 36;
+/// The window's width; the names' column; around the pages; a row (96-DPI pixels).
+const WIDTH: i32 = 600;
+const NAMES: i32 = 330;
+const PAD: i32 = 22;
+const ROW: i32 = 38;
+const CONTROL_X: i32 = PAD + NAMES + 16;
+const CONTROL: i32 = WIDTH - PAD - CONTROL_X; // the controls' column
+
+/// A page's line: a group's heading, or a setting (its name and its control, `width` wide).
+enum Line {
+    Heading(&'static str),
+    Setting(&'static str, HWND, i32),
+}
 
 pub fn open(app: &Rc<App>) {
     let s = app.manager.settings();
-    let width = PAD + NAMES + 16 + CONTROLS + PAD;
-    let window = Window::dialog("Preferences", Some(app.main.window.hwnd()), (width, 700), false);
+    let window = Window::dialog("Options", Some(app.main.window.hwnd()), (WIDTH, 480), false);
+
+    // Save to: the folder, category folders, the folders remembered for kinds of files
     let folder = Rc::new(RefCell::new(s.download_dir.clone()));
     let (f, w) = (folder.clone(), window.hwnd());
     let button = Rc::new(Cell::new(HWND::default()));
@@ -30,7 +43,6 @@ pub fn open(app: &Rc<App>) {
         }
     });
     button.set(folder_button);
-    // "Always save … to this folder" choices from the add dialog
     let forget_all = Rc::new(Cell::new(false));
     let remembered = s.folders.len();
     let (fa, button) = (forget_all.clone(), Rc::new(Cell::new(HWND::default())));
@@ -43,27 +55,91 @@ pub fn open(app: &Rc<App>) {
     button.set(forget);
     enable(forget, remembered > 0);
     let categories = window.switch(s.use_categories, |_| {});
-    let spins = [
-        ("Connections per download (servers may limit this)", 1, MAX_CONNECTIONS as i32, s.connections as i32),
-        ("Downloads at the same time", 1, 16, s.max_parallel as i32),
-        ("Speed limit, KiB/s (0 = unlimited)", 0, 10_000_000, s.speed_limit_kib as i32),
-        ("Retries per connection", 0, 100, s.retries as i32),
-        ("Reconnect after no data for (seconds)", 5, 300, s.timeout_secs as i32),
-    ].map(|(label, min, max, value)| (label, window.spin(min, max, value, |_| {})));
-    let switches = [
-        ("Confirm downloads from the browser", s.show_add_dialog),
-        ("Start downloading while the confirm dialog is open", s.predownload),
-        ("Open a progress window when a download starts", s.show_progress_window),
-        ("Show the download complete dialog", s.show_complete_dialog),
-        ("Notify when downloads finish", s.notify_complete),
-        ("Catch download links copied to the clipboard", s.clipboard_monitor),
-        ("Resume unfinished downloads at start", s.auto_resume),
-        ("Check for updates", s.check_updates),
-    ].map(|(label, on)| (label, window.switch(on, |_| {})));
+
+    // Connection: numbers
+    let spin = |min: i32, max: i32, value: i32| window.spin(min, max, value, |_| {});
+    let connections = spin(1, MAX_CONNECTIONS as i32, s.connections as i32);
+    let parallel = spin(1, 16, s.max_parallel as i32);
+    let speed = spin(0, 10_000_000, s.speed_limit_kib as i32);
+    let retries = spin(0, 100, s.retries as i32);
+    let timeout = spin(5, 300, s.timeout_secs as i32);
+
+    // General: switches
+    let switch = |on: bool| window.switch(on, |_| {});
+    let (confirm, predownload) = (switch(s.show_add_dialog), switch(s.predownload));
+    let (progress, complete, notify) = (switch(s.show_progress_window), switch(s.show_complete_dialog), switch(s.notify_complete));
+    let (clipboard, resume, updates) = (switch(s.clipboard_monitor), switch(s.auto_resume), switch(s.check_updates));
+    let a = app.clone();
+    let add_browser = window.button("Add to your browser\u{2026}", move || browsers::open(&a));
+
+    use Line::{Heading, Setting};
+    let pages: [Vec<Line>; 3] = [
+        vec![Heading("Downloads from the browser"),
+             Setting("Ask where to save them (Download file info)", confirm, 44),
+             Setting("Start downloading while it's open", predownload, 44),
+             Setting("Browser integration", add_browser, 200),
+             Heading("Windows and notices"),
+             Setting("Open a progress window when a download starts", progress, 44),
+             Setting("Show the Download complete window", complete, 44),
+             Setting("Notify when downloads finish", notify, 44),
+             Heading("At start, and meanwhile"),
+             Setting("Resume unfinished downloads at start", resume, 44),
+             Setting("Catch download links copied to the clipboard", clipboard, 44),
+             Setting("Check for updates", updates, 44)],
+        vec![Heading("Where downloads go"),
+             Setting("Download folder", folder_button, CONTROL),
+             Setting("Sort into category folders (Video, Music\u{2026})", categories, 44),
+             Setting("Folders remembered for kinds of files", forget, 130)],
+        vec![Heading("Each download"),
+             Setting("Connections at once (servers may limit them)", connections, 150),
+             Setting("Retries per connection", retries, 150),
+             Setting("Reconnect after no data for (seconds)", timeout, 150),
+             Heading("All downloads"),
+             Setting("Downloads at the same time", parallel, 150),
+             Setting("Speed limit, KB/s (0 = no limit)", speed, 150)],
+    ];
+
+    // lay the pages out over each other, under the tabs
+    let mut shown: Vec<Vec<HWND>> = vec![];
+    let mut bottom = 0;
+    for page in &pages {
+        let mut y = TABS + PAD - 6;
+        let mut controls = vec![];
+        for (i, line) in page.iter().enumerate() {
+            match line {
+                Heading(name) => {
+                    y += if i == 0 { 0 } else { 12 };
+                    let heading = window.text_label(name, Font::Strong, Kind::Line);
+                    place(heading, PAD, y, WIDTH - 2 * PAD, LINE + 2);
+                    controls.push(heading);
+                    y += LINE + 10;
+                }
+                Setting(name, control, width) => {
+                    let label = window.label(name);
+                    place(label, PAD + 12, y + (FIELD - LINE) / 2, NAMES - 12, LINE);
+                    place(*control, CONTROL_X + CONTROL - width, y, *width, FIELD);
+                    controls.extend([label, *control]);
+                    y += ROW;
+                }
+            }
+        }
+        bottom = bottom.max(y);
+        shown.push(controls);
+    }
+    let page_bottom = bottom + PAD - 10;
+    window.set_surfaces(vec![(rect(0, TABS, WIDTH, 1), theme::BORDER),
+                             (rect(0, TABS + 1, WIDTH, page_bottom - TABS - 1), theme::VIEW),
+                             (rect(0, page_bottom, WIDTH, 1), theme::BORDER)]);
+    let show_page = move |page: usize| {
+        for (i, controls) in shown.iter().enumerate() {
+            controls.iter().for_each(|c| set_visible(*c, i == page));
+        }
+    };
+    show_page(0);
+    let tabs = window.tabs(&["General", "Save to", "Connection"], show_page);
+    place(tabs, 0, 0, WIDTH, TABS);
 
     let (a, w) = (app.clone(), window.clone());
-    let numbers: Vec<HWND> = spins.iter().map(|(_, field)| *field).collect();
-    let toggles: Vec<HWND> = switches.iter().map(|(_, switch)| *switch).collect();
     let ok = window.default_button("OK", move || {
         let mut s = a.manager.settings();
         s.download_dir = folder.borrow().clone();
@@ -71,12 +147,13 @@ pub fn open(app: &Rc<App>) {
             s.folders.clear();
         }
         s.use_categories = is_checked(categories);
-        let number = |i: usize| text(numbers[i]).parse::<i64>().unwrap_or(0).max(0);
-        (s.connections, s.max_parallel) = (number(0) as usize, number(1) as usize);
-        (s.speed_limit_kib, s.retries, s.timeout_secs) = (number(2) as u64, number(3) as u32, number(4) as u64);
-        let on: Vec<bool> = toggles.iter().map(|t| is_checked(*t)).collect();
-        (s.show_add_dialog, s.predownload, s.show_progress_window, s.show_complete_dialog) = (on[0], on[1], on[2], on[3]);
-        (s.notify_complete, s.clipboard_monitor, s.auto_resume, s.check_updates) = (on[4], on[5], on[6], on[7]);
+        let number = |field: HWND| text(field).parse::<i64>().unwrap_or(0).max(0);
+        (s.connections, s.max_parallel) = (number(connections) as usize, number(parallel) as usize);
+        (s.speed_limit_kib, s.retries, s.timeout_secs) = (number(speed) as u64, number(retries) as u32, number(timeout) as u64);
+        (s.show_add_dialog, s.predownload) = (is_checked(confirm), is_checked(predownload));
+        (s.show_progress_window, s.show_complete_dialog, s.notify_complete) =
+            (is_checked(progress), is_checked(complete), is_checked(notify));
+        (s.clipboard_monitor, s.auto_resume, s.check_updates) = (is_checked(clipboard), is_checked(resume), is_checked(updates));
         a.manager.update_settings(s.clamp());
         w.destroy();
     });
@@ -84,27 +161,10 @@ pub fn open(app: &Rc<App>) {
     let cancel = window.button("Cancel", move || w.destroy());
     let w = window.clone();
     window.on_command(IDCANCEL.0 as u16, move |_| w.destroy());
-
-    // one row per setting: its name, then its control
-    let mut y = PAD;
-    let mut row = |name: &str, control: HWND, width: i32| {
-        place(window.label(name), PAD, y + (FIELD - LINE) / 2, NAMES, LINE);
-        place(control, PAD + NAMES + 16, y, width, FIELD);
-        y += ROW;
-    };
-    row("Download folder", folder_button, CONTROLS);
-    row("Folders remembered for kinds of files", forget, 130);
-    row("Sort into category folders", categories, 44);
-    for (name, field) in spins {
-        row(name, field, 160);
-    }
-    for (name, switch) in switches {
-        row(name, switch, 44);
-    }
-    let x = PAD + NAMES + 16 + CONTROLS;
-    place(ok, x - 96, y + 10, 96, FIELD + 2);
-    place(cancel, x - 2 * 96 - 8, y + 10, 96, FIELD + 2);
-    wnd::set_client_height(window.hwnd(), y + 10 + FIELD + 2 + PAD);
+    let y = page_bottom + 14;
+    place(ok, WIDTH - PAD - 96, y, 96, FIELD + 2);
+    place(cancel, WIDTH - PAD - 2 * 96 - 8, y, 96, FIELD + 2);
+    wnd::set_client_height(window.hwnd(), y + FIELD + 2 + 14);
     wnd::center(window.hwnd());
     window.show();
 }
