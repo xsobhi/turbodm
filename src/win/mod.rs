@@ -44,6 +44,7 @@ pub struct App {
     pub queue: RefCell<Option<Rc<wnd::Window>>>,      // the hidden download windows' taskbar button
     from_browser: RefCell<Option<(String, std::time::Instant)>>, // the extension's last link, and when
     pub update: RefCell<Option<turbodm::update::Release>>, // found while hidden: shown on show()
+    pub updating: RefCell<Option<String>>, // the download of TurboDM's own update
     pub background: bool, // started by the browser: quit when idle and nothing is shown
 }
 
@@ -177,6 +178,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
         queue: RefCell::default(),
         from_browser: RefCell::default(),
         update: RefCell::default(),
+        updating: RefCell::default(),
         background,
     });
     MAIN_WINDOW.store(app.main.window.hwnd().0 as isize, Ordering::SeqCst);

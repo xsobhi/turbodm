@@ -8,7 +8,7 @@ use common::{random_bytes, start, Options};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use turbodm::engine::manager::Confirm;
-use turbodm::engine::Status;
+use turbodm::engine::{AddRequest, Status};
 
 #[test]
 fn prefetch_moves_to_the_chosen_name_and_folder() {
@@ -77,4 +77,33 @@ fn prefetch_finished_before_confirm_still_moves_and_reports() {
         }
     };
     assert_eq!((done.status, done.path), (Status::Completed, dir.join("test file.bin")));
+}
+
+#[test]
+fn unlisted_download_says_when_done_but_stays_out_of_the_list() {
+    // TurboDM's own update: downloaded like any download, but not listed nor saved
+    let env = Env::new("unlisted");
+    let data = random_bytes(256 << 10);
+    let server = start(&env.rt, data.clone(), Options { ranges: true, no_length: false, max_conns: 0 }, 0);
+    let (manager, events) = env.manager_with_events(4);
+    let id = manager.add_unlisted(AddRequest { url: server.url.clone(), filename: Some("test file.bin".into()),
+                                               directory: Some(env.dir.clone()), ..Default::default() });
+    let snap = wait_for(&manager, &id, finished);
+    assert_file(&snap, &data);
+    assert!(manager.snapshot().iter().all(|s| s.id != id), "in the list");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let done = loop {
+        match events.try_recv() {
+            Ok(event) if event.id == id && event.status == Status::Completed => break event,
+            Ok(_) => {}
+            Err(_) => {
+                assert!(Instant::now() < deadline, "no event for the finished download");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    };
+    assert_eq!(done.path, env.dir.join("test file.bin"));
+    manager.save();
+    let saved = std::fs::read_to_string(env.dir.join("downloads.json")).unwrap_or_default();
+    assert!(!saved.contains(&id), "saved with the list");
 }

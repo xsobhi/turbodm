@@ -122,6 +122,8 @@ pub struct Task {
     /// Started while its "Download file info" dialog is still open (like IDM): not listed,
     /// not saved, no events, until the dialog confirms it.
     pub pending: AtomicBool,
+    /// Not listed nor saved, yet says when it's done (TurboDM's own update).
+    pub unlisted: AtomicBool,
     /// Wakes the running download to add connections up to `info.connections` (a torrent
     /// waiting for its add dialog: that it was confirmed).
     pub grow: tokio::sync::Notify,
@@ -143,6 +145,7 @@ impl Task {
             cancel: Mutex::new(CancellationToken::new()),
             runner: Mutex::new(None),
             pending: AtomicBool::new(false),
+            unlisted: AtomicBool::new(false),
             grow: tokio::sync::Notify::new(),
             video: video::Live::default(),
             torrent: Mutex::new(TorrentView::default()),

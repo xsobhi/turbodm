@@ -1,13 +1,13 @@
 //! "A new version is available", like IDM: checked at start and once a day. The new installer
-//! is downloaded and run; it replaces this version and opens the new one.
+//! is downloaded by TurboDM itself, in a progress window as any download (but not in the list),
+//! then run straight away: it replaces this version and opens the new one.
 
-use super::wnd::{self, enable, set_text, Rows, Window, LINE};
-use super::{post, App};
-use std::path::PathBuf;
+use super::wnd::{self, Rows, Window, LINE};
+use super::{dialogs, post, progress, App};
 use std::rc::Rc;
 use std::time::Duration;
+use turbodm::engine::{AddRequest, Snapshot};
 use turbodm::update::{self, installed_by_setup, run_installer, RELEASES_PAGE};
-use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 pub fn start(app: &Rc<App>) {
@@ -56,7 +56,6 @@ pub fn show_pending(app: &Rc<App>) {
     let window = Window::dialog("TurboDM update", None, (480, 200), false);
     let heading = window.heading(&format!("TurboDM {} is available", release.version));
     let text = window.note(&body.replace('\n', "\r\n"));
-    let status = window.label("");
     let (a, w, version) = (app.clone(), window.clone(), release.version.clone());
     let skip = window.button("Skip this version", move || {
         let mut s = a.manager.settings();
@@ -68,52 +67,50 @@ pub fn show_pending(app: &Rc<App>) {
     let later = window.button("Later", move || w.destroy());
     let w = window.clone();
     window.on_command(IDCANCEL.0 as u16, move |_| w.destroy());
-    let (a, w, button) = (app.clone(), window.clone(), Rc::new(std::cell::Cell::new(HWND::default())));
-    let b = button.clone();
+    let (a, w) = (app.clone(), window.clone());
     let go = window.default_button(if can_install { "Update now" } else { "Download" }, move || {
         match release.installer.clone().filter(|_| can_install) {
-            Some(url) => install(&a, &url, &release.version, b.get(), status),
+            Some(url) => install(&a, &url, &release.version),
             None => {
                 let page = if release.page.is_empty() { RELEASES_PAGE } else { &release.page };
                 super::shell::open(std::path::Path::new(page));
-                w.destroy();
             }
         }
+        w.destroy();
     });
-    button.set(go);
     let mut rows = Rows::new(16, 14, 0, 448);
     rows.full(heading, 24);
     rows.full(text, lines * LINE);
-    rows.full(status, LINE);
     let bottom = rows.buttons(&[skip, later, go]);
     wnd::set_client_height(window.hwnd(), bottom + 14);
     wnd::center(window.hwnd());
     window.show();
 }
 
-/// Fetch the installer, run it (it asks for admin rights), and quit so it can replace us.
-fn install(app: &Rc<App>, url: &str, version: &str, button: HWND, status: HWND) {
-    set_text(status, "Downloading the update…");
-    enable(button, false);
-    let dest: PathBuf = std::env::temp_dir().join(format!("TurboDM-{version}-setup.exe"));
-    let (client, url) = (app.manager.shared.client(), url.to_string());
-    let local = std::env::var_os("TURBODM_TEST_INSTALLER"); // tests the update with a fresh installer (CI)
-    let (status_id, button_id) = (status.0 as isize, button.0 as isize);
-    app.rt.spawn(async move {
-        let fetched = match local {
-            Some(path) => std::fs::copy(path, &dest).map(|_| ()).map_err(|e| e.to_string()),
-            None => update::download(&client, &url, &dest).await,
-        };
-        post(move |app| {
-            let status = HWND(status_id as *mut _);
-            match fetched.map_err(|e| format!("Couldn't download the update: {e}"))
-                .and_then(|_| run_installer(&dest).map_err(|e| format!("Couldn't start the update: {e}"))) {
-                Ok(()) => app.quit(), // downloads are paused and saved; the installer reopens TurboDM
-                Err(err) => {
-                    set_text(status, &err);
-                    enable(HWND(button_id as *mut _), true);
-                }
-            }
-        });
+/// Download the installer with TurboDM, in a progress window, kept out of the list; `downloaded`
+/// runs it when it's here.
+fn install(app: &Rc<App>, url: &str, version: &str) {
+    // (CI: this build's installer, from a server on the test machine)
+    let url = std::env::var("TURBODM_TEST_INSTALLER").unwrap_or_else(|_| url.to_string());
+    let id = app.manager.add_unlisted(AddRequest {
+        url,
+        filename: Some(format!("TurboDM-{version}-setup.exe")),
+        directory: Some(std::env::temp_dir()),
+        ..Default::default()
     });
+    *app.updating.borrow_mut() = Some(id.clone());
+    progress::open(app, &id);
+}
+
+/// The update's installer is here: run it (it asks for admin rights) and quit, so it can replace
+/// this version; downloads under way are paused and saved, and the installer reopens TurboDM.
+/// No "Download complete" window, as in IDM.
+pub fn downloaded(app: &Rc<App>, snap: &Snapshot) {
+    app.updating.take();
+    progress::close(app, &snap.id);
+    app.on_done.borrow_mut().remove(&snap.id);
+    match run_installer(&snap.path) {
+        Ok(()) => app.quit(),
+        Err(err) => dialogs::message(app.main.window.hwnd(), "Couldn't start the update", &err.to_string(), true),
+    }
 }

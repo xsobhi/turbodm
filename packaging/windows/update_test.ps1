@@ -18,7 +18,14 @@ Set-ItemProperty $key DisplayVersion "0.0.1-test"
 Write-Host "latest release $latest"
 Get-Process turbodm -ErrorAction SilentlyContinue | Stop-Process
 $env:TURBODM_PRETEND_VERSION = "0.0.1"
-if ($Installer) { $env:TURBODM_TEST_INSTALLER = $Installer } # instead of downloading the release
+if ($Installer) {
+    # instead of the release's: this build's installer, served from this machine (TurboDM
+    # downloads it as it would the release's)
+    $server = Start-Process python -ArgumentList "-m", "http.server", "8765", "--bind", "127.0.0.1",
+        "--directory", (Split-Path $Installer) -PassThru -WindowStyle Hidden
+    Start-Sleep 2
+    $env:TURBODM_TEST_INSTALLER = "http://127.0.0.1:8765/$(Split-Path $Installer -Leaf)"
+}
 Start-Process $Exe
 Remove-Item Env:\TURBODM_PRETEND_VERSION, Env:\TURBODM_TEST_INSTALLER -ErrorAction SilentlyContinue
 $shell = New-Object -ComObject WScript.Shell
@@ -48,3 +55,4 @@ $reopened = Get-Process turbodm -ErrorAction SilentlyContinue | Where-Object { $
 if (-not $reopened) { throw "TurboDM wasn't reopened" }
 Write-Host "and TurboDM is running again"
 Get-Process turbodm | Stop-Process
+if ($server) { Stop-Process -Id $server.Id -ErrorAction SilentlyContinue }

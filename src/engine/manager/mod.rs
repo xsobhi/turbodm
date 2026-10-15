@@ -91,6 +91,18 @@ impl Manager {
         id
     }
 
+    /// A download kept out of the list and not saved, that still says when it's done or failed
+    /// (TurboDM's own update, downloaded like any other, as IDM does). It starts at once; if
+    /// TurboDM quits first, what it got is thrown away.
+    pub fn add_unlisted(self: &Arc<Self>, req: AddRequest) -> String {
+        let id = self.insert(AddRequest { start: false, ..req }, true);
+        if let Some(task) = self.find(&id) {
+            task.unlisted.store(true, Ordering::Relaxed);
+            self.start_task(&task);
+        }
+        id
+    }
+
     fn insert(self: &Arc<Self>, req: AddRequest, pending: bool) -> String {
         let s = self.shared.settings();
         let is_torrent = torrent::is_torrent(&req.url, req.filename.as_deref());
@@ -194,7 +206,7 @@ impl Manager {
             let mut changed = vec![];
             for task in self.all() {
                 task.tick(now);
-                if task.pending.load(Ordering::Relaxed) {
+                if task.pending.load(Ordering::Relaxed) && !task.unlisted.load(Ordering::Relaxed) {
                     continue; // changes are reported once it's confirmed
                 }
                 let status = task.status();

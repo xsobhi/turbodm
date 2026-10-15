@@ -21,6 +21,9 @@ pub fn on_status(app: &Rc<App>, snap: Snapshot) {
 }
 
 fn completed(app: &Rc<App>, snap: Snapshot) {
+    if app.updating.borrow().as_deref() == Some(snap.id.as_str()) {
+        return super::update::downloaded(app, &snap); // TurboDM's update: installed straight away
+    }
     progress::close(app, &snap.id);
     // downloads with a progress window (now or earlier) get the dialog, like IDM
     let watched = app.on_done.borrow_mut().remove(&snap.id);
