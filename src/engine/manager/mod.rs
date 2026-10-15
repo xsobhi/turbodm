@@ -2,15 +2,16 @@
 
 mod confirm;
 mod control;
+mod names;
 
 pub use confirm::Confirm;
 
 use super::state::{self, Snapshot};
 use super::task::{Status, Task, TaskInfo};
-use super::video::{self, VideoJob};
+use super::video::VideoJob;
 use super::{runner, Shared};
 use crate::config::Settings;
-use crate::util::{filename_from_url, sanitize_filename, unique_path};
+use crate::util::{filename_from_url, sanitize_filename};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -98,9 +99,7 @@ impl Manager {
         }
         (info.referrer, info.cookies, info.user_agent) = (req.referrer, req.cookies, req.user_agent);
         if let Some(job) = req.video {
-            (info.connections, info.resumable) = (1, true); // one yt-dlp, which carries on from its part files
-            info.size = job.parts.iter().map(|(_, size)| *size).sum();
-            info.video = Some(job);
+            job.attach(&mut info);
         }
         info.status = if req.start { Status::Queued } else { Status::Paused };
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
@@ -112,20 +111,6 @@ impl Manager {
         self.dirty.store(true, Ordering::Relaxed);
         self.schedule();
         id
-    }
-
-    /// `name` in `dir`, or "name (1).ext"… if that file exists or another download will be it.
-    fn unused_name(&self, dir: &std::path::Path, name: String) -> String {
-        let tasks = self.all();
-        let taken = |path: &std::path::Path| tasks.iter().any(|t| t.info.lock().unwrap().path() == path);
-        let mut path = unique_path(&dir.join(&name));
-        let mut n = 1;
-        while taken(&path) {
-            let (stem, ext) = name.rsplit_once('.').map_or((name.as_str(), String::new()), |(s, e)| (s, format!(".{e}")));
-            path = unique_path(&dir.join(format!("{stem} ({n}){ext}")));
-            n += 1;
-        }
-        path.file_name().unwrap().to_string_lossy().into_owned()
     }
 
     pub(super) fn find(&self, id: &str) -> Option<Arc<Task>> {
@@ -143,12 +128,7 @@ impl Manager {
             info.status = Status::Connecting;
             info.error = None;
         }
-        let is_video = task.info.lock().unwrap().video.is_some();
-        let handle = if is_video {
-            self.rt.spawn(video::run(task.clone(), self.shared.clone(), token))
-        } else {
-            self.rt.spawn(runner::run(task.clone(), self.shared.clone(), token))
-        };
+        let handle = self.rt.spawn(runner::run(task.clone(), self.shared.clone(), token));
         *task.runner.lock().unwrap() = Some(handle);
         self.dirty.store(true, Ordering::Relaxed);
     }

@@ -16,6 +16,9 @@ const REGROW: Duration = Duration::from_secs(30);
 
 /// Drive a download until it completes, is paused, or fails.
 pub async fn run(task: Arc<Task>, shared: Arc<Shared>, cancel: CancellationToken) {
+    if task.info.lock().unwrap().video.is_some() {
+        return super::video::run(task, shared, cancel).await; // a web page's video: yt-dlp downloads it
+    }
     let outcome = match prepare(&task, &shared, &cancel).await {
         Ok(()) if !cancel.is_cancelled() => download(&task, &shared, &cancel).await,
         Ok(()) => Ok(false),

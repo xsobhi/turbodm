@@ -4,110 +4,28 @@
 //! already finished; Cancel throws away what was downloaded. Connections: as in Preferences.
 //! A web page with a video (video.rs) shows the video's title and its qualities instead.
 
+mod form;
 mod link;
+mod start;
 mod video;
 
 #[allow(unused_imports)] // add_video: for the main window's menu
-pub use video::{add_video, open as open_video};
+pub use video::add_video;
 
 use super::theme::{self, icon};
-use super::wnd::{self, field, is_checked, set_text, text, Rows, Window, FIELD, LINE};
+use super::wnd::{self, field, is_checked, set_text, text, Window};
 use super::{progress, shell, App};
+use form::Form;
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use turbodm::categories::category_for;
 use turbodm::engine::manager::Confirm;
 use turbodm::engine::AddRequest;
-use turbodm::text::kind_words;
 use turbodm::util::filename_from_url;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::*;
-
-pub struct Form {
-    window: Rc<Window>,
-    url: Cell<HWND>,
-    path: Cell<HWND>, // where it's saved: folder and name
-    browse: Cell<HWND>, // the folder button in the path's field
-    remember: Cell<HWND>,
-    info: Cell<HWND>,
-    names: Cell<[HWND; 3]>,   // "Address", "Save to", "Quality" (videos)
-    buttons: Cell<[HWND; 3]>, // Cancel, Download later, Start download
-    chosen: Cell<bool>,   // the user typed or picked the path: don't replace it
-    probe_id: Cell<u64>,  // results of older checks are ignored
-    early: RefCell<Option<(String, String)>>, // (url, id) of the download started early
-    probed: link::Probed, // a check's answer, from the network
-    filled: Cell<bool>,   // the early download's name and folder were shown
-    req: AddRequest,
-    video: video::State,  // the video on the page, when the address is one
-}
-
-impl Form {
-    /// The download started early for `url`, if any; any other is thrown away.
-    fn take_early(&self, app: &App, url: Option<&str>) -> Option<String> {
-        let (early_url, id) = self.early.take()?;
-        if Some(early_url.as_str()) == url {
-            return Some(id);
-        }
-        app.manager.remove(&id, true);
-        None
-    }
-
-    fn url(&self) -> String {
-        text(self.url.get()).trim().to_string()
-    }
-
-    /// The path in the field as (folder, name); a bare name goes to the folder for its kind.
-    fn target(&self, app: &App) -> (PathBuf, Option<String>) {
-        let path = PathBuf::from(text(self.path.get()).trim());
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).filter(|n| !n.trim().is_empty());
-        let folder = match path.parent() {
-            Some(dir) if dir.is_absolute() => dir.to_path_buf(),
-            _ => app.manager.settings().folder_for(name.as_deref().unwrap_or(&filename_from_url(&self.url()))),
-        };
-        (folder, name)
-    }
-
-    /// Show where it goes (unless the user said where).
-    fn show(&self, folder: &Path, name: &str) {
-        if !self.chosen.get() {
-            set_text(self.path.get(), &folder.join(name).display().to_string());
-            to_end(self.path.get());
-            self.update_remember();
-        }
-    }
-
-    /// "Always save documents to this folder", for this kind of file.
-    fn update_remember(&self) {
-        let path = PathBuf::from(text(self.path.get()));
-        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| self.url());
-        set_text(self.remember.get(), &format!("Always save {} to this folder", kind_words(&name)));
-    }
-
-    /// Place everything (again: a video adds its quality and title), and fit the window to it.
-    fn layout(&self) {
-        let video = self.video.found.borrow().is_some();
-        let [address, save_to, quality] = self.names.get();
-        wnd::set_visible(quality, video);
-        wnd::set_visible(self.video.title.get(), video);
-        // laid out as the Linux dialog: names on the right of their column, then the fields
-        let mut rows = Rows::new(18, 18, 84, 584);
-        rows.field(Some(address), self.url.get(), FIELD);
-        rows.field(Some(save_to), self.path.get(), FIELD);
-        if video {
-            rows.field(Some(quality), self.video.quality.get(), FIELD);
-        }
-        rows.field(None, self.remember.get(), LINE + 6);
-        if video {
-            rows.field(None, self.video.title.get(), LINE);
-        }
-        rows.field(None, self.info.get(), LINE);
-        rows.gap(6);
-        let bottom = rows.buttons(&self.buttons.get());
-        wnd::set_client_height(self.window.hwnd(), bottom + 18);
-    }
-}
 
 pub fn open(app: &Rc<App>, req: AddRequest) {
     open_form(app, req, false);
@@ -214,7 +132,7 @@ fn submit(app: &Rc<App>, form: &Rc<Form>, start_now: bool) {
         return;
     }
     if form.video.wanted || form.video.found.borrow().is_some() {
-        video::submit(app, form, start_now);
+        start::submit(app, form, start_now);
         return;
     }
     let (directory, filename) = form.target(app);

@@ -2,8 +2,8 @@
 
 use super::http::Headers;
 use super::limiter::RateLimiter;
-use super::segments::{Segment, SegmentMap};
-use super::video::VideoJob;
+use super::segments::SegmentMap;
+use super::video::{self, VideoJob};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -119,10 +119,8 @@ pub struct Task {
     pub pending: AtomicBool,
     /// Wakes the running download to add connections up to `info.connections`.
     pub grow: tokio::sync::Notify,
-    /// What a video download is doing besides downloading ("Joining video and sound…").
-    activity: Mutex<Option<&'static str>>,
-    /// A video download's parts (its video, its sound), shown as its connections.
-    pub video_parts: Mutex<Vec<Segment>>,
+    /// A video download's activity and parts, while yt-dlp runs.
+    pub video: video::Live,
     samples: Mutex<VecDeque<(Instant, u64)>>,
     speed: Mutex<f64>,
 }
@@ -138,8 +136,7 @@ impl Task {
             runner: Mutex::new(None),
             pending: AtomicBool::new(false),
             grow: tokio::sync::Notify::new(),
-            activity: Mutex::new(None),
-            video_parts: Mutex::new(vec![]),
+            video: video::Live::default(),
             samples: Mutex::new(VecDeque::new()),
             speed: Mutex::new(0.0),
         })
@@ -151,14 +148,6 @@ impl Task {
 
     pub fn set_status(&self, status: Status) {
         self.info.lock().unwrap().status = status;
-    }
-
-    pub fn activity(&self) -> Option<&'static str> {
-        *self.activity.lock().unwrap()
-    }
-
-    pub fn set_activity(&self, what: Option<&'static str>) {
-        *self.activity.lock().unwrap() = what;
     }
 
     /// Bytes received so far (what progress, speed and time left go by).

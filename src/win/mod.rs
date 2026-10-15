@@ -92,19 +92,6 @@ impl App {
         }
     }
 
-    /// A video on a web page, from the browser: its qualities in the Add dialog, or (no dialog)
-    /// straight to the list in the usual quality, picked once the page is looked at.
-    pub fn handle_video(self: &Rc<Self>, req: AddRequest, silent: bool) {
-        if !silent && self.manager.settings().show_add_dialog {
-            add::open_video(self, req);
-        } else {
-            let id = self.manager.add(AddRequest { start: true, video: Some(Default::default()), ..req });
-            if self.manager.settings().show_progress_window {
-                progress::open(self, &id);
-            }
-        }
-    }
-
     pub fn quit(&self) {
         tray::remove(self);
         // SAFETY: ends our message loop
@@ -124,10 +111,7 @@ impl App {
                 let req = AddRequest { url, filename, directory, referrer, cookies, user_agent, ..Default::default() };
                 self.handle_download(req, silent);
             }
-            Message::Video { url, referrer, cookies, user_agent, silent } => {
-                if user_agent.is_some() {
-                    browsers::mark_offered(self); // from the extension
-                }
+            Message::Video { url, referrer, cookies, user_agent, silent } => { // (add/video.rs)
                 self.handle_video(AddRequest { url, referrer, cookies, user_agent, ..Default::default() }, silent);
             }
         }

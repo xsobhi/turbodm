@@ -92,7 +92,7 @@ pub fn snapshot(task: &Task) -> Snapshot {
     let (segments, active_connections) = match task.segments.lock().unwrap().clone() {
         Some(map) => (map.snapshot(), map.active_count()),
         None => {
-            let parts = task.video_parts.lock().unwrap().clone(); // a video's parts
+            let parts = task.video.parts(); // a video's parts
             let active = parts.iter().filter(|p| p.active).count();
             (parts, active)
         }
@@ -127,6 +127,6 @@ pub fn snapshot(task: &Task) -> Snapshot {
         completed: info.completed,
         content_type: info.content_type.clone(),
         video: info.video.as_ref().map(|v| v.quality.clone()),
-        activity: task.activity(),
+        activity: task.video.activity(),
     }
 }
