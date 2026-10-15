@@ -8,9 +8,18 @@ use std::path::{Path, PathBuf};
 pub const APP_ID: &str = "io.github.xsobhi.TurboDM";
 pub const NATIVE_HOST: &str = "com.xsobhi.turbodm";
 pub const FIREFOX_EXTENSION_ID: &str = "turbodm@xsobhi.github.io";
-pub const CHROME_EXTENSION_ID: &str = "edlkglikdjabdhlailjmdopnlocdegbe";
+pub const CHROME_EXTENSION_ID: &str = "edlkglikdjabdhlailjmdopnlocdegbe"; // loaded by hand ("Load unpacked")
+/// The extension's IDs in the stores, once it's listed there (each store picks its own). With
+/// one, Chromium browsers add it by themselves, asking first, as they do IDM's (register.rs).
+pub const CHROME_STORE_ID: Option<&str> = Some("enaaoegoakgmcdbhepcoflfmpeodipob"); // Chrome Web Store: Chrome, Brave, Vivaldi, Opera
+pub const EDGE_STORE_ID: Option<&str> = None; // Microsoft Edge Add-ons (else Edge takes Chrome's)
 pub const MAX_CONNECTIONS: usize = 32;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Every Chromium extension that may talk to TurboDM: the one loaded by hand, and the stores'.
+pub fn chrome_extension_ids() -> Vec<&'static str> {
+    [Some(CHROME_EXTENSION_ID), CHROME_STORE_ID, EDGE_STORE_ID].into_iter().flatten().collect()
+}
 
 pub fn own_user_agent() -> String {
     format!("TurboDM/{VERSION}")

@@ -3,7 +3,7 @@
 //! whichever way TurboDM was installed or moved — a package, install.sh, an AppImage, the
 //! Windows installer — and by `turbodm --register` / `--unregister` from installers.
 
-use crate::config::{CHROME_EXTENSION_ID, FIREFOX_EXTENSION_ID, NATIVE_HOST};
+use crate::config::{chrome_extension_ids, FIREFOX_EXTENSION_ID, NATIVE_HOST};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
@@ -25,7 +25,8 @@ fn manifest(path: &Path, firefox: bool) -> String {
     if firefox {
         value["allowed_extensions"] = json!([FIREFOX_EXTENSION_ID]);
     } else {
-        value["allowed_origins"] = json!([format!("chrome-extension://{CHROME_EXTENSION_ID}/")]);
+        let origins: Vec<String> = chrome_extension_ids().iter().map(|id| format!("chrome-extension://{id}/")).collect();
+        value["allowed_origins"] = json!(origins);
     }
     serde_json::to_string_pretty(&value).unwrap_or_default() + "\n"
 }
@@ -193,6 +194,8 @@ mod tests {
         assert_eq!(firefox["allowed_extensions"][0], FIREFOX_EXTENSION_ID);
         assert_eq!(firefox["path"], "/usr/bin/turbodm");
         let chrome: serde_json::Value = serde_json::from_str(&manifest(Path::new("/x"), false)).unwrap();
-        assert_eq!(chrome["allowed_origins"][0], format!("chrome-extension://{CHROME_EXTENSION_ID}/"));
+        let origins = chrome["allowed_origins"].as_array().unwrap();
+        assert_eq!(origins[0], format!("chrome-extension://{}/", crate::config::CHROME_EXTENSION_ID));
+        assert_eq!(origins.len(), chrome_extension_ids().len());
     }
 }
