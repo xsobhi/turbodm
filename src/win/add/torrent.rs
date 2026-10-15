@@ -16,7 +16,6 @@ pub fn pick(owner: HWND) -> Option<PathBuf> {
 
 /// "Add torrent file…": pick .torrent files and add each like a link (with the "Download file
 /// info" dialog, unless that's turned off).
-#[allow(dead_code)] // for the main window's menu
 pub fn add_torrent_file(app: &Rc<App>) {
     let owner = if app.main.is_visible() { app.main.window.hwnd() } else { HWND::default() };
     for file in shell::choose_files(owner, "Add torrent files", TORRENTS, true) {

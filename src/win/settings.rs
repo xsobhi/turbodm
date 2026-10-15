@@ -69,6 +69,7 @@ pub fn open(app: &Rc<App>) {
     let (confirm, predownload) = (switch(s.show_add_dialog), switch(s.predownload));
     let (progress, complete, notify) = (switch(s.show_progress_window), switch(s.show_complete_dialog), switch(s.notify_complete));
     let (clipboard, resume, updates) = (switch(s.clipboard_monitor), switch(s.auto_resume), switch(s.check_updates));
+    let seed = switch(s.seed);
     let a = app.clone();
     let add_browser = window.button("Add to your browser\u{2026}", move || browsers::open(&a));
 
@@ -96,7 +97,9 @@ pub fn open(app: &Rc<App>) {
              Setting("Reconnect after no data for (seconds)", timeout, 150),
              Heading("All downloads"),
              Setting("Downloads at the same time", parallel, 150),
-             Setting("Speed limit, KB/s (0 = no limit)", speed, 150)],
+             Setting("Speed limit, KB/s (0 = no limit)", speed, 150),
+             Heading("Torrents"),
+             Setting("Keep sharing finished torrents", seed, 44)],
     ];
 
     // lay the pages out over each other, under the tabs
@@ -154,6 +157,7 @@ pub fn open(app: &Rc<App>) {
         (s.show_progress_window, s.show_complete_dialog, s.notify_complete) =
             (is_checked(progress), is_checked(complete), is_checked(notify));
         (s.clipboard_monitor, s.auto_resume, s.check_updates) = (is_checked(clipboard), is_checked(resume), is_checked(updates));
+        s.seed = is_checked(seed);
         a.manager.update_settings(s.clamp());
         w.destroy();
     });

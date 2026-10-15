@@ -18,7 +18,6 @@ use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, SetWindowPos, SWP_N
 /// "Download video": the Add dialog for a web page's video (for the menus; the browser's
 /// "Download video with TurboDM" comes through `App::handle_video`). An empty `url`: the link
 /// on the clipboard, if there is one.
-#[allow(dead_code)] // until the main window's menu has "Download video…" (src/win/main/menu.rs)
 pub fn add_video(app: &Rc<App>, url: String) {
     super::open_form(app, AddRequest { url, ..Default::default() }, true);
 }

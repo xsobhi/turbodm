@@ -10,7 +10,6 @@ mod link;
 mod start;
 mod video;
 
-#[allow(unused_imports)] // add_video: for the main window's menu
 pub use video::add_video;
 pub mod torrent; // add_torrent_file, for the main window's menu
 

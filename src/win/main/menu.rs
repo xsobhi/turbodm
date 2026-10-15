@@ -22,6 +22,7 @@ pub enum Cmd {
     ToggleCategories, ToggleToolbar, ToggleProgress, ToggleComplete,
     SortName, SortSize, SortStatus, SortSpeed, SortLeft, SortAdded,
     GitHub, Report, MenuTasks, MenuFile, MenuDownloads, MenuView, MenuHelp,
+    AddTorrent, AddVideo,
 }
 
 pub const ALL: &[Cmd] = &[Cmd::Add, Cmd::Resume, Cmd::Pause, Cmd::ResumeAll, Cmd::PauseAll, Cmd::Remove,
@@ -32,7 +33,8 @@ pub const ALL: &[Cmd] = &[Cmd::Add, Cmd::Resume, Cmd::Pause, Cmd::ResumeAll, Cmd
     Cmd::Speed0, Cmd::Speed256, Cmd::Speed512, Cmd::Speed1M, Cmd::Speed2M, Cmd::Speed5M, Cmd::Speed10M,
     Cmd::ToggleCategories, Cmd::ToggleToolbar, Cmd::ToggleProgress, Cmd::ToggleComplete,
     Cmd::SortName, Cmd::SortSize, Cmd::SortStatus, Cmd::SortSpeed, Cmd::SortLeft, Cmd::SortAdded,
-    Cmd::GitHub, Cmd::Report, Cmd::MenuTasks, Cmd::MenuFile, Cmd::MenuDownloads, Cmd::MenuView, Cmd::MenuHelp];
+    Cmd::GitHub, Cmd::Report, Cmd::MenuTasks, Cmd::MenuFile, Cmd::MenuDownloads, Cmd::MenuView, Cmd::MenuHelp,
+    Cmd::AddTorrent, Cmd::AddVideo];
 
 /// The speed limiter's choices: (command, KiB/s, its name).
 const SPEEDS: [(Cmd, u64, &str); 7] = [(Cmd::Speed0, 0, "&No limit"), (Cmd::Speed256, 256, "256 KB/s"),
@@ -85,8 +87,11 @@ pub fn bar_menu(app: &Rc<App>, index: usize) -> HMENU {
     let selected: Vec<_> = app.main.list.selected().iter().filter_map(|id| app.manager.get(id)).collect();
     let any = !selected.is_empty();
     let done = selected.first().is_some_and(|s| s.status == Status::Completed);
+    let torrent = selected.first().is_some_and(|s| s.torrent.is_some()); // (no address to refresh)
     let items = match index {
         0 => vec![Do(Cmd::Add, "&Add new download...\tCtrl+N", true),
+                  Do(Cmd::AddVideo, "Download &video...", true),
+                  Do(Cmd::AddTorrent, "Add &torrent file...", true), Line,
                   Do(Cmd::BatchAdd, "Add &batch download...", true),
                   Do(Cmd::ClipboardLinks, "Add batch download from &clipboard", true), Line,
                   Sub("&Import", vec![Do(Cmd::Import, "From &text file (one address a line)...", true)]),
@@ -95,7 +100,7 @@ pub fn bar_menu(app: &Rc<App>, index: usize) -> HMENU {
         1 => vec![Do(Cmd::Open, "&Open", done), Do(Cmd::OpenWith, "Open &with...", done),
                   Do(Cmd::OpenFolder, "Open f&older", any), Line,
                   Do(Cmd::Redownload, "Re&download...", any),
-                  Do(Cmd::Refresh, "Refresh download &address...", any),
+                  Do(Cmd::Refresh, "Refresh download &address...", any && !torrent),
                   Do(Cmd::CopyUrl, "&Copy address", any), Line,
                   Do(Cmd::Details, "&Properties (progress details)\tCtrl+I", any), Line,
                   Do(Cmd::Remove, "&Remove from list\tDel", any), Do(Cmd::DeleteFile, "&Delete with file...", any)],
@@ -167,6 +172,8 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
     };
     match cmd {
         Cmd::Add => add::open(app, AddRequest::default()),
+        Cmd::AddVideo => add::add_video(app, String::new()), // (a link on the clipboard is filled in)
+        Cmd::AddTorrent => add::torrent::add_torrent_file(app),
         Cmd::Resume => selected().iter().for_each(|id| {
             app.manager.resume(id);
             if app.manager.settings().show_progress_window {
@@ -185,7 +192,9 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
         Cmd::OpenFolder => if let Some(id) = first() { shell::show_download(app, &id) },
         Cmd::Details => if let Some(id) = first() { progress::open(app, &id) },
         Cmd::CopyUrl => if let Some(s) = first().and_then(|id| app.manager.get(&id)) { shell::copy_text(&s.url) },
-        Cmd::Refresh => if let Some(id) = first() { refresh::start(app, &id) },
+        Cmd::Refresh => if let Some(s) = first().and_then(|id| app.manager.get(&id)).filter(|s| s.torrent.is_none()) {
+            refresh::start(app, &s.id)
+        },
         Cmd::Redownload => dialogs::confirm_redownload(app, selected()),
         Cmd::DownloadFolder => {
             let dir = app.manager.settings().download_dir;
