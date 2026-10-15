@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use windows::core::{w, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND};
-use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_INPROC_SERVER};
+use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER,
+                                  COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
 use windows::Win32::System::DataExchange::*;
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::UI::Shell::*;
@@ -14,10 +15,24 @@ use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 const CF_UNICODETEXT: u32 = 13;
 
+/// Windows' shell calls return once the other program has started (it can take a second or
+/// more): they run on a thread of their own, so no window waits for them.
+fn in_background(action: impl FnOnce() + Send + 'static) {
+    std::thread::spawn(move || {
+        // SAFETY: COM for this thread, as the shell wants it; ended with the thread
+        let com = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) };
+        action();
+        if com.is_ok() {
+            unsafe { CoUninitialize() };
+        }
+    });
+}
+
 /// Open with its default program, like a double-click in Explorer.
 pub fn open(path: &Path) {
+    let path = HSTRING::from(path.as_os_str());
     // SAFETY: plain shell call
-    unsafe { ShellExecuteW(None, w!("open"), &HSTRING::from(path.as_os_str()), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL); }
+    in_background(move || unsafe { ShellExecuteW(None, w!("open"), &path, PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL); });
 }
 
 pub fn open_download(app: &Rc<App>, id: &str) {
@@ -32,14 +47,15 @@ pub fn show_download(app: &Rc<App>, id: &str) {
     if !s.path.exists() {
         return open(&s.directory);
     }
+    let path = HSTRING::from(s.path.as_os_str());
     // SAFETY: an item list for the path, freed after use
-    unsafe {
-        let item = ILCreateFromPathW(&HSTRING::from(s.path.as_os_str()));
+    in_background(move || unsafe {
+        let item = ILCreateFromPathW(&path);
         if !item.is_null() {
             let _ = SHOpenFolderAndSelectItems(item, None, 0);
             ILFree(Some(item));
         }
-    }
+    });
 }
 
 /// Windows' "Open with" chooser.

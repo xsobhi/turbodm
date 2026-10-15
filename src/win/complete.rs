@@ -52,11 +52,12 @@ pub fn open(app: &Rc<App>, snap: &Snapshot) {
     });
     let again = window.checkbox("Don't show this again", false, |_| {});
     let (path, w) = (snap.path.clone(), window.clone());
-    let with = window.button("Open with…", move || { shell::open_with(&path); w.close(); });
+    // (the window goes at once; the other program starts after)
+    let with = window.button("Open with…", move || { w.close(); shell::open_with(&path); });
     let (a, id, w) = (app.clone(), snap.id.clone(), window.clone());
-    let folder = window.button("Open folder", move || { shell::show_download(&a, &id); w.close(); });
+    let folder = window.button("Open folder", move || { w.close(); shell::show_download(&a, &id); });
     let (path, w) = (snap.path.clone(), window.clone());
-    let open = window.default_button("Open", move || { shell::open(&path); w.close(); });
+    let open = window.default_button("Open", move || { w.close(); shell::open(&path); });
     let w = window.clone();
     window.on_command(IDCANCEL.0 as u16, move |_| w.close());
     let a = app.clone();
