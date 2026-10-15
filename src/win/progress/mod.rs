@@ -1,6 +1,6 @@
 //! Per-download window, as on Linux and like IDM's: opens when a download starts or resumes.
 //! Tabs for the download status (with its connections), its speed limiter and what to do when
-//! it's done.
+//! it's done. Hide (or minimize) tucks it under the "TurboDM downloads" taskbar button (queue.rs).
 
 mod details;
 mod info;
@@ -11,7 +11,7 @@ pub use refresh::{close, refresh_all};
 
 use super::theme;
 use super::wnd::{self, rect, set_text, tabs::TABS, Window, FIELD};
-use super::App;
+use super::{queue, App};
 use details::Details;
 use info::{Bar, Info};
 use std::cell::Cell;
@@ -36,7 +36,7 @@ const BAR_Y: i32 = TOP + info::FIELDS.len() as i32 * info::ROW + 8;
 const BAR: i32 = 26;
 
 /// Where things go with or without the connections shown; returns the window's inside height.
-fn arrange(window: &Window, details: &Details, buttons: [HWND; 3], shown: bool) -> i32 {
+fn arrange(window: &Window, details: &Details, buttons: [HWND; 4], shown: bool) -> i32 {
     let below_bar = BAR_Y + BAR;
     let page_bottom = if shown { details.place(PAD, below_bar + 16, WIDTH - 2 * PAD) } else { below_bar } + PAD;
     details.show(shown);
@@ -45,14 +45,19 @@ fn arrange(window: &Window, details: &Details, buttons: [HWND; 3], shown: bool) 
                              (rect(0, TABS + 1, WIDTH, page_bottom - TABS - 1), theme::VIEW)]);
     let y = page_bottom + 14;
     wnd::place(buttons[0], PAD, y, 130, FIELD + 2);
-    wnd::place(buttons[1], WIDTH - PAD - 2 * 96 - 8, y, 96, FIELD + 2);
-    wnd::place(buttons[2], WIDTH - PAD - 96, y, 96, FIELD + 2);
+    for (i, button) in buttons[1..].iter().enumerate() {
+        wnd::place(*button, WIDTH - PAD - (3 - i as i32) * 96 - (2 - i as i32) * 8, y, 96, FIELD + 2);
+    }
     y + FIELD + 2 + 14
 }
 
 pub fn open(app: &Rc<App>, id: &str) {
     if let Some(existing) = app.progress.borrow().get(id) {
-        existing.window.show();
+        // (hidden or minimized: back where it was)
+        // SAFETY: plain call on our own window
+        unsafe { let _ = ShowWindow(existing.window.hwnd(), SW_RESTORE); }
+        existing.window.show_in_front();
+        super::post(queue::update);
         return;
     }
     let Some(snap) = app.manager.get(id) else { return };
@@ -67,7 +72,7 @@ pub fn open(app: &Rc<App>, id: &str) {
     let completion = options::on_completion(&window, app, id, PAD, TOP);
 
     let shown = Rc::new(Cell::new(true));
-    let buttons = Rc::new(Cell::new([HWND::default(); 3]));
+    let buttons = Rc::new(Cell::new([HWND::default(); 4]));
     let (d, s, b, w) = (details.clone(), shown.clone(), buttons.clone(), window.clone());
     let more = window.button("&Hide details", move || {
         s.set(!s.get());
@@ -90,7 +95,9 @@ pub fn open(app: &Rc<App>, id: &str) {
         // SAFETY: closes our own window
         unsafe { let _ = DestroyWindow(w); }
     });
-    buttons.set([more, toggle, cancel]);
+    let (a, w) = (app.clone(), window.hwnd());
+    let hide = window.button("H&ide", move || tuck_away(&a, w));
+    buttons.set([more, hide, toggle, cancel]);
     let height = arrange(&window, &details, buttons.get(), true);
     wnd::set_client_height(window.hwnd(), height);
 
@@ -106,16 +113,33 @@ pub fn open(app: &Rc<App>, id: &str) {
     show_page(0);
     let tabs = window.tabs(&["Download status", "Speed limiter", "Options on completion"], show_page);
     wnd::place(tabs, 0, 0, WIDTH, TABS);
-    let (a, i) = (Rc::downgrade(app), id.to_string());
-    window.hook(move |msg, _, _| {
-        if let (WM_DESTROY, Some(app)) = (msg, a.upgrade()) {
-            app.progress.borrow_mut().remove(&i);
+    let (a, i, w) = (Rc::downgrade(app), id.to_string(), window.hwnd());
+    window.hook(move |msg, wparam, _| {
+        let app = a.upgrade()?;
+        match msg {
+            // minimized: under the downloads' taskbar button, as Hide does
+            WM_SYSCOMMAND if wparam.0 as u32 & 0xFFF0 == SC_MINIMIZE => {
+                tuck_away(&app, w);
+                Some(windows::Win32::Foundation::LRESULT(0))
+            }
+            WM_DESTROY => {
+                app.progress.borrow_mut().remove(&i);
+                super::post(queue::update);
+                None
+            }
+            _ => None,
         }
-        None
     });
     wnd::center(window.hwnd());
     let pw = ProgressWindow { id: id.to_string(), window, info, bar, details, toggle };
     pw.refresh(&app.manager);
     pw.window.show();
     app.progress.borrow_mut().insert(id.to_string(), pw);
+}
+
+/// Hide a download window: it's under the "TurboDM downloads" taskbar button meanwhile.
+fn tuck_away(app: &Rc<App>, window: HWND) {
+    // SAFETY: plain call on our own window
+    unsafe { let _ = ShowWindow(window, SW_HIDE); }
+    queue::update(app);
 }

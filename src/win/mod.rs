@@ -10,6 +10,7 @@ mod finish;
 mod main;
 mod power;
 mod progress;
+mod queue;
 mod refresh;
 mod settings;
 mod shell;
@@ -40,6 +41,7 @@ pub struct App {
     pub on_done: RefCell<HashMap<String, OnDone>>, // downloads with a progress window
     pub refreshing: RefCell<Option<refresh::Waiting>>, // waiting for a fresh address from the browser
     pub offered_refresh: RefCell<HashSet<String>>,     // expired links already offered a refresh
+    pub queue: RefCell<Option<Rc<wnd::Window>>>,      // the hidden download windows' taskbar button
     pub update: RefCell<Option<turbodm::update::Release>>, // found while hidden: shown on show()
     pub background: bool, // started by the browser: quit when idle and nothing is shown
 }
@@ -161,6 +163,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
         on_done: RefCell::default(),
         refreshing: RefCell::default(),
         offered_refresh: RefCell::default(),
+        queue: RefCell::default(),
         update: RefCell::default(),
         background,
     });

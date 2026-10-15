@@ -71,6 +71,14 @@ fn bitmap(png: Picture) -> Option<*mut GpBitmap> {
     }
 }
 
+/// The picture as a window icon (for a taskbar button): Windows scales it as it needs.
+pub fn hicon(png: Picture) -> Option<windows::Win32::UI::WindowsAndMessaging::HICON> {
+    let bitmap = bitmap(png)?;
+    let mut icon = windows::Win32::UI::WindowsAndMessaging::HICON::default();
+    // SAFETY: GDI+ makes the icon from our decoded picture; it lasts the program's life
+    (unsafe { GdipCreateHICONFromBitmap(bitmap, &mut icon) } == Ok).then_some(icon)
+}
+
 /// GDI+'s 32-bit premultiplied pixels (PixelFormat32bppPARGB).
 const PARGB: i32 = 0x000E_200B;
 
