@@ -38,13 +38,15 @@ Start-Sleep 1
 Shot "update-1-dialog.png"
 $shell.SendKeys("{ENTER}") # Update now
 $clicked = Get-Date
+Start-Sleep 3
+Shot "update-2-downloading.png" # (the installer, downloaded by TurboDM in its progress window)
 $deadline = (Get-Date).AddSeconds(180)
 while ((Get-ItemProperty $key).DisplayVersion -ne $latest) {
     if ((Get-Date) -gt $deadline) {
-        Shot "update-2-stuck.png"
-        Get-ChildItem $env:TEMP -Filter "TurboDM*" | Format-Table Name, Length, LastWriteTime
-        Get-Process turbodm, *setup* -ErrorAction SilentlyContinue | Format-Table Name, Id, StartTime
-        Get-Content "$env:TEMP\TurboDM-update.log" -ErrorAction SilentlyContinue | Select-Object -Last 40
+        Shot "update-3-stuck.png"
+        Get-ChildItem $env:TEMP -Filter "TurboDM*" | Format-Table Name, Length, LastWriteTime | Out-Host
+        Get-Process turbodm, *setup* -ErrorAction SilentlyContinue | Format-Table Name, Id, StartTime | Out-Host
+        Get-Content "$env:TEMP\TurboDM-update.log" -ErrorAction SilentlyContinue | Select-Object -Last 40 | Out-Host
         throw "still $((Get-ItemProperty $key).DisplayVersion) after updating"
     }
     Start-Sleep 2

@@ -179,8 +179,11 @@ impl Manager {
                 let wait = async move { tokio::time::timeout(Duration::from_secs(10), handle).await };
                 let _ = self.rt.block_on(wait);
             }
-            if task.pending.load(Ordering::Relaxed) {
-                state::remove_files(&task); // its dialog never confirmed it
+            // its dialog never confirmed it (an unlisted one that finished stays: the update's
+            // installer, starting just as TurboDM quits for it)
+            let finished_unlisted = task.unlisted.load(Ordering::Relaxed) && task.status() == Status::Completed;
+            if task.pending.load(Ordering::Relaxed) && !finished_unlisted {
+                state::remove_files(&task);
             }
         }
         self.rt.block_on(self.shared.torrents.stop());

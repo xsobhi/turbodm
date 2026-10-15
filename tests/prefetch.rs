@@ -106,4 +106,7 @@ fn unlisted_download_says_when_done_but_stays_out_of_the_list() {
     manager.save();
     let saved = std::fs::read_to_string(env.dir.join("downloads.json")).unwrap_or_default();
     assert!(!saved.contains(&id), "saved with the list");
+    // TurboDM quits to let the installer run: the installer must still be there
+    manager.shutdown();
+    assert!(done.path.exists(), "deleted when TurboDM quit");
 }

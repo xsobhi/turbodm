@@ -90,6 +90,10 @@ jobs:
         shell: pwsh
         run: |
           $exe = "dist\windows\TurboDM\bin\turbodm.exe"
+          # TurboDM's first start offers the browser extension, and Firefox opens to ask: not on
+          # this machine, where it would take the keyboard from the windows the tests type into
+          New-Item -ItemType Directory -Force "$env:APPDATA\turbodm" | Out-Null
+          '{"browsers_offered": true}' | Set-Content -Encoding ascii "$env:APPDATA\turbodm\settings.json"
           # a missing DLL shows an error box instead of failing: wait with a timeout
           $check = Start-Process $exe -ArgumentList "--version" -PassThru
           if (-not $check.WaitForExit(30000) -or $check.ExitCode -ne 0) { throw "turbodm.exe doesn't start (missing DLL?)" }
