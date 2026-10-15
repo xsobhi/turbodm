@@ -154,6 +154,16 @@ pub fn open(ctx: &Rc<Ctx>, req: AddRequest) {
                 form.info.set_text("Please enter an http(s) link");
                 return;
             }
+            if turbodm::engine::video::is_video_site(&url) {
+                // a video site's page: its video, in the quality picked last (no qualities here yet)
+                form.take_early(&ctx, None);
+                let id = ctx.manager.add(AddRequest { url, start: start_now, video: Some(Default::default()), ..req.clone() });
+                if start_now && ctx.manager.settings().show_progress_window {
+                    progress::open(&ctx, &id);
+                }
+                dialog.close();
+                return;
+            }
             let (directory, filename) = form.target(&ctx);
             let connections = ctx.manager.settings().connections;
             if form.remember.is_active() {
