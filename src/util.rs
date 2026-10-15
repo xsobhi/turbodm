@@ -66,6 +66,25 @@ pub fn filename_from_url(url: &str) -> String {
     sanitize_filename(&percent_decode(last))
 }
 
+/// The name to show for a link until the download knows better: the file's name in it, a magnet
+/// link's own name ("" if it has none), or a .torrent file's name without ".torrent" (usually
+/// what's in it).
+pub fn name_guess(url: &str) -> String {
+    use crate::engine::torrent::{is_magnet, is_torrent, name_hint};
+    if is_magnet(url) {
+        return name_hint(url).unwrap_or_default();
+    }
+    let name = if url.contains("://") {
+        filename_from_url(url)
+    } else {
+        sanitize_filename(&Path::new(url).file_name().unwrap_or_default().to_string_lossy())
+    };
+    match name.len().checked_sub(".torrent".len()) {
+        Some(cut) if is_torrent(url, None) && cut > 0 && name.is_char_boundary(cut) => name[..cut].to_string(),
+        _ => name,
+    }
+}
+
 /// File name from a Content-Disposition header (RFC 6266, incl. filename*=UTF-8'').
 pub fn filename_from_disposition(value: &str) -> Option<String> {
     let lower = value.to_ascii_lowercase();
@@ -153,5 +172,10 @@ mod tests {
         assert_eq!(filename_from_url("https://x.com/dir/My%20File.iso?x=1"), "My File.iso");
         assert_eq!(filename_from_url("https://x.com/"), "download");
         assert_eq!(sanitize_filename("a/b:c"), "a_b_c");
+        assert_eq!(name_guess("https://x.com/dir/My%20File.iso?x=1"), "My File.iso");
+        assert_eq!(name_guess("https://x.org/ubuntu-24.04.iso.torrent"), "ubuntu-24.04.iso");
+        assert_eq!(name_guess("/home/me/Big Buck Bunny.torrent"), "Big Buck Bunny");
+        assert_eq!(name_guess("magnet:?xt=urn:btih:abc&dn=Sintel"), "Sintel");
+        assert_eq!(name_guess("magnet:?xt=urn:btih:abc"), "");
     }
 }

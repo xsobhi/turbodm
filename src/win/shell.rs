@@ -1,5 +1,5 @@
 //! Handing things to Windows: opening files and folders, Explorer with a file selected,
-//! "Open with", the folder picker and the Save as dialog, and the clipboard.
+//! "Open with", the folder and file pickers and the Save as dialog, and the clipboard.
 
 use super::App;
 use std::path::{Path, PathBuf};
@@ -78,6 +78,33 @@ pub fn choose_folder(owner: HWND, title: &str, initial: &Path) -> Option<PathBuf
         let path = PathBuf::from(name.to_string().ok()?);
         CoTaskMemFree(Some(name.0 as *const _));
         Some(path)
+    }
+}
+
+/// Windows' "Open" dialog for files of one kind, e.g. ("Torrent files", "*.torrent"); the files
+/// picked (one, or with `many`, any number), none if cancelled.
+pub fn choose_files(owner: HWND, title: &str, (kind, pattern): (&str, &str), many: bool) -> Vec<PathBuf> {
+    // SAFETY: Windows' file dialog (COM, initialized on this thread at start); the filter's
+    // strings outlive the dialog
+    unsafe {
+        let Ok(dialog) = CoCreateInstance::<_, IFileOpenDialog>(&FileOpenDialog, None, CLSCTX_INPROC_SERVER) else {
+            return vec![];
+        };
+        let multi = if many { FOS_ALLOWMULTISELECT } else { FILEOPENDIALOGOPTIONS(0) };
+        let _ = dialog.SetOptions(FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | multi);
+        let _ = dialog.SetTitle(&HSTRING::from(title));
+        let (kind, pattern) = (HSTRING::from(kind), HSTRING::from(pattern));
+        let _ = dialog.SetFileTypes(&[Common::COMDLG_FILTERSPEC { pszName: PCWSTR(kind.as_ptr()), pszSpec: PCWSTR(pattern.as_ptr()) }]);
+        if dialog.Show(Some(owner)).is_err() {
+            return vec![]; // cancelled
+        }
+        let Ok(items) = dialog.GetResults() else { return vec![] };
+        (0..items.GetCount().unwrap_or(0)).filter_map(|i| {
+            let name = items.GetItemAt(i).ok()?.GetDisplayName(SIGDN_FILESYSPATH).ok()?;
+            let path = PathBuf::from(name.to_string().ok()?);
+            CoTaskMemFree(Some(name.0 as *const _));
+            Some(path)
+        }).collect()
     }
 }
 

@@ -27,9 +27,15 @@ pub fn speed_limiter(window: &Window, app: &Rc<App>, snap: &Snapshot, x: i32, y:
     speed.set(field);
     enable(field, limited);
     let unit = window.label("KiB/s");
-    let note = window.note("Applies to this download only, right away. The limit for all downloads \
-                            together is in Preferences.");
+    let note = window.note(if snap.torrent.is_some() {
+        "A torrent goes by the limit for all downloads together, in Preferences."
+    } else {
+        "Applies to this download only, right away. The limit for all downloads together is in Preferences."
+    });
     window.set_text_color(note, theme::DIM);
+    if snap.torrent.is_some() {
+        enable(enabled, false); // librqbit can't change one torrent's limit while it runs
+    }
     place(enabled, x, y, 300, LINE + 6);
     place(label, x, y + 46, 170, LINE);
     place(field, x + 175, y + 40, 130, FIELD);

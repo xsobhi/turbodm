@@ -1,13 +1,16 @@
 //! Checking a new address. Like IDM, the download itself starts behind the dialog, on one
 //! connection and out of sight; with that turned off, the server is just asked about the file.
+//! A torrent is always looked up that way: it waits for Start before downloading anything.
 
 use super::super::wnd::set_text;
 use super::super::App;
-use super::Form;
+use super::{is_link, Form};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use turbodm::engine::http::{self, Headers, ProbeInfo};
-use turbodm::engine::{AddRequest, Status};
+use turbodm::engine::torrent::is_torrent;
+use turbodm::engine::{AddRequest, Snapshot, Status};
+use turbodm::text::torrent_info;
 use turbodm::util::human_size;
 use windows::Win32::Foundation::LRESULT;
 use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer, WM_TIMER};
@@ -51,11 +54,11 @@ pub fn check(app: &Rc<App>, form: &Rc<Form>) {
     form.take_early(app, None);
     form.probe_id.set(form.probe_id.get() + 1);
     form.filled.set(false);
-    if !url.starts_with("http") {
+    if !is_link(&url) {
         return;
     }
     set_text(form.info.get(), "Checking link…");
-    if app.manager.settings().predownload {
+    if app.manager.settings().predownload || is_torrent(&url, None) {
         let (directory, filename) = form.target(app);
         let chosen = form.chosen.get();
         let id = app.manager.prefetch(AddRequest {
@@ -86,6 +89,7 @@ fn watch(app: &Rc<App>, form: &Rc<Form>) {
     let early = form.early.borrow().as_ref().map(|(_, id)| id.clone());
     if let Some(s) = early.and_then(|id| app.manager.get(&id)) {
         let line = match s.status {
+            _ if s.torrent.is_some() => torrent_found(app, form, &s),
             Status::Connecting | Status::Queued => "Checking link…".to_string(),
             Status::Error => format!("Couldn't check the link: {}", s.error.as_deref().unwrap_or("unknown error")),
             Status::Completed => {
@@ -113,6 +117,14 @@ fn watch(app: &Rc<App>, form: &Rc<Form>) {
         Some((_, Err(err))) => set_text(form.info.get(), &format!("Couldn't check the link: {err}")),
         None => {}
     }
+}
+
+/// A torrent looked up: what's in it, shown where it goes once that's known.
+fn torrent_found(app: &Rc<App>, form: &Rc<Form>, s: &Snapshot) -> String {
+    if s.size.is_some() && s.status != Status::Error && !form.filled.replace(true) {
+        show_found(app, form, &s.filename, Some(s.directory.clone()));
+    }
+    torrent_info(s)
 }
 
 /// The server's name for the file, in its folder, unless the user chose where it goes.

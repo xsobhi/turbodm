@@ -2,8 +2,10 @@
 //! then start. The download quietly starts on one connection while the dialog is open (out of the
 //! list), so Start feels instant, and moves to the path chosen when it's confirmed, even if it
 //! already finished; Cancel throws away what was downloaded. Connections: as in Preferences.
+//! A torrent (magnet link, .torrent file) is only looked up meanwhile: what's in it and how big.
 
 mod link;
+pub mod torrent; // add_torrent_file, for the main window's menu
 
 use super::theme::{self, icon};
 use super::wnd::{self, field, is_checked, set_text, text, Rows, Window, FIELD, LINE};
@@ -13,9 +15,10 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use turbodm::categories::category_for;
 use turbodm::engine::manager::Confirm;
+use turbodm::engine::torrent::{is_magnet, is_torrent};
 use turbodm::engine::AddRequest;
 use turbodm::text::kind_words;
-use turbodm::util::filename_from_url;
+use turbodm::util::name_guess;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -49,13 +52,18 @@ impl Form {
         text(self.url.get()).trim().to_string()
     }
 
-    /// The path in the field as (folder, name); a bare name goes to the folder for its kind.
+    /// The path in the field as (folder, name); a bare name goes to the folder for its kind. A
+    /// folder alone (ending in "\"): a torrent whose name isn't known yet goes in it.
     fn target(&self, app: &App) -> (PathBuf, Option<String>) {
-        let path = PathBuf::from(text(self.path.get()).trim());
+        let typed = text(self.path.get()).trim().to_string();
+        let path = PathBuf::from(&typed);
+        if typed.ends_with(['\\', '/']) && path.is_absolute() {
+            return (path, None);
+        }
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).filter(|n| !n.trim().is_empty());
         let folder = match path.parent() {
             Some(dir) if dir.is_absolute() => dir.to_path_buf(),
-            _ => app.manager.settings().folder_for(name.as_deref().unwrap_or(&filename_from_url(&self.url()))),
+            _ => app.manager.settings().folder_for(name.as_deref().unwrap_or(&name_guess(&self.url()))),
         };
         (folder, name)
     }
@@ -81,7 +89,7 @@ pub fn open(app: &Rc<App>, req: AddRequest) {
     let settings = app.manager.settings();
     let owner = app.main.is_visible().then(|| app.main.window.hwnd());
     let window = Window::dialog("Download file info", owner, (620, 220), false);
-    let guess = req.filename.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| filename_from_url(&req.url));
+    let guess = first_guess(&req);
     let folder = req.directory.clone().unwrap_or_else(|| settings.folder_for(&guess));
     let form = Rc::new(Form {
         window: window.clone(),
@@ -95,6 +103,14 @@ pub fn open(app: &Rc<App>, req: AddRequest) {
     });
     let f = Rc::downgrade(&form);
     form.url.set(window.edit(&req.url, move || if let Some(f) = f.upgrade() { link::changed(&f) }));
+    let f = Rc::downgrade(&form);
+    let open_torrent = window.icon_button(icon::OPEN_FILE, move || {
+        let Some(f) = f.upgrade() else { return };
+        if let Some(file) = torrent::pick(f.window.hwnd()) {
+            set_text(f.url.get(), &file.display().to_string()); // its EN_CHANGE checks it
+        }
+    });
+    field::make_field(form.url.get(), vec![open_torrent]); // a .torrent file instead of a link
     let f = Rc::downgrade(&form);
     let path = window.edit(&folder.join(&guess).display().to_string(), move || if let Some(f) = f.upgrade() {
         // SAFETY: plain query (typed by the user, not filled in by us)
@@ -157,7 +173,7 @@ pub fn open(app: &Rc<App>, req: AddRequest) {
     if req.url.is_empty() {
         // like IDM: a link on the clipboard is the likely one
         if let Some(text) = shell::clipboard_text().map(|t| t.trim().to_string())
-            .filter(|t| t.starts_with("http://") || t.starts_with("https://")) {
+            .filter(|t| t.starts_with("http://") || t.starts_with("https://") || is_magnet(t)) {
             set_text(form.url.get(), &text); // its EN_CHANGE checks it
         }
     } else {
@@ -171,10 +187,25 @@ fn to_end(edit: HWND) {
     wnd::send(edit, 0x00B7, 0, 0); // EM_SCROLLCARET
 }
 
+/// Something the dialog can download: a web link, a magnet link or a .torrent file.
+fn is_link(url: &str) -> bool {
+    url.starts_with("http") || is_torrent(url, None)
+}
+
+/// The name to show before the download knows better (the name a browser gives a .torrent
+/// file is that file's, not what's in it).
+fn first_guess(req: &AddRequest) -> String {
+    match req.filename.as_deref().filter(|n| !n.is_empty()) {
+        Some(name) if is_torrent(&req.url, Some(name)) => name_guess(name),
+        Some(name) => name.to_string(),
+        None => name_guess(&req.url),
+    }
+}
+
 fn submit(app: &Rc<App>, form: &Rc<Form>, start_now: bool) {
     let url = form.url();
-    if !url.starts_with("http") {
-        set_text(form.info.get(), "Please enter an http(s) link");
+    if !is_link(&url) {
+        set_text(form.info.get(), "Please enter a link: http(s), a magnet link or a .torrent file");
         return;
     }
     let (directory, filename) = form.target(app);
