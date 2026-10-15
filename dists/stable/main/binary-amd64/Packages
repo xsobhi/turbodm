@@ -174,3 +174,25 @@ Description: Fast multi-connection download manager with browser integration
  browser extension for Firefox, Chrome, Brave and Chromium that hands downloads
  over with their cookies.
 
+Package: turbodm
+Architecture: amd64
+Version: 1.7.1-1
+Priority: optional
+Section: net
+Maintainer: xsobhi <59281574+xsobhi@users.noreply.github.com>
+Installed-Size: 10411
+Provides: tdm
+Depends: libc6 (>= 2.39), libcairo2 (>= 1.2.4), libglib2.0-0t64 (>= 2.54.0), libgraphene-1.0-0 (>= 1.5.4), libgtk-4-1 (>= 4.12.0), libpango-1.0-0 (>= 1.14.0)
+Filename: pool/main/t/turbodm/turbodm_1.7.1-1_amd64.deb
+Size: 2910200
+MD5sum: 2244fbc798fbe3a38174895a786c35c3
+SHA1: ff247942c13096322d567cc7788e657e67416c01
+SHA256: 8409ae76a71fabc6249cedf910d67f630eb6e519c4e68f19dc085849537936c4
+SHA512: e117643a9ff127fc660ee47a9a451e1e107af5d51d9abb528bd6f38c75b93051b3a77670128cef03182ace7c2ccc4ea4905048dd9ba6a5cc1c84bf6410edfe2f
+Homepage: https://github.com/xsobhi/turbodm
+Description: Fast multi-connection download manager with browser integration
+ TurboDM downloads files over up to 32 connections at once, in the spirit of
+ Internet Download Manager, with pause/resume that survives restarts and a
+ browser extension for Firefox, Chrome, Brave and Chromium that hands downloads
+ over with their cookies.
+
