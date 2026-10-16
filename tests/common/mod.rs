@@ -3,6 +3,7 @@
 #![allow(dead_code)] // each test file uses part of it
 
 pub mod harness;
+pub mod video;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
