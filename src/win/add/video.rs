@@ -1,12 +1,14 @@
 //! The Add dialog for a web page with a video, like IDM's "Download this video": the video's
 //! title, and instead of the file's size the ways it can be downloaded (found by yt-dlp): each
 //! height as MP4, WebM or MKV (the Format beside the Quality), or the sound alone as MP3, M4A or
-//! Opus. Starting it is start.rs; yt-dlp and FFmpeg are got first if they're missing (helpers.rs).
+//! Opus; the one picked in the browser's menu, if it came from there. The quality picked starts
+//! downloading behind the dialog (early.rs); starting it is start.rs; yt-dlp and FFmpeg are got
+//! first if they're missing (helpers.rs).
 
 use super::super::wnd::{enable, set_text};
 use super::super::{helpers, App};
 use super::start::{hint, with_ext};
-use super::{link, to_end, Form};
+use super::{early, link, to_end, Form};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -122,7 +124,10 @@ fn title_line(found: &VideoInfo) -> String {
 /// The video found: its title, formats and qualities (what was picked last time, or the usual).
 fn show(app: &Rc<App>, form: &Rc<Form>, found: VideoInfo) {
     let settings = app.manager.settings();
-    let first = found.first(&settings.video_quality, &settings.video_format, tools::ffmpeg().is_some());
+    // the quality picked in the browser's menu, else the one picked last time
+    let choice = form.req.video.as_ref().map(|v| v.choice.as_str()).filter(|c| !c.is_empty() && form.url() == form.req.url);
+    let first = choice.and_then(|c| found.chosen(c))
+        .unwrap_or_else(|| found.first(&settings.video_quality, &settings.video_format, tools::ffmpeg().is_some()));
     let containers = found.containers();
     let container = match first.want {
         Want::Video(_, container) => container,
@@ -174,7 +179,7 @@ fn fill(app: &Rc<App>, form: &Rc<Form>, container: Container, want: Option<Want>
     pick(app, form, index);
 }
 
-/// One was picked: its file name (extension) and what it takes.
+/// One was picked: its file name (extension) and what it takes; it downloads meanwhile.
 fn pick(app: &Rc<App>, form: &Rc<Form>, index: usize) {
     form.video.picked.set(index);
     let Some(plan) = form.video.plan() else { return };
@@ -190,8 +195,9 @@ fn pick(app: &Rc<App>, form: &Rc<Form>, index: usize) {
             (app.manager.settings().folder_for(&name), name)
         }
     };
-    set_text(form.path.get(), &folder.join(name).display().to_string());
+    set_text(form.path.get(), &folder.join(&name).display().to_string());
     to_end(form.path.get());
     form.update_remember();
     set_text(form.info.get(), &hint(&plan));
+    early::start(app, form, &plan, &folder, &name);
 }

@@ -1,8 +1,9 @@
 //! Confirming a download the add dialog started early (`Manager::prefetch`): moving it to the
-//! chosen name and folder and giving it all its connections.
+//! chosen name and folder and giving it all its connections. A video's parts move alike.
 
 use super::Manager;
 use crate::engine::task::{Status, Task, TaskInfo};
+use crate::engine::video;
 use crate::util::{part_path, sanitize_filename, unique_path};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -24,6 +25,9 @@ impl Manager {
         let Some(task) = self.find(id) else { return };
         if task.is_torrent() {
             return self.confirm_torrent(&task, choice);
+        }
+        if task.info.lock().unwrap().video.is_some() {
+            return self.confirm_video(task, choice);
         }
         // from the early single connection to all of them, without reconnecting (set right
         // away: the progress window opening next shows that many)
@@ -67,6 +71,36 @@ impl Manager {
         if choice.start {
             self.start_task(task); // no-op if its runner is waiting; again if it had failed
         }
+    }
+}
+
+impl Manager {
+    /// A video: its parts (or the video, once made) move as a file does, renamed as they
+    /// download; while its file is being made, or yt-dlp downloads it, it's stopped to be moved.
+    fn confirm_video(self: &Arc<Self>, task: Arc<Task>, choice: Confirm) {
+        task.info.lock().unwrap().connections = choice.connections;
+        task.grow.notify_one(); // (more connections for the part under way, nothing reconnects)
+        let me = self.clone();
+        self.rt.spawn(async move {
+            let name = choice.filename.as_deref().filter(|n| !n.trim().is_empty()).map(sanitize_filename)
+                .or_else(|| task.info.lock().unwrap().filename.clone()).unwrap_or_else(|| "video".into());
+            let name = me.name_to_move_to(&task, &choice.directory, name);
+            if !video::move_running(&task, &name, &choice.directory) {
+                me.stop_and_wait(&task).await;
+                let (task2, dir) = (task.clone(), choice.directory.clone());
+                let moved = tokio::task::spawn_blocking(move || video::move_stopped(&task2, &name, &dir)).await;
+                if let Ok(Err(err)) = moved {
+                    task.info.lock().unwrap().error = Some(format!("Cannot move the file: {err}"));
+                }
+            }
+            if choice.start {
+                me.start_task(&task); // no-op if still running or already complete
+            } else {
+                me.stop_and_wait(&task).await;
+            }
+            task.pending.store(false, Ordering::Relaxed); // listed, saved, events from here on
+            me.dirty.store(true, Ordering::Relaxed);
+        });
     }
 }
 

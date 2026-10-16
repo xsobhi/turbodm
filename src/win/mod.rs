@@ -133,9 +133,13 @@ impl App {
                     self.handle_download(req, silent);
                 }
             }
-            Message::Video { url, referrer, cookies, user_agent, silent } => { // (add/video.rs)
-                self.handle_video(AddRequest { url, referrer, cookies, user_agent, ..Default::default() }, silent);
+            Message::Video { url, referrer, cookies, user_agent, silent, choice } => { // (add/video.rs)
+                // (a quality picked in the browser's menu: its dialog opens with it)
+                let video = Some(turbodm::engine::video::VideoJob { choice: choice.unwrap_or_default(), ..Default::default() });
+                self.handle_video(AddRequest { url, referrer, cookies, user_agent, video, ..Default::default() }, silent);
             }
+            // the browser's menu needs the helpers (it was told so): the window that gets them
+            Message::VideoQualities { .. } => helpers::with_helpers(self, |_| {}),
             Message::VideoPeek { url, referrer, cookies, user_agent } => {
                 let headers = turbodm::engine::http::Headers { user_agent, referrer, cookies, extra: vec![] };
                 turbodm::engine::video::look_ahead(&self.manager.shared, &self.rt, url, headers);
@@ -194,7 +198,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
     APP.with(|a| { let _ = a.set(app.clone()); });
 
     let (to_ui, from_ipc) = async_channel::unbounded::<Message>();
-    runtime.spawn(ipc::server::serve(listener, to_ui));
+    runtime.spawn(ipc::server::serve(listener, to_ui, app.manager.shared.clone()));
     runtime.spawn(async move {
         while let Ok(message) = from_ipc.recv().await {
             post(move |app| app.handle_message(message));

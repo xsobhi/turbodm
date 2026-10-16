@@ -4,7 +4,7 @@ use super::{AddRequest, Manager};
 use crate::config::Settings;
 use crate::engine::state::{self, Snapshot};
 use crate::engine::task::{Status, Task};
-use crate::engine::torrent;
+use crate::engine::{torrent, video};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -206,8 +206,10 @@ impl Manager {
         self.listed().iter().map(|t| t.speed()).sum()
     }
 
+    /// Downloading, or about to: a video's qualities are being found, or were just shown in the
+    /// browser, whose choice comes next (a TurboDM started by the browser doesn't quit meanwhile).
     pub fn busy(&self) -> bool {
-        self.all().iter().any(|t| t.status().is_active() || t.status() == Status::Queued)
+        self.all().iter().any(|t| t.status().is_active() || t.status() == Status::Queued) || video::wanted()
     }
 
 }

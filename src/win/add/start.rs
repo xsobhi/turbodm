@@ -5,9 +5,10 @@
 
 use super::super::wnd::set_text;
 use super::super::{browsers, helpers, progress, App};
-use super::{done, remember_folder, Form};
+use super::{done, early, remember_folder, Form};
 use std::rc::Rc;
 use turbodm::engine::video::{self, remembered, tools, Output, Plan, VideoJob};
+use turbodm::engine::manager::Confirm;
 use turbodm::engine::AddRequest;
 use turbodm::util::human_size;
 
@@ -28,7 +29,9 @@ impl App {
             if !silent && app.manager.settings().show_add_dialog {
                 super::open_form(app, req, true);
             } else {
-                let id = app.manager.add(AddRequest { start: true, video: Some(Default::default()), ..req });
+                // (the quality picked in the browser's menu, if it's from there; else the usual)
+                let video = Some(req.video.clone().unwrap_or_default());
+                let id = app.manager.add(AddRequest { start: true, video, ..req });
                 if app.manager.settings().show_progress_window {
                     progress::open(app, &id);
                 }
@@ -66,9 +69,17 @@ pub(super) fn submit(app: &Rc<App>, form: &Rc<Form>, start_now: bool) {
         }
         app.manager.update_settings(settings);
     }
-    let id = app.manager.add(AddRequest { url: found.url.clone(), filename: Some(name), directory: Some(directory),
-                                          start: start_now, video: Some(VideoJob::new(&found, &plan)),
-                                          ..form.req.clone() });
+    let id = match form.take_early(app, Some(&early::key(&found.url, &plan))) {
+        // downloading already: moved to the chosen name and folder, finished or not
+        Some(id) => {
+            let connections = app.manager.settings().connections;
+            app.manager.confirm(&id, Confirm { filename: Some(name), directory, connections, start: start_now });
+            id
+        }
+        None => app.manager.add(AddRequest { url: found.url.clone(), filename: Some(name), directory: Some(directory),
+                                             start: start_now, video: Some(VideoJob::new(&found, &plan)),
+                                             ..form.req.clone() }),
+    };
     done(app, form, &id, start_now);
 }
 

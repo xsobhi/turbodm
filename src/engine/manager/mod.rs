@@ -118,7 +118,7 @@ impl Manager {
         info.filename = if is_torrent {
             name // its place is settled once its files are known (the runner)
         } else {
-            name.map(|n| self.unused_name(&dir, n))
+            name.map(|n| self.unused_name(&dir, n, req.video.is_some()))
         };
         info.torrent = is_torrent.then(TorrentMeta::default);
         if auto_dir && info.filename.is_none() {

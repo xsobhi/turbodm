@@ -5,6 +5,7 @@
 //! A web page with a video (video.rs) shows the video's title and its qualities instead.
 //! A torrent (magnet link, .torrent file) is only looked up meanwhile: what's in it and how big.
 
+mod early;
 mod form;
 mod link;
 mod start;

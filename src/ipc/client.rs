@@ -6,17 +6,23 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// How long to wait for the answer: a page's look (`VideoQualities`) may take a while.
 #[cfg(unix)]
-fn connect() -> std::io::Result<std::os::unix::net::UnixStream> {
+fn answer_within(message: &Message) -> Duration {
+    Duration::from_secs(if matches!(message, Message::VideoQualities { .. }) { 600 } else { 10 })
+}
+
+#[cfg(unix)]
+fn connect(message: &Message) -> std::io::Result<std::os::unix::net::UnixStream> {
     let stream = std::os::unix::net::UnixStream::connect(socket_path())?;
-    stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+    stream.set_read_timeout(Some(answer_within(message)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     Ok(stream)
 }
 
 /// The app's named pipe, opened like a file (retried while it's busy with another client).
 #[cfg(windows)]
-fn connect() -> std::io::Result<std::fs::File> {
+fn connect(_: &Message) -> std::io::Result<std::fs::File> {
     const PIPE_BUSY: i32 = 231;
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -31,7 +37,7 @@ fn connect() -> std::io::Result<std::fs::File> {
 
 /// Send one message to the running app.
 pub fn send(message: &Message) -> std::io::Result<Reply> {
-    let mut stream = connect()?;
+    let mut stream = connect(message)?;
     let mut out = serde_json::to_vec(message)?;
     out.push(b'\n');
     stream.write_all(&out)?;

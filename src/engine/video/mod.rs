@@ -7,9 +7,12 @@
 mod args;
 mod direct;
 mod formats;
+mod fresh;
 mod info;
 mod make;
+mod menu;
 mod names;
+mod place;
 mod plan;
 mod probe;
 mod process;
@@ -22,7 +25,9 @@ pub mod tools;
 mod ytdlp;
 
 pub use info::{remembered, Container, Plan, Sound, VideoInfo, Want};
+pub use menu::{choice_id, qualities, want_of, wanted, NEEDS_HELPERS};
 pub use names::{filename, remove_files};
+pub use place::{move_running, move_stopped};
 pub use probe::{forget, look_ahead, probe};
 pub use run::run;
 pub use sites::{is_video_site, is_web_page, is_youtube};
@@ -30,6 +35,7 @@ pub use sites::{is_video_site, is_web_page, is_youtube};
 use super::segments::Segment;
 use super::task::TaskInfo;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 /// What's made of a video's parts once they're in.
@@ -95,6 +101,7 @@ pub struct VideoJob {
     pub output: Output,
     pub sources: Vec<Source>, // its parts, downloaded by TurboDM in turn
     pub by_ytdlp: bool,       // yt-dlp downloads it itself (fragments, or TurboDM couldn't)
+    pub choice: String, // with `format` empty: the quality picked in the browser ("1080p/mp4")
 }
 
 impl VideoJob {
@@ -110,6 +117,7 @@ impl VideoJob {
             output: plan.output,
             sources: plan.sources.clone(),
             by_ytdlp: false,
+            choice: menu::choice_id(plan.want),
         }
     }
 
@@ -150,6 +158,7 @@ pub fn shown_segments(job: &VideoJob, current: Vec<Segment>) -> Vec<Segment> {
 pub struct Live {
     activity: Mutex<Option<&'static str>>,
     parts: Mutex<Vec<Segment>>,
+    making: AtomicBool, // its file is being made of its parts: they stay where they are
 }
 
 impl Live {
@@ -159,6 +168,15 @@ impl Live {
 
     pub fn parts(&self) -> Vec<Segment> {
         self.parts.lock().unwrap().clone()
+    }
+
+    /// Its file is being made (or was just made and isn't said to be done yet).
+    pub fn making(&self) -> bool {
+        self.making.load(Ordering::SeqCst)
+    }
+
+    fn set_making(&self) {
+        self.making.store(true, Ordering::SeqCst);
     }
 
     fn set_activity(&self, what: Option<&'static str>) {
@@ -172,6 +190,7 @@ impl Live {
     /// Nothing is running: nothing is under way.
     fn stopped(&self) {
         self.set_activity(None);
+        self.making.store(false, Ordering::SeqCst);
         self.parts.lock().unwrap().iter_mut().for_each(|p| p.active = false);
     }
 }
