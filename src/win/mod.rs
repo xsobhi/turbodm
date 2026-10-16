@@ -136,6 +136,10 @@ impl App {
             Message::Video { url, referrer, cookies, user_agent, silent } => { // (add/video.rs)
                 self.handle_video(AddRequest { url, referrer, cookies, user_agent, ..Default::default() }, silent);
             }
+            Message::VideoPeek { url, referrer, cookies, user_agent } => {
+                let headers = turbodm::engine::http::Headers { user_agent, referrer, cookies, extra: vec![] };
+                turbodm::engine::video::look_ahead(&self.manager.shared, &self.rt, url, headers);
+            }
         }
     }
 }

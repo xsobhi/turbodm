@@ -1,7 +1,9 @@
 // TurboDM's "Download this video" button, like IDM's: it shows over a video while the mouse is
 // on it (and for a few seconds when one starts playing). A click sends the page, or the frame
 // that plays the video (an embedded YouTube player, say), to TurboDM, which offers its qualities
-// and formats (MP4, MP3…). Runs in every frame of every page; costs nothing until a video shows.
+// and formats (MP4, MP3…). When it shows, TurboDM (if running) starts looking at the video, so the
+// qualities are ready by the click. Its × hides it for that video. Runs in every frame of every
+// page; costs nothing until a video shows.
 "use strict";
 
 (() => {
@@ -20,6 +22,8 @@
   let button = null;
   let label = null;
   let shownFor = null; // the video it's over
+  const dismissed = new Set(); // videos (their addresses) whose button was closed
+  const peeked = new Set(); // videos TurboDM was told to look at
   let hideTimer = 0;
   let pending = false; // a mouse move waiting for the next frame
 
@@ -37,24 +41,41 @@
     const root = host.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = `
-      button {
-        display: flex; align-items: center; gap: 7px;
-        padding: 7px 13px 7px 10px; border: 0; border-radius: 18px;
-        font: 600 13px/1 system-ui, "Segoe UI", sans-serif; color: #fff;
-        background: #2e9a4f; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-        cursor: pointer; white-space: nowrap; opacity: 0.94;
+      .pill {
+        display: flex; align-items: stretch; border-radius: 18px; overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); opacity: 0.94;
       }
-      button:hover { background: #26843f; opacity: 1; }
+      .pill:hover { opacity: 1; }
+      button {
+        display: flex; align-items: center; gap: 7px; border: 0; margin: 0;
+        font: 600 13px/1 system-ui, "Segoe UI", sans-serif; color: #fff;
+        background: #2e9a4f; cursor: pointer; white-space: nowrap;
+      }
+      button:hover { background: #26843f; }
+      .go { padding: 7px 11px 7px 10px; }
+      .x { padding: 0 10px 0 8px; font-size: 16px; font-weight: 400; border-left: 1px solid rgba(255, 255, 255, 0.3); }
       svg { width: 16px; height: 16px; flex: none; }`;
-    button = document.createElement("button");
-    button.title = "Download this video with TurboDM";
-    button.append(arrow());
+    button = document.createElement("div");
+    button.className = "pill";
+    const go = document.createElement("button");
+    go.className = "go";
+    go.title = "Download this video with TurboDM";
+    go.append(arrow());
     label = document.createElement("span");
     label.textContent = "Download this video";
-    button.append(label);
-    button.addEventListener("click", send);
+    go.append(label);
+    go.addEventListener("click", send);
+    const close = document.createElement("button");
+    close.className = "x";
+    close.title = "Hide this for this video";
+    close.textContent = "\u00d7";
+    close.addEventListener("click", () => {
+      if (shownFor) dismissed.add(message(shownFor).url);
+      hide();
+    });
+    button.append(go, close);
     // (the page mustn't see these clicks: a player would pause or go full screen)
-    for (const type of ["mousedown", "mouseup", "dblclick", "pointerdown", "pointerup"]) {
+    for (const type of ["click", "mousedown", "mouseup", "dblclick", "pointerdown", "pointerup"]) {
       button.addEventListener(type, (e) => e.stopPropagation());
     }
     button.addEventListener("mouseenter", () => clearTimeout(hideTimer));
@@ -95,6 +116,9 @@
     if (!on) return;
     const r = big(video);
     if (!r) return;
+    const what = message(video);
+    if (dismissed.has(what.url)) return;
+    lookAhead(what);
     if (!host) make();
     // in full screen only what's inside the full-screen element shows
     const parent = document.fullscreenElement || document.documentElement;
@@ -169,6 +193,18 @@
     if (/^https?:/i.test(src)) return { type: "media-file", url: src, referrer: location.href };
     const url = video ? permalink(video) : location.href; // (in a frame: the embedded player's)
     return { type: "video", url, referrer: document.referrer || null };
+  }
+
+  // TurboDM, if it's running, starts looking at the video now (it isn't started for this):
+  // its qualities are ready by the time they're asked for. Once per video.
+  function lookAhead(what) {
+    if (what.type !== "video" || peeked.has(what.url)) return;
+    peeked.add(what.url);
+    try {
+      api.runtime.sendMessage({ type: "video-peek", url: what.url, referrer: what.referrer }).catch(() => {});
+    } catch {
+      /* the extension was updated or turned off */
+    }
   }
 
   async function send() {

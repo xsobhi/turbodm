@@ -44,6 +44,17 @@ pub enum Message {
         #[serde(default)]
         silent: bool, // no dialog: the usual quality
     },
+    /// A video playing in the browser: look at its page now, so its qualities are ready when
+    /// it's asked for (1.9.1; only for a TurboDM already running, which an older one ignores).
+    VideoPeek {
+        url: String,
+        #[serde(default)]
+        referrer: Option<String>,
+        #[serde(default)]
+        cookies: Option<String>,
+        #[serde(default)]
+        user_agent: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -92,6 +103,14 @@ mod tests {
             Message::Video { url, cookies, user_agent, referrer, silent } => {
                 assert_eq!((url.as_str(), cookies.as_deref(), user_agent.as_deref(), referrer, silent),
                            ("https://youtu.be/x", Some("a=1"), Some("UA"), None, false));
+            }
+            other => panic!("wrong message {other:?}"),
+        }
+        // a video playing: the extension's early look
+        let json = r#"{"type":"videoPeek","url":"https://youtu.be/x","referrer":null,"userAgent":"UA"}"#;
+        match serde_json::from_str::<Message>(json).unwrap() {
+            Message::VideoPeek { url, user_agent, cookies, .. } => {
+                assert_eq!((url.as_str(), user_agent.as_deref(), cookies), ("https://youtu.be/x", Some("UA"), None));
             }
             other => panic!("wrong message {other:?}"),
         }

@@ -4,8 +4,17 @@
 use super::args::common;
 use super::{formats, is_youtube, process, sites, tools, VideoInfo};
 use crate::engine::http::Headers;
+use std::collections::HashMap;
 use std::path::Path;
-use std::time::Duration;
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{Duration, Instant};
+
+/// Pages looked at lately, and looks under way: a look the browser started early (while the
+/// video played) is what the dialog gets when asked, at once or as soon as it's done. Kept 10
+/// minutes (the addresses inside last hours); failures aren't kept.
+type Look = Arc<tokio::sync::OnceCell<Result<VideoInfo, String>>>;
+static LOOKS: LazyLock<Mutex<HashMap<String, (Instant, Look)>>> = LazyLock::new(Default::default);
+const KEEP: Duration = Duration::from_secs(600);
 
 /// YouTube works best without the browser's cookies (with them yt-dlp must use pickier
 /// players); they're kept for when it asks to sign in. Other sites get them from the start.
@@ -53,6 +62,37 @@ pub(super) fn error_of(stderr: &str) -> Option<String> {
 /// needed, retries with the browser's cookies when the site asks to sign in, and with the
 /// latest yt-dlp when it looks out of date.
 pub async fn probe(client: &reqwest::Client, url: &str, headers: &Headers, timeout: u64) -> Result<VideoInfo, String> {
+    let look = {
+        let mut looks = LOOKS.lock().unwrap();
+        looks.retain(|_, (at, _)| at.elapsed() < KEEP);
+        looks.entry(url.to_string()).or_insert_with(|| (Instant::now(), Look::default())).1.clone()
+    };
+    let found = look.get_or_init(|| look_at(client, url, headers, timeout)).await.clone();
+    if found.is_err() {
+        forget(url); // (the next ask tries again)
+    }
+    found
+}
+
+/// A video playing in the browser: look at its page now, in the background, so the dialog has
+/// it at once when it's asked for. Only once yt-dlp is here (it isn't fetched for this); the same
+/// page isn't looked at twice (`probe` keeps it).
+pub fn look_ahead(shared: &crate::engine::Shared, rt: &tokio::runtime::Handle, url: String, headers: Headers) {
+    if tools::yt_dlp_now().is_none() {
+        return;
+    }
+    let (client, timeout) = (shared.client(), shared.settings().timeout_secs);
+    rt.spawn(async move {
+        let _ = probe(&client, &url, &headers, timeout).await;
+    });
+}
+
+/// Look at the page afresh next time (its addresses expired).
+pub fn forget(url: &str) {
+    LOOKS.lock().unwrap().remove(url);
+}
+
+async fn look_at(client: &reqwest::Client, url: &str, headers: &Headers, timeout: u64) -> Result<VideoInfo, String> {
     let mut exe = tools::yt_dlp(client).await?;
     let mut cookies = cookies_first(url) && headers.cookies.is_some();
     let (mut page, mut updated) = (url.to_string(), false);
@@ -83,21 +123,33 @@ async fn probe_once(exe: &Path, url: &str, headers: &Headers, cookies: bool, tim
     command.args(["-J", "--playlist-items", "1", "--"]).arg(url);
     let mut running = process::Running::spawn(command).map_err(|e| format!("yt-dlp doesn't start: {e}"))?;
     let (mut stdout, mut stderr) = (running.child.stdout.take(), running.child.stderr.take());
+    // (what yt-dlp said so far stays, to tell why if it never finishes)
+    let (mut out, mut err) = (vec![], String::new());
     let read = async {
-        use tokio::io::AsyncReadExt;
-        let (mut out, mut err) = (vec![], vec![]);
-        let (a, b) = tokio::join!(async { if let Some(s) = &mut stdout { s.read_to_end(&mut out).await } else { Ok(0) } },
-                                  async { if let Some(s) = &mut stderr { s.read_to_end(&mut err).await } else { Ok(0) } });
-        a.and(b).map(|_| (out, err))
+        use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+        let output = async { if let Some(s) = &mut stdout { s.read_to_end(&mut out).await.map(|_| ()) } else { Ok(()) } };
+        let said = async {
+            if let Some(s) = &mut stderr {
+                let mut lines = BufReader::new(s).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    err.push_str(&line);
+                    err.push('\n');
+                }
+            }
+        };
+        tokio::join!(output, said).0
     };
     // a page that never answers: give up after a while
     let read = tokio::time::timeout(Duration::from_secs(timeout.max(30) * 4), read).await;
-    let Ok(Ok((out, err))) = read else {
+    if !matches!(read, Ok(Ok(()))) {
         running.stop().await;
-        return Err("The page took too long to answer".into());
-    };
+        let last = err.lines().rev().map(str::trim).find(|l| !l.is_empty()).map(|l| l.chars().take(140).collect::<String>());
+        return Err(match last {
+            Some(last) => format!("The page took too long to answer (yt-dlp's last words: {last})"),
+            None => "The page took too long to answer".into(),
+        });
+    }
     let status = running.child.wait().await.map_err(|e| e.to_string())?;
-    let err = String::from_utf8_lossy(&err);
     if !status.success() || out.is_empty() {
         return Err(error_of(&err).unwrap_or_else(|| format!("yt-dlp couldn't read the page ({status})")));
     }

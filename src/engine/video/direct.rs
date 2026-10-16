@@ -77,6 +77,7 @@ async fn refresh(task: &Task, shared: &Shared, cancel: &CancellationToken) -> Re
         (info.url.clone(), info.headers(), ids)
     };
     let client = shared.client();
+    super::forget(&url);
     let looked = tokio::select! {
         found = probe(&client, &url, &headers, shared.settings().timeout_secs) => found,
         _ = cancel.cancelled() => return Ok(true), // (paused: the loop sees it)

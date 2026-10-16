@@ -23,7 +23,7 @@ mod ytdlp;
 
 pub use info::{remembered, Container, Plan, Sound, VideoInfo, Want};
 pub use names::{filename, remove_files};
-pub use probe::probe;
+pub use probe::{forget, look_ahead, probe};
 pub use run::run;
 pub use sites::{is_video_site, is_web_page, is_youtube};
 

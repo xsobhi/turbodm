@@ -42,8 +42,9 @@ pub fn run() -> i32 {
     let mut output = std::io::stdout().lock();
     while let Some(raw) = read_message(&mut input) {
         let reply = match serde_json::from_slice::<Message>(&raw) {
-            // a status check from the popup must not launch the app
+            // a status check from the popup, or a video merely playing, must not launch the app
             Ok(Message::Ping) => send(&Message::Ping).unwrap_or(Reply { ok: true, ..Default::default() }),
+            Ok(peek @ Message::VideoPeek { .. }) => send(&peek).unwrap_or(Reply { ok: true, ..Default::default() }),
             Ok(message) => send_or_launch(&message).unwrap_or_else(|e| Reply::error(e.to_string())),
             Err(err) => Reply::error(format!("bad message: {err}")),
         };

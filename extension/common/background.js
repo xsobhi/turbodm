@@ -204,7 +204,16 @@ api.contextMenus.onClicked.addListener((info, tab) => {
 // The popup's "Download video on this page" (the popup can't wait for an answer once it closes),
 // and the "Download this video" button on videos (videobutton.js).
 // A plain video file playing on a page ("media-file") goes as an ordinary download.
+// "video-peek": a video playing, for a running TurboDM to look at early (it isn't started for it).
 api.runtime.onMessage.addListener((message, sender, reply) => {
+  if (message && message.type === "video-peek") {
+    const storeId = sender.tab && sender.tab.cookieStoreId;
+    cookieHeader(message.url, storeId).then((cookies) =>
+      sendNative({ type: "videoPeek", url: message.url, referrer: message.referrer || null,
+                   cookies: cookies || null, userAgent: navigator.userAgent }).catch(() => {}),
+    );
+    return false;
+  }
   if (!message || !["video", "media-file"].includes(message.type)) return false;
   const storeId = message.storeId ?? (sender.tab && sender.tab.cookieStoreId);
   const hand = message.type === "video" ? handOffVideo : handOff;
