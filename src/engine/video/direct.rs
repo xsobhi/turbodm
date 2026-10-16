@@ -1,10 +1,12 @@
 //! A video's parts downloaded by TurboDM's own connections, like any file: many at once, the
 //! progress live, resumable after a restart. Their addresses come from yt-dlp and expire after
-//! hours: when the site turns one down, the page is looked at again for fresh ones, and what's
-//! downloaded is kept if it's the same stream.
+//! hours: when the site turns one down, the page is looked at again for fresh ones (fresh.rs),
+//! and what's downloaded is kept if it's the same stream. The add dialog may move a download
+//! that's under way (`Manager::confirm`): a part's files are where its name says when used.
 
+use super::fresh::refresh;
 use super::names::{part_file, stem};
-use super::{probe, Source};
+use super::Source;
 use crate::engine::http::{self, FetchError, Headers};
 use crate::engine::runner::open_part;
 use crate::engine::segments::SegmentMap;
@@ -64,39 +66,6 @@ pub(super) async fn run(task: &Arc<Task>, shared: &Shared, cancel: &Cancellation
             return Ok(Ending::Paused);
         }
     }
-}
-
-/// Look at the page again for fresh addresses of the same streams. False: it no longer has
-/// them (yt-dlp, which can fall back to others, takes over).
-async fn refresh(task: &Task, shared: &Shared, cancel: &CancellationToken) -> Result<bool, String> {
-    task.video.set_activity(Some("Looking at the page again…"));
-    let (url, headers, ids) = {
-        let info = task.info.lock().unwrap();
-        let job = info.video.clone().unwrap_or_default();
-        let ids: Vec<String> = if job.sources.is_empty() { job.parts.iter().map(|(id, _)| id.clone()).collect() }
-                               else { job.sources.iter().map(|s| s.format_id.clone()).collect() };
-        (info.url.clone(), info.headers(), ids)
-    };
-    let client = shared.client();
-    super::forget(&url);
-    let looked = tokio::select! {
-        found = probe(&client, &url, &headers, shared.settings().timeout_secs) => found,
-        _ = cancel.cancelled() => return Ok(true), // (paused: the loop sees it)
-    };
-    task.video.set_activity(None);
-    let found = looked?;
-    let fresh: Option<Vec<Source>> = ids.iter().map(|id| found.formats.iter().find(|f| f.format_id == *id)
-        .map(|f| f.source(found.duration))).collect();
-    let Some(mut fresh) = fresh.filter(|f| !f.is_empty()) else { return Ok(false) };
-    let mut info = task.info.lock().unwrap();
-    if let Some(job) = info.video.as_mut() {
-        for (new, old) in fresh.iter_mut().zip(&job.sources) {
-            new.done = old.done;
-        }
-        job.sources = fresh;
-        job.with_cookies = found.with_cookies;
-    }
-    Ok(true)
 }
 
 /// What a part's address wants sent with it.

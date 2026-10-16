@@ -7,6 +7,7 @@
 mod args;
 mod direct;
 mod formats;
+mod fresh;
 mod info;
 mod make;
 mod menu;
