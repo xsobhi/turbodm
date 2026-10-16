@@ -6,7 +6,7 @@ use super::theme::{self, Font};
 use super::wnd::labels::Kind;
 use super::wnd::tabs::TABS;
 use super::wnd::{self, enable, is_checked, place, rect, set_text, set_visible, text, Window, FIELD, LINE};
-use super::{browsers, shell, App};
+use super::{browsers, helpers, shell, App};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use turbodm::config::MAX_CONNECTIONS;
@@ -72,6 +72,12 @@ pub fn open(app: &Rc<App>) {
     let seed = switch(s.seed);
     let a = app.clone();
     let add_browser = window.button("Add to your browser\u{2026}", move || browsers::open(&a));
+    // the helpers videos need (yt-dlp, FFmpeg): here, or got from here (the setup window asks)
+    let a = app.clone();
+    let helpers_ready = helpers::ready();
+    let video_helpers = window.button(if helpers_ready { "Installed" } else { "Get them\u{2026}" },
+                                      move || helpers::with_helpers(&a, |_| {}));
+    enable(video_helpers, !helpers_ready);
 
     use Line::{Heading, Setting};
     let pages: [Vec<Line>; 3] = [
@@ -79,6 +85,8 @@ pub fn open(app: &Rc<App>) {
              Setting("Ask where to save them (Download file info)", confirm, 44),
              Setting("Start downloading while it's open", predownload, 44),
              Setting("Browser integration", add_browser, 200),
+             Heading("Videos"),
+             Setting("Helpers for videos (yt-dlp and FFmpeg)", video_helpers, 130),
              Heading("Windows and notices"),
              Setting("Open a progress window when a download starts", progress, 44),
              Setting("Show the Download complete window", complete, 44),
