@@ -1,8 +1,10 @@
 //! The app side: a user-only Unix socket (a named pipe on Windows) that accepts one JSON
 //! message per line.
 
-use super::{Message, Reply};
+use super::{qualities, Message, Reply};
+use crate::engine::Shared;
 use std::path::Path;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
 const MAX_MESSAGE: u64 = 1 << 20;
@@ -38,11 +40,11 @@ mod unix {
     }
 
     /// Accept connections forever, forwarding every non-ping message to the UI.
-    pub async fn serve(listener: Listener, to_ui: async_channel::Sender<Message>) {
+    pub async fn serve(listener: Listener, to_ui: async_channel::Sender<Message>, shared: Arc<Shared>) {
         while let Ok((stream, _)) = listener.accept().await {
-            let to_ui = to_ui.clone();
+            let (to_ui, shared) = (to_ui.clone(), shared.clone());
             tokio::spawn(async move {
-                let _ = handle(stream, to_ui).await;
+                let _ = handle(stream, to_ui, &shared).await;
             });
         }
     }
@@ -65,27 +67,31 @@ mod windows {
     }
 
     /// Accept connections forever, forwarding every non-ping message to the UI.
-    pub async fn serve((name, mut server): Listener, to_ui: async_channel::Sender<Message>) {
+    pub async fn serve((name, mut server): Listener, to_ui: async_channel::Sender<Message>, shared: Arc<Shared>) {
         loop {
             if server.connect().await.is_err() {
                 return;
             }
             let Ok(next) = ServerOptions::new().reject_remote_clients(true).create(&name) else { return };
             let connected = std::mem::replace(&mut server, next); // a new instance for the next client
-            let to_ui = to_ui.clone();
+            let (to_ui, shared) = (to_ui.clone(), shared.clone());
             tokio::spawn(async move {
-                let _ = handle(connected, to_ui).await;
+                let _ = handle(connected, to_ui, &shared).await;
             });
         }
     }
 }
 
-async fn handle(stream: impl AsyncRead + AsyncWrite, to_ui: async_channel::Sender<Message>) -> std::io::Result<()> {
+/// One message, one reply: a `VideoQualities` is answered here (it waits for the page's look);
+/// the rest go to the UI.
+async fn handle(stream: impl AsyncRead + AsyncWrite, to_ui: async_channel::Sender<Message>, shared: &Shared)
+                -> std::io::Result<()> {
     let (read, mut write) = tokio::io::split(stream);
     let mut line = String::new();
     BufReader::new(read.take(MAX_MESSAGE)).read_line(&mut line).await?;
     let reply = match serde_json::from_str::<Message>(line.trim()) {
         Ok(Message::Ping) => Reply::ok(),
+        Ok(ask @ Message::VideoQualities { .. }) => qualities::answer(shared, &to_ui, ask).await,
         Ok(message) => match to_ui.send(message).await {
             Ok(()) => Reply::ok(),
             Err(_) => Reply::error("TurboDM is shutting down"),

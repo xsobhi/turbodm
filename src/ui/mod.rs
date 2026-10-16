@@ -99,7 +99,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
     });
     let (manager, events) = Manager::new(Settings::load(), config::downloads_file(), runtime.handle().clone());
     let (to_ui, from_ipc) = async_channel::unbounded::<Message>();
-    runtime.spawn(ipc::server::serve(listener, to_ui.clone()));
+    runtime.spawn(ipc::server::serve(listener, to_ui.clone(), manager.shared.clone()));
     for message in messages {
         let _ = to_ui.try_send(message);
     }
@@ -184,10 +184,12 @@ fn listen_ipc(ctx: &Rc<Ctx>, rx: async_channel::Receiver<Message>) {
                     let headers = turbodm::engine::http::Headers { user_agent, referrer, cookies, extra: vec![] };
                     turbodm::engine::video::look_ahead(&ctx.manager.shared, &ctx.rt, url, headers);
                 }
-                Message::Video { url, referrer, cookies, user_agent, .. } => {
-                    // no quality dialog here (yet): the usual quality, once the page is looked at
-                    let req = AddRequest { url, referrer, cookies, user_agent, start: true,
-                                           video: Some(Default::default()), ..Default::default() };
+                Message::VideoQualities { .. } => {} // (answered by the IPC server: the helpers are here)
+                Message::Video { url, referrer, cookies, user_agent, choice, .. } => {
+                    // no quality dialog here (yet): the one picked in the browser's menu, else the
+                    // usual quality, once the page is looked at
+                    let video = Some(turbodm::engine::video::VideoJob { choice: choice.unwrap_or_default(), ..Default::default() });
+                    let req = AddRequest { url, referrer, cookies, user_agent, start: true, video, ..Default::default() };
                     let id = ctx.manager.add(req);
                     if ctx.manager.settings().show_progress_window {
                         progress::open(&ctx, &id);

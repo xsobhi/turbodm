@@ -36,12 +36,6 @@ async fn unless_paused<T>(cancel: &CancellationToken, f: impl Future<Output = T>
 }
 
 async fn drive(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken) -> Result<bool, String> {
-    let client = shared.client();
-    if tools::yt_dlp_now().is_none() {
-        task.video.set_activity(Some("Getting yt-dlp…")); // (Windows asks for it before: Linux)
-    }
-    let Some(exe) = unless_paused(cancel, tools::yt_dlp(&client)).await else { return Ok(false) };
-    let exe = exe?;
     let picked = task.info.lock().unwrap().video.as_ref().is_some_and(|v| !v.format.is_empty());
     if !picked && !choose(task, shared, cancel).await? {
         return Ok(false);
@@ -65,7 +59,11 @@ async fn drive(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken) ->
             Ending::Elsewhere(why) => leave_to_ytdlp(task, &why),
         }
     }
-    match ytdlp::run(task, shared, cancel, exe).await? {
+    if tools::yt_dlp_now().is_none() {
+        task.video.set_activity(Some("Getting yt-dlp…")); // (Windows asks for it before: Linux)
+    }
+    let Some(exe) = unless_paused(cancel, tools::yt_dlp(&shared.client())).await else { return Ok(false) };
+    match ytdlp::run(task, shared, cancel, exe?).await? {
         Some(path) => finish(task, path).map(|_| true),
         None => Ok(false),
     }
@@ -92,12 +90,13 @@ fn leave_to_ytdlp(task: &Task, why: &str) {
 }
 
 /// A video added without its dialog (from the browser with the dialog turned off, or on Linux):
-/// look at the page and take what was picked last, or the usual. False if paused meanwhile.
+/// look at the page and take the quality picked in the browser's menu, else what was picked
+/// last, or the usual. False if paused meanwhile.
 async fn choose(task: &Task, shared: &Shared, cancel: &CancellationToken) -> Result<bool, String> {
     task.video.set_activity(Some("Looking for the video…"));
-    let (url, headers) = {
+    let (url, headers, choice) = {
         let info = task.info.lock().unwrap();
-        (info.url.clone(), info.headers())
+        (info.url.clone(), info.headers(), info.video.as_ref().map(|v| v.choice.clone()).unwrap_or_default())
     };
     let settings = shared.settings();
     let client = shared.client();
@@ -106,7 +105,7 @@ async fn choose(task: &Task, shared: &Shared, cancel: &CancellationToken) -> Res
     let found = found?;
     // no FFmpeg: only what needs none (FFmpeg isn't fetched without asking)
     let ffmpeg = tools::ffmpeg().is_some();
-    let mut plan = found.first(&settings.video_quality, &settings.video_format, ffmpeg);
+    let mut plan = found.chosen(&choice).unwrap_or_else(|| found.first(&settings.video_quality, &settings.video_format, ffmpeg));
     if plan.needs_ffmpeg() && !ffmpeg {
         plan = found.plans(Container::Mp4).into_iter().find(|p| !p.needs_ffmpeg() && matches!(p.want, Want::Video(..)))
             .ok_or(if tools::CAN_FETCH_FFMPEG { "This video needs FFmpeg: Tasks → Download video… offers to get it" }

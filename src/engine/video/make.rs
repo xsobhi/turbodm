@@ -15,6 +15,7 @@ use tokio_util::sync::CancellationToken;
 pub(super) async fn make(task: &Task, cancel: &CancellationToken) -> Result<Option<PathBuf>, String> {
     let (dir, name, job) = {
         let info = task.info.lock().unwrap();
+        task.video.set_making(); // (locked: the add dialog doesn't move the parts from here on)
         (info.directory.clone(), info.filename.clone().unwrap_or_else(|| "video.mp4".into()), info.video.clone().unwrap_or_default())
     };
     let parts: Vec<PathBuf> = job.sources.iter().map(|s| part_file(&dir, stem(&name), &s.format_id, &s.ext)).collect();

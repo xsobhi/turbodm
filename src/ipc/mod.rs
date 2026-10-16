@@ -2,6 +2,7 @@
 
 pub mod client;
 pub mod native_host;
+mod qualities;
 pub mod server;
 
 use serde::{Deserialize, Serialize};
@@ -43,6 +44,10 @@ pub enum Message {
         user_agent: Option<String>,
         #[serde(default)]
         silent: bool, // no dialog: the usual quality
+        /// A quality picked in the browser's menu (a `VideoChoice` id, 1.10): its dialog opens
+        /// with it, and it's downloading meanwhile; without the dialog, it's what's downloaded.
+        #[serde(default)]
+        choice: Option<String>,
     },
     /// A video playing in the browser: look at its page now, so its qualities are ready when
     /// it's asked for (1.9.1; only for a TurboDM already running, which an older one ignores).
@@ -55,6 +60,29 @@ pub enum Message {
         #[serde(default)]
         user_agent: Option<String>,
     },
+    /// The browser's menu of a video's qualities (1.10): the answer, in the reply, is its title
+    /// and `choices` (or `error`). Starts TurboDM if needed, and waits for the page's look
+    /// (shared with a `VideoPeek` under way).
+    VideoQualities {
+        url: String,
+        #[serde(default)]
+        referrer: Option<String>,
+        #[serde(default)]
+        cookies: Option<String>,
+        #[serde(default)]
+        user_agent: Option<String>,
+    },
+}
+
+/// One line of the browser's quality menu: "1080p MP4", "2160p WebM", "MP3".
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct VideoChoice {
+    pub id: String, // sent back in `Video { choice }`: "1080p/mp4", "video/mp4", "audio/mp3"
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>, // estimated, in bytes
+    #[serde(default)]
+    pub audio: bool, // the sound alone
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -66,11 +94,16 @@ pub struct Reply {
     pub version: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// `VideoQualities`' answer: the video's title and the qualities it comes in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choices: Vec<VideoChoice>,
 }
 
 impl Reply {
     pub fn ok() -> Self {
-        Reply { ok: true, running: true, version: crate::config::VERSION.into(), error: None }
+        Reply { ok: true, running: true, version: crate::config::VERSION.into(), ..Default::default() }
     }
     pub fn error(msg: impl Into<String>) -> Self {
         Reply { ok: false, error: Some(msg.into()), ..Default::default() }
@@ -100,9 +133,9 @@ mod tests {
         assert!(matches!(serde_json::from_str::<Message>(r#"{"type":"ping"}"#), Ok(Message::Ping)));
         let json = r#"{"type":"video","url":"https://youtu.be/x","cookies":"a=1","userAgent":"UA"}"#;
         match serde_json::from_str::<Message>(json).unwrap() {
-            Message::Video { url, cookies, user_agent, referrer, silent } => {
-                assert_eq!((url.as_str(), cookies.as_deref(), user_agent.as_deref(), referrer, silent),
-                           ("https://youtu.be/x", Some("a=1"), Some("UA"), None, false));
+            Message::Video { url, cookies, user_agent, referrer, silent, choice } => {
+                assert_eq!((url.as_str(), cookies.as_deref(), user_agent.as_deref(), referrer, silent, choice),
+                           ("https://youtu.be/x", Some("a=1"), Some("UA"), None, false, None));
             }
             other => panic!("wrong message {other:?}"),
         }
@@ -114,5 +147,42 @@ mod tests {
             }
             other => panic!("wrong message {other:?}"),
         }
+    }
+
+    #[test]
+    fn video_quality_menu_json() {
+        let json = r#"{"type":"videoQualities","url":"https://youtu.be/x","referrer":"https://youtu.be/x","cookies":"a=1","userAgent":"UA"}"#;
+        match serde_json::from_str::<Message>(json).unwrap() {
+            Message::VideoQualities { url, referrer, cookies, user_agent } => {
+                assert_eq!((url.as_str(), referrer.as_deref(), cookies.as_deref(), user_agent.as_deref()),
+                           ("https://youtu.be/x", Some("https://youtu.be/x"), Some("a=1"), Some("UA")));
+            }
+            other => panic!("wrong message {other:?}"),
+        }
+        let json = r#"{"type":"video","url":"https://youtu.be/x","choice":"1080p/mp4"}"#;
+        match serde_json::from_str::<Message>(json).unwrap() {
+            Message::Video { choice, silent, .. } => assert_eq!((choice.as_deref(), silent), (Some("1080p/mp4"), false)),
+            other => panic!("wrong message {other:?}"),
+        }
+        // the answer: a plain reply leaves the menu's fields out
+        let plain = serde_json::to_string(&Reply::ok()).unwrap();
+        assert!(!plain.contains("title") && !plain.contains("choices") && !plain.contains("error"), "{plain}");
+        let reply = Reply {
+            title: Some("A video".into()),
+            choices: vec![
+                VideoChoice { id: "1080p/mp4".into(), label: "1080p MP4".into(), size: Some(52_428_800), audio: false },
+                VideoChoice { id: "audio/mp3".into(), label: "MP3".into(), size: None, audio: true },
+            ],
+            ..Reply::ok()
+        };
+        let json = serde_json::to_value(&reply).unwrap();
+        assert_eq!(json, serde_json::json!({
+            "ok": true, "running": true, "version": crate::config::VERSION, "title": "A video",
+            "choices": [{"id": "1080p/mp4", "label": "1080p MP4", "size": 52_428_800, "audio": false},
+                        {"id": "audio/mp3", "label": "MP3", "audio": true}],
+        }));
+        assert_eq!(serde_json::from_value::<Reply>(json).unwrap().choices, reply.choices);
+        let failed = serde_json::to_value(Reply::error("No video found on this page")).unwrap();
+        assert_eq!(failed, serde_json::json!({"ok": false, "running": false, "version": "", "error": "No video found on this page"}));
     }
 }
