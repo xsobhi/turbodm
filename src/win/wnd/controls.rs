@@ -2,6 +2,7 @@
 
 use super::look::{self, mark};
 use super::labels::Kind;
+use super::popup::{At, Item, Options, Outcome};
 use super::{field, instance, Window};
 use crate::win::theme::{self, Font};
 use std::cell::Cell;
@@ -128,17 +129,16 @@ impl Window {
         let (p, b, list) = (picked.clone(), button.clone(), items.clone());
         let hwnd = self.button(&items[selected.min(items.len() - 1)], move || {
             let mut r = RECT::default();
-            // SAFETY: a menu of the choices under the button; it returns the one picked (0: none)
-            let chosen = unsafe {
-                let menu = CreatePopupMenu().unwrap_or_default();
-                for (i, item) in list.iter().enumerate() {
-                    let checked = if i == p.get() { MF_CHECKED } else { MF_UNCHECKED };
-                    let _ = AppendMenuW(menu, MF_STRING | checked, i + 1, &HSTRING::from(item.as_str()));
-                }
-                let _ = GetWindowRect(b.get(), &mut r);
-                let chosen = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_LEFTALIGN, r.left, r.bottom, None, owner, None);
-                let _ = DestroyMenu(menu);
-                chosen.0 as usize
+            // SAFETY: plain query
+            unsafe { let _ = GetWindowRect(b.get(), &mut r); }
+            // a menu of the choices under the button, as wide; the one picked ticked
+            let lines: Vec<Item> = list.iter().enumerate()
+                .map(|(i, item)| Item::Tick(i as u16 + 1, item.replace('&', "&&"), i == p.get())).collect();
+            let below = RECT { top: r.top - px(2), bottom: r.bottom + px(2), ..r };
+            let options = Options { min_width: r.right - r.left, ..Default::default() };
+            let chosen = match super::popup::show(owner, &lines, At::Below(below), options) {
+                Outcome::Chose(id) => id as usize,
+                _ => 0,
             };
             if let Some((i, item)) = chosen.checked_sub(1).and_then(|i| list.get(i).map(|item| (i, item))) {
                 p.set(i);

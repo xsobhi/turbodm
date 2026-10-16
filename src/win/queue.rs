@@ -1,115 +1,160 @@
-//! "TurboDM downloads": the download windows hidden or minimized go together under one taskbar
-//! button of their own, beside TurboDM's (with the downloads' arrow). Clicking it shows the
-//! downloads in a small menu, with how far each is, and a click there brings that one back.
+//! "TurboDM downloads": while download windows are hidden (Hide, or minimized), a second icon in
+//! the notification area, beside TurboDM's (tray.rs), with the downloads' green arrow, says how
+//! many; like the others it can be dragged in with the hidden icons. A click on it shows the
+//! downloads in a menu, how far each is, and picking one brings its window back.
 
 use super::theme::pictures;
-use super::wnd::Window;
-use super::{progress, App};
+use super::wnd::popup::{self, At, Item};
+use super::{progress, tray, App};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::rc::Rc;
 use turbodm::engine::Status;
 use turbodm::util::human_speed;
-use windows::core::{HSTRING, PWSTR};
+use windows::core::w;
 use windows::Win32::Foundation::{HWND, LRESULT, POINT};
+use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-/// Its own taskbar identity: a button of its own even where Windows groups a program's windows.
-const APP_ID: &str = "xsobhi.TurboDM.Downloads";
+/// The icon's id on the main window (TurboDM's is 1), and the message its clicks come as.
+const ID: u32 = 2;
+const WM_QUEUE: u32 = WM_APP + 3;
+/// The most downloads the menu lists.
+const MOST: usize = 20;
 
-/// Show the button while a download window is tucked away, hide it when none is (and say how many).
-pub fn update(app: &Rc<App>) {
-    // SAFETY: plain queries on our own windows
-    let hidden: Vec<String> = app.progress.borrow().iter().filter(|(_, p)| unsafe { !IsWindowVisible(p.window.hwnd()).as_bool() })
-        .map(|(id, _)| id.clone()).collect();
-    if hidden.is_empty() {
-        if let Some(window) = app.queue.borrow().as_ref() {
-            // SAFETY: plain call on our own window
-            unsafe { let _ = ShowWindow(window.hwnd(), SW_HIDE); }
-        }
-        return;
-    }
-    let window = app.queue.borrow_mut().get_or_insert_with(|| make(app)).clone();
-    let title = match hidden.len() {
+type Notify = fn(NOTIFY_ICON_MESSAGE, &NOTIFYICONDATAW) -> bool;
+
+thread_local! {
+    static TIP: RefCell<Option<String>> = const { RefCell::new(None) }; // the icon's text, while it's there
+    static NOTIFY: Cell<Notify> = const { Cell::new(shell_notify) }; // (the tests' stand-in for Windows)
+    static ICON: OnceCell<HICON> = const { OnceCell::new() };
+}
+
+fn shell_notify(what: NOTIFY_ICON_MESSAGE, data: &NOTIFYICONDATAW) -> bool {
+    // SAFETY: our icon, described in full
+    unsafe { Shell_NotifyIconW(what, data).as_bool() }
+}
+
+/// The icon's text, for `n` hidden download windows.
+fn tip(n: usize) -> String {
+    match n {
         1 => "TurboDM: 1 download".to_string(),
         n => format!("TurboDM: {n} downloads"),
-    };
-    window.set_title(&title);
-    // SAFETY: plain calls on our own window: on the taskbar, minimized, without taking the focus
-    unsafe {
-        if !IsWindowVisible(window.hwnd()).as_bool() {
-            let _ = ShowWindow(window.hwnd(), SW_SHOWMINNOACTIVE);
-        }
     }
 }
 
-fn make(app: &Rc<App>) -> Rc<Window> {
-    let window = Window::new("TurboDM downloads", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-                             WS_EX_APPWINDOW, None, (320, 120));
-    set_app_id(window.hwnd(), APP_ID);
-    if let Some(icon) = pictures::hicon(pictures::DOWNLOADING) {
-        for which in [ICON_BIG, ICON_SMALL] {
-            super::wnd::send(window.hwnd(), WM_SETICON, which as usize, icon.0 as isize);
-        }
-    }
-    // a click on its button would bring it back: the menu of downloads shows instead
-    window.hook(move |msg, wparam, _| match msg {
-        WM_SYSCOMMAND if matches!(wparam.0 as u32 & 0xFFF0, SC_RESTORE | SC_MAXIMIZE) => {
-            super::post(choose);
-            Some(LRESULT(0))
-        }
+/// What the icon needs now `hidden` windows are hidden, as it shows `shown` (its text) or isn't
+/// there: added, its text changed, or taken away.
+fn change(shown: Option<&str>, hidden: usize) -> Option<(NOTIFY_ICON_MESSAGE, String)> {
+    let tip = tip(hidden);
+    match shown {
+        None if hidden > 0 => Some((NIM_ADD, tip)),
+        Some(_) if hidden == 0 => Some((NIM_DELETE, String::new())),
+        Some(now) if now != tip => Some((NIM_MODIFY, tip)),
         _ => None,
-    });
-    // closed from the taskbar: the download windows come back
-    let a = Rc::downgrade(app);
-    window.on_close(move || {
-        if let Some(app) = a.upgrade() {
-            show_all(&app);
-        }
-        false
-    });
-    window
+    }
 }
 
-/// The menu of downloads, where the mouse is (by the taskbar button).
+/// Show the icon while a download window is hidden, take it away when none is.
+pub fn update(app: &Rc<App>) {
+    apply(app.main.window.hwnd(), hidden(app));
+}
+
+fn hidden(app: &App) -> usize {
+    // SAFETY: plain queries on our own windows
+    app.progress.borrow().values().filter(|p| unsafe { !IsWindowVisible(p.window.hwnd()).as_bool() }).count()
+}
+
+fn apply(hwnd: HWND, hidden: usize) {
+    let shown = TIP.with(|t| t.borrow().clone());
+    let Some((what, tip)) = change(shown.as_deref(), hidden) else { return };
+    let mut data = tray::data(hwnd, ID);
+    if what != NIM_DELETE {
+        data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+        data.uCallbackMessage = WM_QUEUE;
+        data.hIcon = icon();
+        tray::copy(&mut data.szTip, &tip);
+    }
+    let done = NOTIFY.with(Cell::get)(what, &data);
+    // (not added: the taskbar isn't there yet; tried again next time, or when it's back)
+    if done || what == NIM_DELETE {
+        TIP.with(|t| *t.borrow_mut() = (what != NIM_DELETE).then_some(tip));
+    }
+}
+
+/// Explorer started again (TaskbarCreated): its new taskbar has none of our icons.
+fn taskbar_back(hwnd: HWND, hidden: usize) {
+    TIP.with(|t| t.borrow_mut().take());
+    apply(hwnd, hidden);
+}
+
+/// The downloads' arrow, at the notification area's size.
+fn icon() -> HICON {
+    // SAFETY: plain queries
+    let size = unsafe { GetSystemMetrics(SM_CXSMICON) };
+    ICON.with(|i| *i.get_or_init(|| pictures::hicon(pictures::DOWNLOADING, size).unwrap_or_default()))
+}
+
+/// Its clicks, and the taskbar coming back, on the main window (where TurboDM's icon is too).
+pub fn start(app: &Rc<App>) {
+    let hwnd = app.main.window.hwnd();
+    // SAFETY: plain registration (tray.rs registers the same)
+    let taskbar_created = unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) };
+    app.main.window.hook(move |msg, _, lparam| {
+        if msg == taskbar_created {
+            taskbar_back(hwnd, hidden(&super::app()));
+            return None;
+        }
+        if msg != WM_QUEUE {
+            return None;
+        }
+        if matches!((lparam.0 & 0xffff) as u32, WM_LBUTTONUP | WM_RBUTTONUP | WM_CONTEXTMENU) {
+            choose(&super::app());
+        }
+        Some(LRESULT(0))
+    });
+}
+
+/// TurboDM is quitting: the icon goes (it would stay until the mouse passed over it).
+pub fn remove(app: &App) {
+    if TIP.with(|t| t.borrow_mut().take()).is_some() {
+        NOTIFY.with(Cell::get)(NIM_DELETE, &tray::data(app.main.window.hwnd(), ID));
+    }
+}
+
+/// The menu of downloads, by the icon (where the mouse is).
 fn choose(app: &Rc<App>) {
-    let Some(window) = app.queue.borrow().clone() else { return };
-    // the ones with windows, then the others still under way
+    // the ones with windows, then the others under way
     let mut ids: Vec<String> = app.progress.borrow().keys().cloned().collect();
     ids.sort();
     let others = app.manager.snapshot_where(|id, status| status.is_active() && !ids.iter().any(|i| i == id));
     ids.extend(others.into_iter().map(|s| s.id));
-    let lines: Vec<(String, String)> = ids.iter().filter_map(|id| app.manager.get(id)).map(|s| {
+    let lines: Vec<(String, String)> = ids.iter().filter_map(|id| app.manager.get(id)).take(MOST).map(|s| {
         let how = match (s.status, s.progress) {
             (Status::Completed, _) => "Done".to_string(),
             (status, Some(p)) if status.is_active() => format!("{:.0}%  {}", p * 100.0, human_speed(s.speed)),
             (status, Some(p)) => format!("{:.0}%  {}", p * 100.0, status.label()),
             (status, None) => status.label().to_string(),
         };
-        (s.id.clone(), format!("{}\t{how}", s.filename))
+        (s.id.clone(), format!("{}\t{how}", s.filename.replace('&', "&&"))) // (an & in a name isn't a letter to type)
     }).collect();
-    // SAFETY: our menu, shown and destroyed here; TPM_RETURNCMD gives the choice back
-    unsafe {
-        let menu = CreatePopupMenu().unwrap_or_default();
-        for (i, (_, text)) in lines.iter().enumerate() {
-            let _ = AppendMenuW(menu, MF_STRING, i + 1, &HSTRING::from(text.as_str()));
-        }
-        if lines.is_empty() {
-            let _ = AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, &HSTRING::from("No downloads under way"));
-        }
-        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
-        let (all, main) = (lines.len() + 1, lines.len() + 2);
-        let _ = AppendMenuW(menu, MF_STRING, all, &HSTRING::from("Show all download windows"));
-        let _ = AppendMenuW(menu, MF_STRING, main, &HSTRING::from("Open TurboDM"));
-        let mut point = POINT::default();
-        let _ = GetCursorPos(&mut point);
-        let _ = SetForegroundWindow(window.hwnd()); // (so the menu closes when clicking elsewhere)
-        let picked = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, point.x, point.y, None,
-                                    window.hwnd(), None).0 as usize;
-        let _ = DestroyMenu(menu);
-        match picked {
-            0 => {}
-            n if n == all => show_all(app),
-            n if n == main => app.show(),
-            n => progress::open(app, &lines[n - 1].0),
+    let mut items: Vec<Item> = lines.iter().enumerate().map(|(i, (_, text))| Item::Do(i as u16 + 1, text.clone(), true)).collect();
+    if items.is_empty() {
+        items.push(Item::Do(0, "No downloads under way".to_string(), false));
+    }
+    let (all, main) = (lines.len() as u16 + 1, lines.len() as u16 + 2);
+    items.extend([Item::Line, Item::Do(all, "Show &all download windows".to_string(), true),
+                  Item::Do(main, "&Open TurboDM".to_string(), true)]);
+    let mut point = POINT::default();
+    // SAFETY: plain query
+    unsafe { let _ = GetCursorPos(&mut point); }
+    match popup::choose(app.main.window.hwnd(), &items, At::Point(point)) {
+        None => {}
+        Some(n) if n == all => show_all(app),
+        Some(n) if n == main => app.show(),
+        Some(n) => {
+            if let Some((id, _)) = lines.get(n as usize - 1) {
+                progress::open(app, id);
+            }
         }
     }
 }
@@ -122,32 +167,61 @@ fn show_all(app: &Rc<App>) {
     }
 }
 
-/// Give a window its own taskbar identity (AppUserModelID).
-fn set_app_id(hwnd: HWND, id: &str) {
-    use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
-    use windows::Win32::System::Com::StructuredStorage::{PROPVARIANT, PROPVARIANT_0, PROPVARIANT_0_0, PROPVARIANT_0_0_0};
-    use windows::Win32::System::Variant::VT_LPWSTR;
-    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
-    use windows::Win32::System::Com::CoTaskMemAlloc;
-    use windows::Win32::System::Com::StructuredStorage::PropVariantClear;
-    let wide: Vec<u16> = id.encode_utf16().chain(Some(0)).collect();
-    // SAFETY: a string value in COM's memory, as Windows' InitPropVariantFromString makes it (the
-    // store copies it; PropVariantClear frees ours); the window's property store
-    unsafe {
-        let text = CoTaskMemAlloc(wide.len() * 2) as *mut u16;
-        if text.is_null() {
-            return;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    thread_local! {
+        static CALLS: RefCell<Vec<(NOTIFY_ICON_MESSAGE, u32, String)>> = RefCell::default();
+        static WORKS: Cell<bool> = const { Cell::new(true) };
+    }
+
+    /// Instead of Windows: what was asked (the icon's id, its text), and whether it worked.
+    fn record(what: NOTIFY_ICON_MESSAGE, data: &NOTIFYICONDATAW) -> bool {
+        let end = data.szTip.iter().position(|&c| c == 0).unwrap_or(0);
+        if what != NIM_DELETE {
+            assert_eq!(data.uCallbackMessage, WM_QUEUE);
+            assert!(data.uFlags.contains(NIF_ICON | NIF_MESSAGE | NIF_TIP));
         }
-        std::ptr::copy_nonoverlapping(wide.as_ptr(), text, wide.len());
-        let mut value = PROPVARIANT { Anonymous: PROPVARIANT_0 { Anonymous: std::mem::ManuallyDrop::new(PROPVARIANT_0_0 {
-            vt: VT_LPWSTR, wReserved1: 0, wReserved2: 0, wReserved3: 0,
-            Anonymous: PROPVARIANT_0_0_0 { pwszVal: PWSTR(text) },
-        }) } };
-        if let Ok(store) = SHGetPropertyStoreForWindow::<IPropertyStore>(hwnd) {
-            let _ = store.SetValue(&PKEY_AppUserModel_ID, &value);
-            let _ = store.Commit();
-        }
-        let _ = PropVariantClear(&mut value);
+        CALLS.with(|c| c.borrow_mut().push((what, data.uID, String::from_utf16_lossy(&data.szTip[..end]))));
+        WORKS.with(Cell::get)
+    }
+
+    fn calls() -> Vec<(NOTIFY_ICON_MESSAGE, u32, String)> {
+        CALLS.with(|c| c.borrow_mut().drain(..).collect())
+    }
+
+    #[test]
+    fn comes_and_goes_with_the_hidden_windows() {
+        NOTIFY.with(|n| n.set(record));
+        let hwnd = HWND::default();
+        apply(hwnd, 0);
+        assert_eq!(calls(), vec![]); // nothing hidden: no icon
+        apply(hwnd, 1);
+        assert_eq!(calls(), vec![(NIM_ADD, ID, "TurboDM: 1 download".to_string())]);
+        apply(hwnd, 1);
+        assert_eq!(calls(), vec![]); // (as it is)
+        apply(hwnd, 3);
+        assert_eq!(calls(), vec![(NIM_MODIFY, ID, "TurboDM: 3 downloads".to_string())]);
+        taskbar_back(hwnd, 3); // Explorer restarted: added again
+        assert_eq!(calls(), vec![(NIM_ADD, ID, "TurboDM: 3 downloads".to_string())]);
+        apply(hwnd, 0);
+        assert_eq!(calls(), vec![(NIM_DELETE, ID, String::new())]);
+        apply(hwnd, 0);
+        assert_eq!(calls(), vec![]);
+    }
+
+    #[test]
+    fn added_later_when_the_taskbar_is_not_there() {
+        NOTIFY.with(|n| n.set(record));
+        WORKS.with(|w| w.set(false));
+        let hwnd = HWND::default();
+        apply(hwnd, 2);
+        apply(hwnd, 2);
+        assert_eq!(calls().iter().filter(|c| c.0 == NIM_ADD).count(), 2); // tried again
+        WORKS.with(|w| w.set(true));
+        taskbar_back(hwnd, 2);
+        apply(hwnd, 2);
+        assert_eq!(calls(), vec![(NIM_ADD, ID, "TurboDM: 2 downloads".to_string())]);
     }
 }
-

@@ -1,6 +1,7 @@
 //! Per-download window, as on Linux and like IDM's: opens when a download starts or resumes.
 //! Tabs for the download status (with its connections), its speed limiter and what to do when
-//! it's done. Hide (or minimize) tucks it under the "TurboDM downloads" taskbar button (queue.rs).
+//! it's done. Hide (or minimize) tucks it away: an icon in the notification area brings it back
+//! (queue.rs).
 
 mod details;
 mod info;
@@ -118,7 +119,7 @@ pub fn open(app: &Rc<App>, id: &str) {
     window.hook(move |msg, wparam, _| {
         let app = a.upgrade()?;
         match msg {
-            // minimized: under the downloads' taskbar button, as Hide does
+            // minimized: tucked away, as Hide does
             WM_SYSCOMMAND if wparam.0 as u32 & 0xFFF0 == SC_MINIMIZE => {
                 tuck_away(&app, w);
                 Some(windows::Win32::Foundation::LRESULT(0))
@@ -138,7 +139,7 @@ pub fn open(app: &Rc<App>, id: &str) {
     app.progress.borrow_mut().insert(id.to_string(), pw);
 }
 
-/// Hide a download window: it's under the "TurboDM downloads" taskbar button meanwhile.
+/// Hide a download window: the hidden downloads' icon in the notification area brings it back.
 fn tuck_away(app: &Rc<App>, window: HWND) {
     // SAFETY: plain call on our own window
     unsafe { let _ = ShowWindow(window, SW_HIDE); }

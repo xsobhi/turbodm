@@ -110,10 +110,11 @@ fn on_grip(hwnd: windows::Win32::Foundation::HWND, point: Option<POINT>) -> bool
     point.x >= grip.left && point.x < grip.right && point.y >= grip.top && point.y < grip.bottom
 }
 
-/// Started by the browser and nothing is shown or downloading: quit after a few seconds.
+/// Started by the browser and nothing is shown (or hidden: a download's window) or downloading:
+/// quit after a few seconds.
 fn quit_when_idle(app: &App, started: Instant) {
     if app.background && started.elapsed() > Duration::from_secs(5) && !app.manager.busy()
-        && !wnd::any_window_shown() {
+        && !wnd::any_window_shown() && app.progress.borrow().is_empty() {
         app.quit();
     }
 }
