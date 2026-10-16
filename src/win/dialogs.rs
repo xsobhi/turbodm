@@ -14,19 +14,55 @@ pub fn message(owner: HWND, title: &str, body: &str, error: bool) {
     unsafe { MessageBoxW(Some(owner), &HSTRING::from(body), &HSTRING::from(title), MB_OK | icon); }
 }
 
-pub fn confirm_delete(app: &Rc<App>, ids: Vec<String>) {
+/// Delete (the key, the toolbar, the menus), as IDM asks: off the list, and with "Also delete
+/// the files from the disk" ticked, their files too. The box is as it was answered last, or
+/// ticked for "Delete with file".
+pub fn confirm_delete(app: &Rc<App>, ids: Vec<String>, with_files: bool) {
+    use super::wnd::{self, is_checked, Rows, Window, LINE};
     if ids.is_empty() {
         return;
     }
-    let body = format!("Delete {} download(s) and their files?\n\nDownloaded files will be removed from disk.", ids.len());
-    // SAFETY: a modal question box
-    let answer = unsafe {
-        MessageBoxW(Some(app.main.window.hwnd()), &HSTRING::from(body), &HSTRING::from("TurboDM"),
-                    MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2)
+    let names: Vec<String> = ids.iter().filter_map(|id| app.manager.get(id)).map(|s| s.filename).collect();
+    let heading = match ids.len() {
+        1 => "Delete this download?".to_string(),
+        n => format!("Delete these {n} downloads?"),
     };
-    if answer == IDYES {
-        ids.iter().for_each(|id| app.manager.remove(id, true));
+    let mut listed = names.iter().take(3).map(|n| format!("\u{201c}{n}\u{201d}")).collect::<Vec<_>>().join(", ");
+    if names.len() > 3 {
+        listed.push_str(&format!(" and {} more", names.len() - 3));
     }
+    let window = Window::dialog("Delete", Some(app.main.window.hwnd()), (440, 160), false);
+    let title = window.heading(&heading);
+    let note = window.note(&format!("{listed} will be taken off the list."));
+    let also = window.checkbox("Also delete the files from the disk", with_files || app.manager.settings().delete_files_too,
+                               |_| {});
+    let w = window.clone();
+    let cancel = window.button("Cancel", move || w.destroy());
+    let (a, w) = (app.clone(), window.clone());
+    let delete = window.default_button("Delete", move || {
+        let files = is_checked(also);
+        ids.iter().for_each(|id| a.manager.remove(id, files));
+        if !with_files {
+            // (remembered for next time; "Delete with file" doesn't change it)
+            let mut s = a.manager.settings();
+            if s.delete_files_too != files {
+                s.delete_files_too = files;
+                a.manager.update_settings(s);
+            }
+        }
+        w.destroy();
+    });
+    let w = window.clone();
+    window.on_command(IDCANCEL.0 as u16, move |_| w.destroy());
+    let mut rows = Rows::new(18, 16, 0, 404);
+    rows.full(title, 24);
+    rows.full(note, 2 * LINE);
+    rows.full(also, 28);
+    rows.gap(4);
+    let bottom = rows.buttons(&[cancel, delete]);
+    wnd::set_client_height(window.hwnd(), bottom + 16);
+    wnd::center(window.hwnd());
+    window.show();
 }
 
 /// IDM's Redownload: the file deleted, and downloaded again from the start.

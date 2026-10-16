@@ -183,8 +183,8 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
         Cmd::Pause => selected().iter().for_each(|id| app.manager.pause(id)),
         Cmd::ResumeAll => app.manager.resume_all(),
         Cmd::PauseAll => app.manager.pause_all(),
-        Cmd::Remove => selected().iter().for_each(|id| app.manager.remove(id, false)),
-        Cmd::DeleteFile => dialogs::confirm_delete(app, selected()),
+        Cmd::Remove => dialogs::confirm_delete(app, selected(), false), // (asks, with "Also delete the files")
+        Cmd::DeleteFile => dialogs::confirm_delete(app, selected(), true),
         Cmd::ClearDone => app.manager.snapshot().iter().filter(|s| s.status == Status::Completed)
             .for_each(|s| app.manager.remove(&s.id, false)), // from the list only: the files stay
         Cmd::Open => if let Some(id) = first() { shell::open_download(app, &id) },

@@ -18,7 +18,7 @@ const BUTTONS: [Option<(Picture, Cmd, &str, &str)>; 12] = [
     Some((pic::RESUME_ALL, Cmd::ResumeAll, "Resume all", "Resume every unfinished download (F5)")),
     Some((pic::PAUSE_ALL, Cmd::PauseAll, "Pause all", "Pause every download")),
     None,
-    Some((pic::DELETE, Cmd::Remove, "Delete", "Remove selected from the list (Delete)")),
+    Some((pic::DELETE, Cmd::Remove, "Delete", "Delete selected: off the list, and their files if you say (Delete)")),
     Some((pic::CLEAR, Cmd::ClearDone, "Clear done", "Remove completed downloads from the list")),
     None,
     Some((pic::FOLDER, Cmd::DownloadFolder, "Folder", "Open the download folder")),

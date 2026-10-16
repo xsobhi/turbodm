@@ -113,13 +113,14 @@ pub struct Settings {
     pub video_format: String,      // the video format picked last ("MP4", "WebM", "MKV")
     #[serde(default)]
     pub video_helpers_declined: bool, // "Not now" to getting yt-dlp and FFmpeg: not asked at start again
+    pub delete_files_too: bool, // Delete's "Also delete the files", as last answered
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Settings {
             download_dir: dirs::download_dir().unwrap_or_else(|| home().join("Downloads")),
-            use_categories: true,
+            use_categories: false, // (straight into the download folder; Options → Save to sorts them)
             connections: 8, // like IDM: many servers block more per IP (up to 32)
             max_parallel: 3,
             speed_limit_kib: 0,
@@ -143,6 +144,7 @@ impl Default for Settings {
             seed: false,
             video_format: String::new(),
             video_helpers_declined: false,
+            delete_files_too: false,
         }
     }
 }
