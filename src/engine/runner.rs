@@ -3,21 +3,18 @@
 use super::http;
 use super::segments::SegmentMap;
 use super::task::{unix_now, Status, Task};
-use super::worker::{connection_loop, WorkerCtx};
-use super::Shared;
+use super::worker::WorkerCtx;
+use super::{pool, Shared};
 use crate::util::{part_path, sanitize_filename, unique_path};
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
+use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-
-/// How often a connection that bowed out is tried again.
-const REGROW: Duration = Duration::from_secs(30);
 
 /// Drive a download until it completes, is paused, or fails.
 pub async fn run(task: Arc<Task>, shared: Arc<Shared>, cancel: CancellationToken) {
     if task.info.lock().unwrap().video.is_some() {
-        return super::video::run(task, shared, cancel).await; // a web page's video: yt-dlp downloads it
+        return super::video::run(task, shared, cancel).await; // a web page's video (its parts)
     }
     let outcome = match prepare(&task, &shared, &cancel).await {
         Ok(()) if !cancel.is_cancelled() => download(&task, &shared, &cancel).await,
@@ -81,21 +78,27 @@ async fn prepare(task: &Task, shared: &Shared, cancel: &CancellationToken) -> Re
     Ok(())
 }
 
+/// Open (or create) a download's unfinished file, `size` long; new ones are sparse, so far
+/// writes don't fill the gap first.
+pub(super) fn open_part(part: &Path, size: Option<u64>) -> Result<File, String> {
+    let is_new = !part.exists();
+    let file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(part)
+        .map_err(|e| format!("Cannot open the file: {e}"))?;
+    if is_new {
+        super::disk::make_sparse(&file);
+    }
+    if let (true, Some(size)) = (is_new, size) {
+        file.set_len(size).map_err(|e| format!("Cannot reserve disk space: {e}"))?;
+    }
+    Ok(file)
+}
+
 async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken) -> Result<bool, String> {
     let (info, file) = {
         // locked while opening: the add dialog may move the file to another name or folder
         let info = task.info.lock().unwrap();
-        let part = part_path(&info.path());
         std::fs::create_dir_all(&info.directory).map_err(|e| format!("Cannot create folder: {e}"))?;
-        let is_new = !part.exists();
-        let file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(&part)
-            .map_err(|e| format!("Cannot open the file: {e}"))?;
-        if is_new {
-            super::disk::make_sparse(&file);
-        }
-        if let (true, Some(size)) = (is_new, info.size) {
-            file.set_len(size).map_err(|e| format!("Cannot reserve disk space: {e}"))?;
-        }
+        let file = open_part(&part_path(&info.path()), info.size)?;
         (info.clone(), file)
     };
     let segments = task.segments.lock().unwrap().clone().expect("prepared");
@@ -108,49 +111,15 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
         url: info.download_url.clone(),
         headers: info.headers(),
         resumable: info.resumable,
+        chunk: 0,
         retries: settings.retries,
         limiters: [shared.limiter.clone(), task.limiter.clone()],
         cancel: cancel.clone(),
         live: std::sync::atomic::AtomicUsize::new(count),
     });
     task.set_status(Status::Downloading);
-    let mut workers = tokio::task::JoinSet::new();
-    let mut spawned = 0;
-    let mut want = count;
-    let mut regrow = tokio::time::interval(REGROW);
-    regrow.reset(); // the first try after a full period
-    loop {
-        while spawned < want {
-            workers.spawn(connection_loop(ctx.clone()));
-            spawned += 1;
-        }
-        tokio::select! {
-            done = workers.join_next() => match done {
-                None => break,
-                Some(Ok(Err(msg))) => task.fail(&msg),
-                Some(Err(join_err)) => task.fail(&format!("internal error: {join_err}")),
-                Some(Ok(Ok(()))) => {}
-            },
-            // more connections asked for (the add dialog's early single connection was confirmed):
-            // they split the busy parts, nothing reconnects
-            _ = task.grow.notified(), if info.resumable => {
-                let target = task.info.lock().unwrap().connections;
-                if target > want && !cancel.is_cancelled() {
-                    ctx.live.fetch_add(target - want, std::sync::atomic::Ordering::SeqCst);
-                    want = target;
-                }
-            }
-            // connections that bowed out (refused by the server, or a bad moment of the network)
-            // get another go now and then, so a long download doesn't stay on fewer of them; one
-            // the server still refuses just bows out again
-            _ = regrow.tick(), if info.resumable => {
-                let live = ctx.live.load(std::sync::atomic::Ordering::SeqCst);
-                if live < want && !cancel.is_cancelled() && !segments.all_finished() {
-                    ctx.live.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    workers.spawn(connection_loop(ctx.clone()));
-                }
-            }
-        }
+    if let Err(msg) = pool::run(task, &ctx, count).await {
+        task.fail(&msg);
     }
     if cancel.is_cancelled() {
         return Ok(false); // paused, or a connection failed (error already recorded)

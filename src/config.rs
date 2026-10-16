@@ -109,6 +109,10 @@ pub struct Settings {
     pub video_quality: String,     // the video quality picked last ("720p", "Audio"), offered first next time
     #[serde(default)]
     pub seed: bool,                // keep sharing finished torrents (off: stop once complete)
+    #[serde(default)]
+    pub video_format: String,      // the video format picked last ("MP4", "WebM", "MKV")
+    #[serde(default)]
+    pub video_helpers_declined: bool, // "Not now" to getting yt-dlp and FFmpeg: not asked at start again
 }
 
 impl Default for Settings {
@@ -137,6 +141,8 @@ impl Default for Settings {
             show_toolbar: true,
             video_quality: String::new(),
             seed: false,
+            video_format: String::new(),
+            video_helpers_declined: false,
         }
     }
 }

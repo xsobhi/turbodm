@@ -51,15 +51,18 @@ work while you're logged in keep working.
   it's then moved to the name and folder you chose when you press *Start*. The dialog has one
   *Save to* path (type it, or pick it with the folder button), and uses the number of connections
   from Preferences.
-- **Videos from web pages**, like IDM's *Download this video*: for YouTube and the other sites
-  [yt-dlp](https://github.com/yt-dlp/yt-dlp) knows (or any page with a `<video>`), the *Add URL*
-  dialog shows the video's title and its qualities with their sizes (*1080p MP4*, *720p MP4*…,
-  *Audio only (M4A)*), and the extension adds *Download video with TurboDM* to the right-click menu
-  of pages, links and videos, and to its popup. yt-dlp is fetched when first needed (checked against
-  its release's checksums) and kept up to date. The higher qualities come as video and sound apart,
-  joined by FFmpeg: on Windows TurboDM asks before fetching it (~85 MB, once); on Linux it uses
-  yours (`sudo apt install ffmpeg`) and otherwise offers what needs none. Videos pause, resume (after
-  a restart too) and show their progress like any download.
+- **Videos from web pages**, like IDM's *Download this video*: for YouTube, Facebook, Instagram,
+  TikTok, X, Vimeo, Bilibili, Reddit, Dailymotion, Twitch and the other sites
+  [yt-dlp](https://github.com/yt-dlp/yt-dlp) knows (or any page with a `<video>`), the *Download video*
+  dialog shows the video's title, its qualities with their sizes, and a format: MP4, WebM or MKV, or
+  the sound alone as MP3, M4A or Opus. yt-dlp only finds where the streams are; **TurboDM downloads
+  them itself**, on all its connections, with live progress, pause and resume (after a restart
+  too), then FFmpeg joins video and sound (copied, not re-encoded) or makes the MP3. Streams in
+  fragments (HLS) are left to yt-dlp. The extension adds *Download video with TurboDM* to pages,
+  links and videos, and the browser's cookies come along for sites that need you signed in.
+  On Windows TurboDM asks once to get its two free helpers, yt-dlp and FFmpeg (~100 MB), downloads
+  them like any file (checked against their releases' checksums) and keeps them up to date; Linux
+  uses yours (`sudo apt install yt-dlp ffmpeg`).
 - **Queue** with a limit on simultaneous downloads, and a **global speed limit**.
 - **Categories**: Video, Music, Documents, Compressed, Programs and Images go to their own sub-folders.
 - **Main window with a sidebar**: downloads by state (all, downloading, unfinished, completed) and
@@ -76,7 +79,7 @@ work while you're logged in keep working.
   (on Linux panels with a tray; otherwise closing the window minimizes it while downloading).
 - Servers that reject a browser user-agent (anti-bot checks comparing it with the TLS fingerprint)
   are retried with TurboDM's own honest one.
-- **Command line**: `turbodm get URL -c 16 -d ~/Downloads`, and `turbodm video URL -q 720p` (`--list`
+- **Command line**: `turbodm get URL -c 16 -d ~/Downloads`, and `turbodm video URL -q 720p -f WebM` (`-q MP3`, `--list`
   shows the qualities).
 
 ### One look on Linux and Windows
@@ -180,9 +183,9 @@ Debug connection behaviour with `TURBODM_DEBUG=1 turbodm get URL`.
 Cookies from the browser are only sent to the server of the download they came with. TurboDM has no
 telemetry. Besides your downloads, it only asks GitHub for the latest release (at start and once a
 day) to tell you about updates; turn *Check for updates* off in Preferences to stop that. For videos
-it fetches yt-dlp (and FFmpeg, if you agree) from their GitHub releases and checks for a newer
-yt-dlp every few days; yt-dlp talks to the video's site, with the browser's cookies for that site
-only when the site asks for them (YouTube) or from the start (other sites).
+it fetches yt-dlp and FFmpeg from their GitHub releases once you agree, and checks for newer ones
+(yt-dlp every few days, FFmpeg monthly); yt-dlp talks to the video's site, with the browser's
+cookies for that site only when the site asks for them (YouTube) or from the start (other sites).
 
 ## Development
 

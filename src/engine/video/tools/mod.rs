@@ -1,11 +1,14 @@
-//! The programs videos need, fetched on demand into the data folder's `tools`: yt-dlp (ytdlp.rs)
-//! and, on Windows, FFmpeg (ffmpeg.rs), each checked against its release's checksums. Linux uses
-//! the system's when it has them (`yt-dlp`, `ffmpeg` on PATH).
+//! The helpers videos need, in the data folder's `tools`: yt-dlp (ytdlp.rs) and, on Windows,
+//! FFmpeg (ffmpeg.rs), each checked against its release's checksums. On Windows the user is asked
+//! first, and TurboDM downloads them like any file (setup.rs); then they keep themselves up to
+//! date. Linux uses the system's (`yt-dlp`, `ffmpeg` on PATH), else fetches yt-dlp quietly.
 
 mod ffmpeg;
+mod setup;
 mod ytdlp;
 
-pub use ffmpeg::{fetch_ffmpeg, ffmpeg, ffmpeg_size, CAN_FETCH_FFMPEG, NO_FFMPEG};
+pub use ffmpeg::{fetch_ffmpeg, ffmpeg, ffmpeg_exe, update_ffmpeg, CAN_FETCH_FFMPEG, NO_FFMPEG};
+pub use setup::{helpers, incoming, install, missing, Helper};
 pub use ytdlp::{update, yt_dlp, yt_dlp_now};
 
 use crate::config::{data_dir, own_user_agent};

@@ -7,6 +7,7 @@ mod browsers;
 mod complete;
 mod dialogs;
 mod finish;
+mod helpers;
 mod main;
 mod power;
 mod progress;
@@ -44,7 +45,7 @@ pub struct App {
     pub queue: RefCell<Option<Rc<wnd::Window>>>,      // the hidden download windows' taskbar button
     from_browser: RefCell<Option<(String, std::time::Instant)>>, // the extension's last link, and when
     pub update: RefCell<Option<turbodm::update::Release>>, // found while hidden: shown on show()
-    pub updating: RefCell<Option<String>>, // the download of TurboDM's own update
+    pub when_done: RefCell<HashMap<String, WhenDone>>, // unlisted downloads (an update, the video helpers)
     pub background: bool, // started by the browser: quit when idle and nothing is shown
 }
 
@@ -52,6 +53,10 @@ thread_local! {
     static APP: OnceCell<Rc<App>> = const { OnceCell::new() };
     static INBOX: OnceCell<mpsc::Receiver<Job>> = const { OnceCell::new() };
 }
+
+/// What to do with a download kept out of the list once it's done or failed, instead of the
+/// usual (the "Download complete" window, a notification).
+pub type WhenDone = Box<dyn FnOnce(&Rc<App>, &turbodm::engine::Snapshot)>;
 
 pub fn app() -> Rc<App> {
     APP.with(|app| app.get().expect("started").clone())
@@ -178,7 +183,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
         queue: RefCell::default(),
         from_browser: RefCell::default(),
         update: RefCell::default(),
-        updating: RefCell::default(),
+        when_done: RefCell::default(),
         background,
     });
     MAIN_WINDOW.store(app.main.window.hwnd().0 as isize, Ordering::SeqCst);
@@ -207,6 +212,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
     main::setup(&app);
     tray::start(&app);
     update::start(&app);
+    helpers::start(&app);
     if background {
         browsers::mark_offered(&app); // the browser started us: its extension works
     } else {

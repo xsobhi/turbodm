@@ -1,36 +1,11 @@
-//! Looking at a page with yt-dlp (-J): what video is there and how it can be downloaded. Also
-//! what yt-dlp is always given, and its errors in plain words (shared with the downloads).
+//! Looking at a page with yt-dlp (-J): what video is there, the formats it comes in and where
+//! each is. Also yt-dlp's errors in plain words (shared with its own downloads).
 
-use super::{formats, is_youtube, process, tools, VideoInfo};
+use super::args::common;
+use super::{formats, is_youtube, process, sites, tools, VideoInfo};
 use crate::engine::http::Headers;
 use std::path::Path;
 use std::time::Duration;
-use tokio::process::Command;
-
-/// What yt-dlp is always given: no settings of the user's own yt-dlp (they'd change its
-/// output), its cache with TurboDM's tools, and the browser's request.
-pub(super) fn common(command: &mut Command, headers: &Headers, cookies: bool, timeout: u64) {
-    command.args(["--ignore-config", "--color", "never", "--no-playlist", "--socket-timeout"]).arg(timeout.to_string())
-        .arg("--cache-dir").arg(tools::dir().join("cache"))
-        // YouTube's 360p in one file (format 18: no FFmpeg needed) comes from its embedded
-        // player, which needs a JavaScript runtime; without one it adds nothing, and every video
-        // quality needs FFmpeg. yt-dlp only uses Deno unless told; Node is more common (and
-        // ignored when it isn't installed)
-        .args(["--extractor-args", "youtube:player_client=default,web_embedded", "--js-runtimes", "node"]);
-    if let Some(ua) = &headers.user_agent {
-        command.arg("--user-agent").arg(ua);
-    }
-    if let Some(referrer) = &headers.referrer {
-        command.arg("--referer").arg(referrer);
-    }
-    if let (true, Some(cookies)) = (cookies, &headers.cookies) {
-        // (yt-dlp keeps them to the page's site)
-        command.arg("--add-headers").arg(format!("Cookie:{cookies}"));
-    }
-    if let Some(ffmpeg) = tools::ffmpeg() {
-        command.arg("--ffmpeg-location").arg(ffmpeg);
-    }
-}
 
 /// YouTube works best without the browser's cookies (with them yt-dlp must use pickier
 /// players); they're kept for when it asks to sign in. Other sites get them from the start.
@@ -41,7 +16,7 @@ fn cookies_first(url: &str) -> bool {
 /// The site wants to know who's asking: the browser's cookies may get in.
 fn wants_sign_in(error: &str) -> bool {
     let e = error.to_ascii_lowercase();
-    ["sign in", "log in", "login", "cookies", "your age", "private", "members"].iter().any(|w| e.contains(w))
+    ["sign in", "log in", "login", "logged", "cookies", "your age", "private", "members"].iter().any(|w| e.contains(w))
 }
 
 /// yt-dlp itself may be out of date (sites change; yt-dlp follows within days).
@@ -80,14 +55,16 @@ pub(super) fn error_of(stderr: &str) -> Option<String> {
 pub async fn probe(client: &reqwest::Client, url: &str, headers: &Headers, timeout: u64) -> Result<VideoInfo, String> {
     let mut exe = tools::yt_dlp(client).await?;
     let mut cookies = cookies_first(url) && headers.cookies.is_some();
-    let mut updated = false;
+    let (mut page, mut updated) = (url.to_string(), false);
     loop {
-        match probe_once(&exe, url, headers, cookies, timeout).await {
+        match probe_once(&exe, &page, headers, cookies, timeout).await {
             Ok(mut info) => {
                 info.with_cookies = cookies;
                 return Ok(info);
             }
             Err(e) if !cookies && headers.cookies.is_some() && wants_sign_in(&e) => cookies = true,
+            // (the same video elsewhere, when the page wants an account)
+            Err(e) if page == url && wants_sign_in(&e) && let Some(other) = sites::alternative(url) => page = other,
             Err(e) if !updated && looks_outdated(&e) => {
                 updated = true;
                 if tools::update(client, true).await != Ok(true) {
@@ -102,7 +79,7 @@ pub async fn probe(client: &reqwest::Client, url: &str, headers: &Headers, timeo
 
 async fn probe_once(exe: &Path, url: &str, headers: &Headers, cookies: bool, timeout: u64) -> Result<VideoInfo, String> {
     let mut command = process::command(exe);
-    common(&mut command, headers, cookies, timeout);
+    let _cookies = common(&mut command, url, headers, cookies, timeout);
     command.args(["-J", "--playlist-items", "1", "--"]).arg(url);
     let mut running = process::Running::spawn(command).map_err(|e| format!("yt-dlp doesn't start: {e}"))?;
     let (mut stdout, mut stderr) = (running.child.stdout.take(), running.child.stderr.take());

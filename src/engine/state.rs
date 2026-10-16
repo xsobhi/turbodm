@@ -88,6 +88,7 @@ pub struct Snapshot {
     pub content_type: Option<String>, // as the server said ("text/html": a web page)
     pub video: Option<String>, // a video from a web page: its quality ("720p MP4")
     pub activity: Option<&'static str>, // what it's doing besides downloading ("Joining video and sound…")
+    pub by_ytdlp: bool, // a video yt-dlp downloads itself: its segments are its parts, not connections
     /// A torrent's own numbers (peers, files…); None for other downloads.
     pub torrent: Option<TorrentView>,
 }
@@ -97,15 +98,20 @@ pub fn snapshot(task: &Task) -> Snapshot {
     let speed = task.speed();
     let eta = task.eta();
     let torrent = task.is_torrent().then(|| task.torrent.lock().unwrap().clone());
-    let (segments, active_connections) = match task.segments.lock().unwrap().clone() {
+    let map = task.segments.lock().unwrap().clone();
+    let (mut segments, active_connections) = match &map {
         Some(map) => (map.snapshot(), map.active_count()),
         None => {
-            let parts = task.video.parts(); // a video's parts
+            let parts = task.video.parts(); // a video's parts, while yt-dlp downloads it
             let active = parts.iter().filter(|p| p.active).count();
             (parts, active)
         }
     };
     let info = task.info.lock().unwrap();
+    if let Some(job) = info.video.as_ref().filter(|job| !job.by_ytdlp) {
+        // its parts one after the other: those in, and the connections of the one under way
+        segments = super::video::shown_segments(job, if map.is_some() { segments } else { vec![] });
+    }
     let filename = info.filename.clone().unwrap_or_else(|| match &torrent {
         Some(_) => name_hint(&info.url).unwrap_or_else(|| "(getting the torrent's details…)".into()),
         None => "(connecting…)".into(),
@@ -141,6 +147,7 @@ pub fn snapshot(task: &Task) -> Snapshot {
         content_type: info.content_type.clone(),
         video: info.video.as_ref().map(|v| v.quality.clone()),
         activity: task.video.activity(),
+        by_ytdlp: info.video.as_ref().is_some_and(|v| v.by_ytdlp),
         torrent,
     }
 }

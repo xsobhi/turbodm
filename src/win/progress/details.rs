@@ -24,7 +24,7 @@ pub const LIST: i32 = 28 + VISIBLE_ROWS * 22;
 struct Data {
     size: Option<u64>,
     segments: Vec<Segment>,
-    video: bool, // a video: its parts (video, sound) instead of connections
+    video: bool, // a video yt-dlp downloads: its parts (video, sound) instead of connections
 }
 
 pub struct Details {
@@ -107,8 +107,8 @@ impl Details {
         };
         {
             let mut data = self.data.borrow_mut();
-            if data.size != s.size || data.segments != segments || data.video != s.video.is_some() {
-                *data = Data { size: s.size, segments: segments.clone(), video: s.video.is_some() };
+            if data.size != s.size || data.segments != segments || data.video != s.by_ytdlp {
+                *data = Data { size: s.size, segments: segments.clone(), video: s.by_ytdlp };
                 canvas::redraw(self.map);
             }
         }
@@ -118,10 +118,15 @@ impl Details {
             }).collect(),
             None => segments.iter().enumerate().map(|(i, seg)| {
                 [(i + 1).to_string(), human_size(Some(seg.start)), human_size(Some(seg.got())),
-                 if s.video.is_some() { part_info(i, s) } else { connection_info(seg, s.status).to_string() }]
+                 if s.by_ytdlp { part_info(i, s) } else { connection_info(seg, s.status).to_string() }]
             }).collect(),
         };
         let mut rows = self.rows.borrow_mut();
+        // fewer than before (a video's next part): the rest go
+        while rows.len() > wanted.len() {
+            send(self.list, LVM_DELETEITEM, rows.len() - 1, 0);
+            rows.pop();
+        }
         while rows.len() < wanted.len() {
             let item = LVITEMW { mask: LVIF_TEXT, iItem: rows.len() as i32, pszText: PWSTR(w!("").as_ptr() as *mut _),
                                  ..Default::default() };

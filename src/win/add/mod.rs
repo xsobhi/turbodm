@@ -10,7 +10,7 @@ mod link;
 mod start;
 mod video;
 
-pub use video::add_video;
+pub use start::add_video;
 pub mod torrent; // add_torrent_file, for the main window's menu
 
 use super::theme::{self, icon};
@@ -90,7 +90,7 @@ fn open_form(app: &Rc<App>, req: AddRequest, video: bool) {
     form.info.set(window.label("Enter a link"));
     window.set_text_color(form.info.get(), theme::DIM);
     form.video.title.set(window.label(""));
-    form.names.set(["Address", "Save to", "Quality"].map(|l| window.name(l)));
+    form.names.set(["Address", "Save to", "Quality", "Format"].map(|l| window.name(l)));
     let (a, f) = (app.clone(), form.clone());
     let start = window.default_button("Start download", move || submit(&a, &f, true));
     let (a, f) = (app.clone(), form.clone());

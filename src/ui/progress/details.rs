@@ -63,7 +63,7 @@ impl Details {
             let seg = s.segments.get(i);
             let values = match seg {
                 Some(seg) => [(i + 1).to_string(), human_size(Some(seg.start)), human_size(Some(seg.got())),
-                              if s.video.is_some() { part_info(i, s) } else { connection_info(seg, s.status).to_string() }],
+                              if s.by_ytdlp { part_info(i, s) } else { connection_info(seg, s.status).to_string() }],
                 None => Default::default(),
             };
             for (label, value) in row.iter().zip(values) {
