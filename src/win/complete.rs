@@ -1,8 +1,8 @@
 //! "Download complete": what was downloaded and where it is, and what to do next. The file on
 //! white, as Explorer shows files (its big icon, its name, its size and kind); the choices in a
 //! grey bar at the bottom, as Windows' and GTK's dialogs have them, Open first among them. A small
-//! square at the bottom right, with the file's icon, drags the file out, as IDM's does: into a
-//! folder, a chat, anywhere files go.
+//! square at the bottom right, with the "move" pointer in it, drags the file out, as IDM's does:
+//! into a folder, a chat, anywhere files go.
 
 use super::theme::{self, Align, Font};
 use super::wnd::canvas::{self, Mouse};
@@ -17,8 +17,9 @@ use windows::core::{Interface, HSTRING};
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Gdi::{DT_END_ELLIPSIS, DT_NOPREFIX, DT_PATH_ELLIPSIS, DT_SINGLELINE, DT_VCENTER};
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-use windows::Win32::UI::Controls::{IImageList, ImageList_Draw, ImageList_GetIconSize, HIMAGELIST, ILD_TRANSPARENT};
-use windows::Win32::UI::Shell::{SHGetFileInfoW, SHGetImageList, SHFILEINFOW, SHGFI_SYSICONINDEX, SHIL_EXTRALARGE, SHIL_SMALL};
+use windows::Win32::UI::Controls::{IImageList, ImageList_Draw, HIMAGELIST, ILD_TRANSPARENT};
+use windows::Win32::UI::Shell::{SHGetFileInfoW, SHGetImageList, SHFILEINFOW, SHGFI_SYSICONINDEX, SHIL_EXTRALARGE};
+use windows::Win32::UI::WindowsAndMessaging::{DrawIconEx, LoadCursorW, DI_NORMAL, HICON, IDC_SIZEALL};
 use windows::Win32::UI::WindowsAndMessaging::IDCANCEL;
 
 /// Sizes, 96-DPI pixels: the window's width, its white part's height, the file's icon.
@@ -91,25 +92,22 @@ pub fn open(app: &Rc<App>, snap: &Snapshot) {
     window.show_in_front();
 }
 
-/// The drag square: the file's own small icon, as a button would look; pressed and moved, the
-/// file goes along with the mouse, to drop anywhere.
+/// The drag square: Windows' own "move" pointer in it (what dragging looks like), as a button
+/// would look; pressed and moved, the file goes along with the mouse, to drop anywhere.
 fn drag_box(window: &Window, path: std::path::PathBuf) -> windows::Win32::Foundation::HWND {
     let hover = Rc::new(Cell::new(false));
     let h = hover.clone();
-    let small = icon_of(&path, SHIL_SMALL);
     let hwnd = window.canvas(move |p| {
         p.fill(p.rect, theme::CHROME);
         let line = if h.get() { theme::ACCENT } else { theme::BORDER };
         let fill = if h.get() { theme::mix(theme::VIEW, theme::ACCENT, 0.12) } else { theme::VIEW };
         p.round(p.rect, wnd::px(theme::RADIUS), Some(fill), Some(line));
-        if let Some((list, index)) = &small {
-            let (mut width, mut height) = (0, 0);
-            // SAFETY: an icon of Windows' list, its size asked and drawn into our canvas, centred
-            unsafe {
-                let list = HIMAGELIST(list.as_raw() as isize);
-                let _ = ImageList_GetIconSize(list, Some(&mut width), Some(&mut height));
-                let _ = ImageList_Draw(list, *index, p.gdi(), (p.rect.right - width) / 2, (p.rect.bottom - height) / 2,
-                                       ILD_TRANSPARENT);
+        let size = wnd::px(26); // (the pointer's picture has room around its arrows)
+        // SAFETY: Windows' shared pointer, drawn into our canvas, centred
+        unsafe {
+            if let Ok(pointer) = LoadCursorW(None, IDC_SIZEALL) {
+                let _ = DrawIconEx(p.gdi(), (p.rect.right - size) / 2, (p.rect.bottom - size) / 2, HICON(pointer.0),
+                                   size, size, 0, None, DI_NORMAL);
             }
         }
     });

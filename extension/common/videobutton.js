@@ -246,20 +246,34 @@
   }
 
   // A video's own page: where a feed links each post (Instagram, TikTok, Facebook, X, YouTube's
-  // home page…). Feeds' own addresses aren't the video's, so look next to it for the post's link.
-  const PERMALINK = /\/(watch\?(.*&)?v=|shorts\/|reels?\/|p\/|tv\/|video\/|videos\/|watch\/|status\/|posts\/)/i;
+  // home page…). Feeds' own addresses aren't the video's, so look next to it for the post's link:
+  // from the video outwards, the first links to a post (Instagram and Facebook nest their videos
+  // deep inside a post, so far enough out to reach it).
+  const PERMALINK = /\/(watch\/?\?(.*&)?v=|shorts\/|reels?\/|p\/|tv\/|video\/|videos\/|share\/[vr]\/|status\/|posts\/|permalink\.php|story\.php)/i;
+  const STRONG = /\/(watch\/?\?(.*&)?v=|shorts\/|reels?\/|p\/|tv\/|video\/|videos\/|share\/[vr]\/)/i; // (a video's, over a post's)
+  const site = (host) => host.split(".").slice(-2).join("."); // (www., web., m. are the same site)
 
   function permalink(video) {
-    if (PERMALINK.test(location.href)) return location.href; // its page already (YouTube, Bilibili…)
+    if (PERMALINK.test(location.pathname + location.search)) return location.href; // its page already
     let node = video.parentElement;
-    for (let depth = 0; node && node !== document.body && depth < 8; depth++, node = node.parentElement) {
-      for (const a of node.querySelectorAll("a[href]")) {
-        if (PERMALINK.test(a.href) && new URL(a.href).host.endsWith(location.host.replace(/^www\./, ""))) {
-          return a.href;
+    for (let depth = 0; node && node !== document.body && depth < 30; depth++, node = node.parentElement) {
+      const links = [...node.querySelectorAll("a[href]")].filter((a) => {
+        try {
+          return PERMALINK.test(a.href) && site(new URL(a.href).host) === site(location.host);
+        } catch {
+          return false;
         }
-      }
+      });
+      if (links.length) return tidy((links.find((a) => STRONG.test(a.href)) || links[0]).href);
     }
     return location.href;
+  }
+
+  // Facebook's links carry its tracking ("?__cft__[0]=…&__tn__=…"): not part of the address.
+  function tidy(href) {
+    const url = new URL(href);
+    for (const key of [...url.searchParams.keys()]) if (key.startsWith("__")) url.searchParams.delete(key);
+    return url.href;
   }
 
   // What to send for `video`: a plain file (an .mp4 playing from its own address) goes to TurboDM

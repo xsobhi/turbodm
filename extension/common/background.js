@@ -93,6 +93,18 @@ function videoPage(info, tab) {
   return info.linkUrl || info.frameUrl || info.pageUrl || (tab && tab.url);
 }
 
+// Where a download came from: the browser's referrer, or else the page in front (the one the
+// user clicked the link on), for TurboDM's "Refresh download address" to open later.
+async function pageOf(item) {
+  if (item.referrer) return item.referrer;
+  try {
+    const [tab] = await api.tabs.query({ active: true, lastFocusedWindow: true });
+    return tab && /^https?:/i.test(tab.url || "") ? tab.url : null;
+  } catch {
+    return null;
+  }
+}
+
 function wanted(url, size, settings) {
   if (!settings.enabled || !/^https?:/i.test(url) || isSkippedHost(url, settings)) return false;
   return !(settings.minSizeKB > 0 && size > 0 && size < settings.minSizeKB * 1024);
@@ -118,7 +130,7 @@ if (BEFORE_SAVE_AS) {
       let accepted = false;
       try {
         if (wanted(url, item.totalBytes || item.fileSize, await getSettings())) {
-          accepted = await handOff({ url, filename: basename(item.filename), referrer: item.referrer,
+          accepted = await handOff({ url, filename: basename(item.filename), referrer: await pageOf(item),
                                      fileSize: item.totalBytes || item.fileSize });
         }
       } catch (err) {
@@ -150,7 +162,7 @@ api.downloads.onCreated.addListener(async (item) => {
       filename: basename(item.filename),
       // the folder picked in the browser's "Save As" dialog (or its own download folder)
       directory: dirname(item.filename),
-      referrer: item.referrer,
+      referrer: await pageOf(item),
       fileSize: item.totalBytes || item.fileSize,
       storeId: item.cookieStoreId,
     });

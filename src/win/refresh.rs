@@ -21,16 +21,22 @@ pub struct Waiting {
 pub fn start(app: &Rc<App>, id: &str) {
     let (Some(snap), Some(req)) = (app.manager.get(id), app.manager.request_of(id)) else { return };
     cancel(app);
+    // the page it came from; when the browser didn't say, the site it's on (its home page)
     let page = req.referrer.filter(|r| r.starts_with("http"));
-    if let Some(page) = &page {
-        shell::open(Path::new(page));
+    let site = site_of(&req.url);
+    if let Some(open) = page.as_ref().or(site.as_ref()) {
+        shell::open(Path::new(open));
     }
-    let said = match page {
-        Some(_) => format!("The page \u{201c}{}\u{201d} came from is open in your browser. Click its download link (or \
-                            button) there again: TurboDM takes the fresh address and goes on from where it was.",
-                           snap.filename),
-        None => format!("Open the page \u{201c}{}\u{201d} came from in your browser and click its download link (or \
-                         button) again: TurboDM takes the fresh address and goes on from where it was.", snap.filename),
+    let said = match (&page, &site) {
+        (Some(_), _) => format!("The page \u{201c}{}\u{201d} came from is open in your browser. Click its download link \
+                                 (or button) there again: TurboDM takes the fresh address and goes on from where it was.",
+                                snap.filename),
+        (None, Some(site)) => format!("{site} is open in your browser. Find \u{201c}{}\u{201d} there and click its download \
+                                       link again: TurboDM takes the fresh address and goes on from where it was.",
+                                      snap.filename),
+        (None, None) => format!("Open the page \u{201c}{}\u{201d} came from in your browser and click its download link \
+                                 (or button) again: TurboDM takes the fresh address and goes on from where it was.",
+                                snap.filename),
     };
     let window = Window::dialog("Refresh download address", None, (520, 150), false);
     let note = window.note(&said);
@@ -97,5 +103,22 @@ pub fn offer(app: &Rc<App>, snap: &Snapshot) {
     };
     if answer == IDYES {
         start(app, &snap.id);
+    }
+}
+
+/// A web address's site: "https://example.com/" for "https://example.com/files/a.zip?x=1".
+fn site_of(url: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://").filter(|(s, _)| s.starts_with("http"))?;
+    let host = rest.split(['/', '?', '#']).next().filter(|h| !h.is_empty())?;
+    Some(format!("{scheme}://{host}/"))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn site_of_an_address() {
+        assert_eq!(super::site_of("https://cdn.example.com/files/a.zip?x=1").as_deref(), Some("https://cdn.example.com/"));
+        assert_eq!(super::site_of("http://host:8080").as_deref(), Some("http://host:8080/"));
+        assert_eq!(super::site_of("magnet:?xt=urn:btih:abc"), None);
     }
 }

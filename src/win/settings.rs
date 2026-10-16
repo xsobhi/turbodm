@@ -56,10 +56,25 @@ pub fn open(app: &Rc<App>) {
     enable(forget, remembered > 0);
     let categories = window.switch(s.use_categories, |_| {});
 
-    // Connection: numbers
+    // Connection: how many, picked from a list (easier than typing); the other numbers typed
+    let pick = |values: &[usize], now: usize| {
+        let mut values: Vec<usize> = values.to_vec();
+        if !values.contains(&now) {
+            values.push(now); // (a number set before: kept)
+            values.sort_unstable();
+        }
+        let names: Vec<String> = values.iter().map(|v| v.to_string()).collect();
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        let chosen = Rc::new(Cell::new(now));
+        let c = chosen.clone();
+        let list = values.clone();
+        let hwnd = window.choice(&names, values.iter().position(|v| *v == now).unwrap_or(0),
+                                 move |i| c.set(list[i]));
+        (hwnd, chosen)
+    };
+    let (connections, connections_chosen) = pick(&[1, 2, 4, 8, 16, 24, MAX_CONNECTIONS], s.connections);
+    let (parallel, parallel_chosen) = pick(&[1, 2, 3, 4, 5, 6, 8, 10, 12, 16], s.max_parallel);
     let spin = |min: i32, max: i32, value: i32| window.spin(min, max, value, |_| {});
-    let connections = spin(1, MAX_CONNECTIONS as i32, s.connections as i32);
-    let parallel = spin(1, 16, s.max_parallel as i32);
     let speed = spin(0, 10_000_000, s.speed_limit_kib as i32);
     let retries = spin(0, 100, s.retries as i32);
     let timeout = spin(5, 300, s.timeout_secs as i32);
@@ -159,7 +174,7 @@ pub fn open(app: &Rc<App>) {
         }
         s.use_categories = is_checked(categories);
         let number = |field: HWND| text(field).parse::<i64>().unwrap_or(0).max(0);
-        (s.connections, s.max_parallel) = (number(connections) as usize, number(parallel) as usize);
+        (s.connections, s.max_parallel) = (connections_chosen.get(), parallel_chosen.get());
         (s.speed_limit_kib, s.retries, s.timeout_secs) = (number(speed) as u64, number(retries) as u32, number(timeout) as u64);
         (s.show_add_dialog, s.predownload) = (is_checked(confirm), is_checked(predownload));
         (s.show_progress_window, s.show_complete_dialog, s.notify_complete) =
