@@ -1,6 +1,6 @@
 [package]
 name = "turbodm"
-version = "1.10.4"
+version = "1.10.5"
 edition = "2024"
 description = "Fast multi-connection download manager with browser integration"
 license = "MIT"
