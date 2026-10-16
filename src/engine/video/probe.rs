@@ -2,7 +2,7 @@
 //! each is. Also yt-dlp's errors in plain words (shared with its own downloads).
 
 use super::args::common;
-use super::{formats, is_youtube, process, tools, VideoInfo};
+use super::{formats, is_youtube, process, sites, tools, VideoInfo};
 use crate::engine::http::Headers;
 use std::path::Path;
 use std::time::Duration;
@@ -16,7 +16,7 @@ fn cookies_first(url: &str) -> bool {
 /// The site wants to know who's asking: the browser's cookies may get in.
 fn wants_sign_in(error: &str) -> bool {
     let e = error.to_ascii_lowercase();
-    ["sign in", "log in", "login", "cookies", "your age", "private", "members"].iter().any(|w| e.contains(w))
+    ["sign in", "log in", "login", "logged", "cookies", "your age", "private", "members"].iter().any(|w| e.contains(w))
 }
 
 /// yt-dlp itself may be out of date (sites change; yt-dlp follows within days).
@@ -55,14 +55,16 @@ pub(super) fn error_of(stderr: &str) -> Option<String> {
 pub async fn probe(client: &reqwest::Client, url: &str, headers: &Headers, timeout: u64) -> Result<VideoInfo, String> {
     let mut exe = tools::yt_dlp(client).await?;
     let mut cookies = cookies_first(url) && headers.cookies.is_some();
-    let mut updated = false;
+    let (mut page, mut updated) = (url.to_string(), false);
     loop {
-        match probe_once(&exe, url, headers, cookies, timeout).await {
+        match probe_once(&exe, &page, headers, cookies, timeout).await {
             Ok(mut info) => {
                 info.with_cookies = cookies;
                 return Ok(info);
             }
             Err(e) if !cookies && headers.cookies.is_some() && wants_sign_in(&e) => cookies = true,
+            // (the same video elsewhere, when the page wants an account)
+            Err(e) if page == url && wants_sign_in(&e) && let Some(other) = sites::alternative(url) => page = other,
             Err(e) if !updated && looks_outdated(&e) => {
                 updated = true;
                 if tools::update(client, true).await != Ok(true) {

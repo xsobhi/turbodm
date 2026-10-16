@@ -38,6 +38,17 @@ pub fn is_web_page(content_type: &str) -> bool {
     matches!(content_type, "text/html" | "application/xhtml+xml")
 }
 
+/// Another address of the same video, for when its page wants an account: a Vimeo page's player
+/// (yt-dlp needs an account for Vimeo's pages, not for its player).
+pub(super) fn alternative(url: &str) -> Option<String> {
+    if !matches!(host(url).as_str(), "vimeo.com" | "www.vimeo.com") {
+        return None;
+    }
+    let path = url.split("://").nth(1)?.split(['?', '#']).next()?;
+    let id = path.rsplit('/').find(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))?;
+    Some(format!("https://player.vimeo.com/video/{id}"))
+}
+
 /// The domain a page's cookies are for: the whole site (Instagram's and Facebook's pages call
 /// their other hosts, which need them too), else the page's host. ".instagram.com".
 pub(super) fn cookie_domain(url: &str) -> String {

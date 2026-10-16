@@ -143,6 +143,9 @@ fn knows_video_sites_and_pages() {
     assert!(is_web_page("text/html") && !is_web_page("video/mp4"));
     assert_eq!(super::sites::cookie_domain("https://www.instagram.com/p/x/"), ".instagram.com");
     assert_eq!(super::sites::cookie_domain("https://www.example.org/v"), ".example.org");
+    assert_eq!(super::sites::alternative("https://vimeo.com/channels/staffpicks/76979871?x=1").as_deref(),
+               Some("https://player.vimeo.com/video/76979871"));
+    assert_eq!(super::sites::alternative("https://player.vimeo.com/video/1"), None);
 }
 
 #[test]
