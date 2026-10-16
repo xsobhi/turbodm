@@ -9,6 +9,7 @@ mod direct;
 mod formats;
 mod fresh;
 mod info;
+mod log;
 mod make;
 mod menu;
 mod names;

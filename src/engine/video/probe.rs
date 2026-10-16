@@ -33,7 +33,13 @@ pub async fn probe(client: &reqwest::Client, url: &str, headers: &Headers, timeo
         looks.retain(|_, (at, _)| at.elapsed() < KEEP);
         looks.entry(url.to_string()).or_insert_with(|| (Instant::now(), Look::default())).1.clone()
     };
-    let found = look.get_or_init(|| look_at(client, url, headers, timeout)).await.clone();
+    let found = look.get_or_init(|| async {
+        let started = Instant::now();
+        let found = look_at(client, url, headers, timeout).await;
+        let said = found.as_ref().map(|info| format!("{} ({} formats)", info.title, info.formats.len())).map_err(Clone::clone);
+        super::log::look(url, started.elapsed(), &said); // (video.log: what came of it)
+        found
+    }).await.clone();
     if found.is_err() {
         forget(url); // (the next ask tries again)
     }

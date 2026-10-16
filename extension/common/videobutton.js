@@ -13,6 +13,8 @@
 
   const api = globalThis.browser ?? globalThis.chrome;
   const menu = globalThis.__turbodmMenu;
+  const post = globalThis.__turbodmPost; // (which video, as an address: videopost.js)
+  const message = post.message;
   const MIN_WIDTH = 240; // smaller videos (thumbnails, adverts) get no button
   const MIN_HEIGHT = 135;
   const LINGER_MS = 1500; // after the mouse leaves the video
@@ -288,51 +290,10 @@
     hide(true);
   }
 
-  // A video's own page: where a feed links each post (Instagram, TikTok, Facebook, X, YouTube's
-  // home page…). Feeds' own addresses aren't the video's, so look next to it for the post's link:
-  // from the video outwards, the first links to a post (Instagram and Facebook nest their videos
-  // deep inside a post, so far enough out to reach it).
-  const PERMALINK = /\/(watch\/?\?(.*&)?v=|shorts\/|reels?\/|p\/|tv\/|video\/|videos\/|share\/[vr]\/|status\/|posts\/|permalink\.php|story\.php)/i;
-  const STRONG = /\/(watch\/?\?(.*&)?v=|shorts\/|reels?\/|p\/|tv\/|video\/|videos\/|share\/[vr]\/)/i; // (a video's, over a post's)
-  const site = (host) => host.split(".").slice(-2).join("."); // (www., web., m. are the same site)
-
-  function permalink(video) {
-    if (PERMALINK.test(location.pathname + location.search)) return location.href; // its page already
-    let node = video.parentElement;
-    for (let depth = 0; node && node !== document.body && depth < 30; depth++, node = node.parentElement) {
-      const links = [...node.querySelectorAll("a[href]")].filter((a) => {
-        try {
-          return PERMALINK.test(a.href) && site(new URL(a.href).host) === site(location.host);
-        } catch {
-          return false;
-        }
-      });
-      if (links.length) return tidy((links.find((a) => STRONG.test(a.href)) || links[0]).href);
-    }
-    return location.href;
-  }
-
-  // Facebook's links carry its tracking ("?__cft__[0]=…&__tn__=…"): not part of the address.
-  function tidy(href) {
-    const url = new URL(href);
-    for (const key of [...url.searchParams.keys()]) if (key.startsWith("__")) url.searchParams.delete(key);
-    return url.href;
-  }
-
-  // What to send for `video`: a plain file (an .mp4 playing from its own address) goes to TurboDM
-  // as a download of that file, on many connections; a streamed one (YouTube and most sites play
-  // "blob:" streams) as the page for TurboDM to find its video and qualities.
-  function message(video) {
-    const src = (video && (video.currentSrc || video.src)) || "";
-    if (/^https?:/i.test(src)) return { type: "media-file", url: src, referrer: location.href };
-    const url = video ? permalink(video) : location.href; // (in a frame: the embedded player's)
-    return { type: "video", url, referrer: document.referrer || null };
-  }
-
   // TurboDM, if it's running, starts looking at the video now (it isn't started for this):
   // its qualities are ready by the time they're asked for. Once per video.
   function lookAhead(what) {
-    if (what.type !== "video" || peeked.has(what.url)) return;
+    if (what.type !== "video" || peeked.has(what.url) || post.unsure(what)) return;
     peeked.add(what.url);
     try {
       api.runtime.sendMessage({ type: "video-peek", url: what.url, referrer: what.referrer }).catch(() => {});
@@ -342,17 +303,21 @@
   }
 
   // The button clicked: the qualities to pick from (a plain file just goes).
-  function act() {
+  async function act() {
     if (!shownFor) return;
     if (menu.isOpen(box)) {
       menu.close(box);
       box.classList.remove("open");
       return;
     }
-    const what = message(shownFor);
-    if (what.type !== "video") return send(what);
     box.classList.add("open");
     clearTimeout(hideTimer);
+    const what = await post.resolve(shownFor);
+    if (what.type !== "video") return send(what);
+    if (what.unknown) {
+      return menu.say(box, side, "Couldn't tell which video this is in the feed: open its post (click its time, " +
+                                 "or the video) and try again there.");
+    }
     menu.open(box, what, side, (choice) => {
       box.classList.remove("open");
       send(choice ? { ...what, choice } : what);

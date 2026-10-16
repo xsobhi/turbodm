@@ -61,6 +61,15 @@ globalThis.__turbodmMenu ??= (() => {
     return Boolean(box.querySelector(".menu"));
   }
 
+  // A menu with only a note in it (`place` as for `open`).
+  function say(box, place, text) {
+    close(box);
+    const menu = element(`menu ${place.end ? "end" : "start"}${place.up ? " up" : ""}`);
+    menu.addEventListener("click", (e) => e.stopPropagation());
+    menu.append(element("note", text));
+    box.append(menu);
+  }
+
   // Open the menu in `box` for `what` ({url, referrer}); `place`: {end, up} (which side it lines
   // up with, and whether it opens upwards); `chosen(id)`: a quality picked (null: "More choices",
   // TurboDM's own window).
@@ -76,12 +85,19 @@ globalThis.__turbodmMenu ??= (() => {
       close(box);
       chosen(id);
     };
+    // a look taking long: said, with TurboDM's own window as a way on (it goes on looking)
+    const slow = setTimeout(() => {
+      if (!menu.isConnected) return;
+      menu.replaceChildren(element("note", "Still looking\u2026 this one takes a while"), element("line"),
+                           row("Open in TurboDM\u2026", 0, pick(null)));
+    }, 10000);
     let reply = null;
     try {
       reply = await api.runtime.sendMessage({ type: "video-qualities", url: what.url, referrer: what.referrer });
     } catch {
       /* the extension was updated or turned off */
     }
+    clearTimeout(slow);
     if (!menu.isConnected) return; // (closed meanwhile)
     menu.replaceChildren();
     if (!reply || !reply.ok) {
@@ -101,5 +117,5 @@ globalThis.__turbodmMenu ??= (() => {
     menu.append(element("line"), row("More choices…", 0, pick(null)));
   }
 
-  return { STYLE, open, close, isOpen };
+  return { STYLE, open, close, isOpen, say };
 })();
