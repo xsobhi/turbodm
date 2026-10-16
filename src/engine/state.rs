@@ -108,8 +108,9 @@ pub fn snapshot(task: &Task) -> Snapshot {
         }
     };
     let info = task.info.lock().unwrap();
-    if let (Some(job), Some(_)) = (&info.video, &map) {
-        segments = super::video::shown_segments(job, segments); // its parts one after the other
+    if let Some(job) = info.video.as_ref().filter(|job| !job.by_ytdlp) {
+        // its parts one after the other: those in, and the connections of the one under way
+        segments = super::video::shown_segments(job, if map.is_some() { segments } else { vec![] });
     }
     let filename = info.filename.clone().unwrap_or_else(|| match &torrent {
         Some(_) => name_hint(&info.url).unwrap_or_else(|| "(getting the torrent's details…)".into()),

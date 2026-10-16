@@ -122,6 +122,11 @@ impl Details {
             }).collect(),
         };
         let mut rows = self.rows.borrow_mut();
+        // fewer than before (a video's next part): the rest go
+        while rows.len() > wanted.len() {
+            send(self.list, LVM_DELETEITEM, rows.len() - 1, 0);
+            rows.pop();
+        }
         while rows.len() < wanted.len() {
             let item = LVITEMW { mask: LVIF_TEXT, iItem: rows.len() as i32, pszText: PWSTR(w!("").as_ptr() as *mut _),
                                  ..Default::default() };
