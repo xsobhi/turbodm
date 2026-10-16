@@ -107,7 +107,9 @@ fn page(app: &Rc<App>, form: &Rc<Form>, content_type: Option<&str>) -> bool {
 /// Show what the early download or the check found out.
 fn watch(app: &Rc<App>, form: &Rc<Form>) {
     video::watch(app, form);
-    let early = form.early.borrow().as_ref().map(|(_, id)| id.clone());
+    // (a video's early download says nothing here: its quality's line does)
+    let file = form.video.found.borrow().is_none();
+    let early = form.early.borrow().as_ref().filter(|_| file).map(|(_, id)| id.clone());
     if let Some(s) = early.and_then(|id| app.manager.get(&id)) {
         if page(app, form, s.content_type.as_deref()) {
             return;
