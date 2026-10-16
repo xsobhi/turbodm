@@ -9,6 +9,7 @@ mod draw;
 mod keys;
 mod layout;
 mod mouse;
+mod screen;
 #[cfg(test)]
 mod tests;
 mod track;

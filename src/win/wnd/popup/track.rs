@@ -4,15 +4,13 @@
 
 use super::draw::{self, Look};
 use super::layout::{self, At, Geometry, PAD};
+use super::screen::{self, cursor, in_front, screen_point, system_cues, work_area};
 use super::window::{Surface, CANCELLED};
 use super::{Item, Options, Outcome};
 use crate::win::theme::{self, Font};
 use crate::win::wnd::{moves, px};
 use std::cell::Cell;
-use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, POINT, RECT};
-use windows::Win32::Graphics::Gdi::{ClientToScreen, GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST};
-use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetCapture, ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -51,17 +49,17 @@ pub fn run(owner: HWND, items: &[Item], at: At, options: Options) -> Outcome {
     let keyboard = options.keyboard;
     let mut menu = Menu { owner, levels: vec![], options, cues: keyboard || system_cues(), pending: None,
                           last: cursor(), alt: false };
-    // SAFETY: plain calls: the keyboard comes to our window (as for Windows' menus), the mouse
-    // to the menu, and a timer that checks TurboDM is still in front
+    if !offscreen {
+        // SAFETY: plain call: the keyboard comes to our window, as for Windows' menus
+        unsafe { let _ = SetForegroundWindow(owner); }
+    }
+    menu.open(items, at, None);
+    if keyboard {
+        menu.select(0, super::keys::step(items, None, true));
+    }
+    let root = menu.root();
+    // SAFETY: plain calls: the mouse to the menu, and a timer that checks TurboDM is still in front
     unsafe {
-        if !offscreen {
-            let _ = SetForegroundWindow(owner);
-        }
-        menu.open(items, at, None);
-        if keyboard {
-            menu.select(0, layout::step(items, None, true));
-        }
-        let root = menu.root();
         if !offscreen {
             SetCapture(root);
         }
@@ -106,7 +104,7 @@ impl<'a> Menu<'a> {
                 WM_KEYUP | WM_SYSKEYUP => (msg.wParam.0 == 0x12 && std::mem::take(&mut self.alt)).then_some(Outcome::Closed), // Alt alone
                 WM_CHAR | WM_SYSCHAR => char::from_u32(msg.wParam.0 as u32).and_then(|c| self.letter(c)),
                 WM_TIMER if msg.hwnd == self.root() && msg.wParam.0 == SUB_TIMER => self.timer(),
-                WM_TIMER if msg.hwnd == self.root() && msg.wParam.0 == WATCH_TIMER => (!offscreen && !self.in_front()).then_some(Outcome::Closed),
+                WM_TIMER if msg.hwnd == self.root() && msg.wParam.0 == WATCH_TIMER => (!offscreen && !in_front(self.root())).then_some(Outcome::Closed),
                 _ => {
                     // SAFETY: everything else goes where it was going
                     unsafe { DispatchMessageW(&msg) };
@@ -123,12 +121,6 @@ impl<'a> Menu<'a> {
         self.levels[0].surface.hwnd
     }
 
-    /// TurboDM still has the keyboard and the menu the mouse (not lost to another program).
-    fn in_front(&self) -> bool {
-        // SAFETY: plain queries
-        unsafe { GetWindowThreadProcessId(GetForegroundWindow(), None) == GetCurrentThreadId() && GetCapture() == self.root() }
-    }
-
     /// Open a menu of `items` `at` a place (a sub-menu: from the last one's line `opener`).
     pub fn open(&mut self, items: &'a [Item], at: At, opener: Option<usize>) {
         let min_width = if self.levels.is_empty() { self.options.min_width } else { 0 };
@@ -139,15 +131,7 @@ impl<'a> Menu<'a> {
             At::Below(r) => POINT { x: r.left, y: r.bottom },
             At::Beside(parent, top) => POINT { x: parent.right, y: top },
         };
-        let mut p = layout::place(at, (geo.width, geo.height), work_area(at_point), px(PAD));
-        if moves::offscreen() {
-            // (tests: never on a screen, even where the mouse is)
-            // SAFETY: plain query
-            let screens = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) };
-            if p.x + geo.width > screens {
-                p.x = screens - 30_000 + p.x.rem_euclid(10_000);
-            }
-        }
+        let p = screen::off_screen_in_tests(layout::place(at, (geo.width, geo.height), work_area(at_point), px(PAD)), geo.width);
         let body = RECT { left: p.x, top: p.y, right: p.x + geo.width, bottom: p.y + geo.height };
         let surface = Surface::new(self.owner, body);
         self.levels.push(Level { items, geo, surface, selected: None, opener });
@@ -163,7 +147,7 @@ impl<'a> Menu<'a> {
         self.select(l, Some(i));
         self.open(sub, At::Beside(parent, parent.top + top), Some(i));
         if first {
-            self.select(l + 1, layout::step(sub, None, true));
+            self.select(l + 1, super::keys::step(sub, None, true));
         }
     }
 
@@ -220,46 +204,4 @@ impl<'a> Menu<'a> {
         }
         None
     }
-}
-
-/// Where a mouse message happened, on the screen.
-fn screen_point(msg: &MSG) -> POINT {
-    let mut p = POINT { x: (msg.lParam.0 & 0xffff) as i16 as i32, y: ((msg.lParam.0 >> 16) & 0xffff) as i16 as i32 };
-    let client = (WM_MOUSEFIRST..=WM_MOUSELAST).contains(&msg.message) && !matches!(msg.message, WM_MOUSEWHEEL | WM_MOUSEHWHEEL);
-    if client {
-        // SAFETY: plain conversion
-        unsafe { let _ = ClientToScreen(msg.hwnd, &mut p); }
-    }
-    p
-}
-
-fn cursor() -> POINT {
-    let mut p = POINT::default();
-    // SAFETY: plain query
-    unsafe { let _ = GetCursorPos(&mut p); }
-    p
-}
-
-/// The screen's area without the taskbar, where `p` is (tests: anywhere, off the screen).
-fn work_area(p: POINT) -> RECT {
-    let far = 1 << 24;
-    if moves::offscreen() {
-        return RECT { left: -far, top: -far, right: far, bottom: far };
-    }
-    let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
-    // SAFETY: plain queries
-    unsafe {
-        if !GetMonitorInfoW(MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST), &mut info).as_bool() {
-            return RECT { left: -far, top: -far, right: far, bottom: far };
-        }
-    }
-    info.rcWork
-}
-
-/// The user asked Windows to always underline the letters to type (else: once the keyboard's used).
-fn system_cues() -> bool {
-    let mut on = BOOL(0);
-    // SAFETY: a plain query into our variable
-    unsafe { let _ = SystemParametersInfoW(SPI_GETKEYBOARDCUES, 0, Some((&raw mut on).cast()), Default::default()); }
-    on.as_bool()
 }

@@ -9,12 +9,10 @@ use crate::win::wnd::{instance, px, send};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Once;
-use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::core::PCWSTR;
+use windows::Win32::Foundation::{HWND, LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::InvalidateRect;
-use windows::Win32::UI::Controls::{LVIR_BOUNDS, LVM_GETITEMRECT, LVM_GETTOPINDEX, LVM_SCROLL, WM_MOUSELEAVE};
-use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT};
+use windows::Win32::UI::Controls::{LVIR_BOUNDS, LVM_GETITEMRECT, LVM_GETTOPINDEX, LVM_SCROLL};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// The thumb's width, idle and under the mouse; its gap from the edge; its shortest (96 DPI).
@@ -22,32 +20,31 @@ const SLIM: i32 = 6;
 const WIDE: i32 = 10;
 const GAP: i32 = 3;
 const SHORTEST: i32 = 28;
-const REPEAT: usize = 1; // the timer paging again while the track is held
 
 pub struct Bar {
     pub hwnd: HWND,
-    control: HWND,
+    pub(super) control: HWND,
     vertical: bool,
     list: bool,          // a list view (scrolled with LVM_SCROLL)
-    start: Cell<i32>,    // where its track starts (vertical: under the list's header)
-    range: Cell<Range>,  // as drawn
-    hover: Cell<bool>,
-    drag: Cell<Option<i32>>, // dragged: where in the thumb it was taken
-    paging: Cell<i32>,   // the track held: paging up (-1) or down (1)
+    pub(super) start: Cell<i32>, // where its track starts (vertical: under the list's header)
+    pub(super) range: Cell<Range>, // as drawn
+    pub(super) hover: Cell<bool>,
+    pub(super) drag: Cell<Option<i32>>, // dragged: where in the thumb it was taken
+    pub(super) paging: Cell<i32>, // the track held: paging up (-1) or down (1)
     mouse: Cell<i32>,    // where the mouse was last, along it
 }
 
 thread_local! {
-    static BARS: RefCell<HashMap<isize, Rc<Bar>>> = RefCell::default();
+    pub(super) static BARS: RefCell<HashMap<isize, Rc<Bar>>> = RefCell::default();
 }
 
 impl Bar {
     /// A bar for `control` (hidden until placed), in the same window.
     pub fn new(control: HWND, vertical: bool, list: bool) -> Rc<Bar> {
-        register();
+        super::window::register();
         // SAFETY: a child of the control's window, destroyed with it (or by mod.rs)
         let hwnd = unsafe {
-            CreateWindowExW(WINDOW_EX_STYLE(0), CLASS, PCWSTR::null(), WS_CHILD, 0, 0, 0, 0, GetParent(control).ok(), None,
+            CreateWindowExW(WINDOW_EX_STYLE(0), super::window::CLASS, PCWSTR::null(), WS_CHILD, 0, 0, 0, 0, GetParent(control).ok(), None,
                             Some(instance()), None).unwrap_or_default()
         };
         let bar = Rc::new(Bar { hwnd, control, vertical, list, start: Cell::new(0), range: Cell::default(),
@@ -86,7 +83,7 @@ impl Bar {
     }
 
     /// Its track along it: start and length (its pixels).
-    fn track(&self) -> (i32, i32) {
+    pub(super) fn track(&self) -> (i32, i32) {
         let mut r = RECT::default();
         // SAFETY: plain query
         unsafe { let _ = GetClientRect(self.hwnd, &mut r); }
@@ -96,12 +93,12 @@ impl Bar {
     }
 
     /// The thumb: start and length along the bar (its pixels).
-    fn thumb(&self) -> Option<(i32, i32)> {
+    pub(super) fn thumb(&self) -> Option<(i32, i32)> {
         let (start, length) = self.track();
         self.range.get().thumb(length, px(SHORTEST)).map(|(at, size)| (start + at, size))
     }
 
-    fn paint(&self, p: &Painter) {
+    pub(super) fn paint(&self, p: &Painter) {
         p.fill(p.rect, theme::VIEW);
         let Some((at, size)) = self.thumb() else { return };
         let busy = self.hover.get() || self.drag.get().is_some();
@@ -125,7 +122,7 @@ impl Bar {
     }
 
     /// Scroll the control so its top (or left) is at `pos`.
-    fn scroll_to(&self, pos: i32) {
+    pub(super) fn scroll_to(&self, pos: i32) {
         let by = pos - self.read().pos;
         if by == 0 {
             return;
@@ -152,14 +149,14 @@ impl Bar {
     }
 
     /// The mouse at `lparam` (a mouse message's): where it is along the bar.
-    fn mouse_at(&self, lparam: LPARAM) -> i32 {
+    pub(super) fn mouse_at(&self, lparam: LPARAM) -> i32 {
         let (x, y) = ((lparam.0 & 0xffff) as i16 as i32, ((lparam.0 >> 16) & 0xffff) as i16 as i32);
         self.mouse.set(if self.vertical { y } else { x });
         self.mouse.get()
     }
 
     /// The track held: a page toward the mouse, if the thumb isn't there yet.
-    fn page(&self) {
+    pub(super) fn page(&self) {
         let (along, way) = (self.mouse.get(), self.paging.get());
         let Some((at, size)) = self.thumb() else { return };
         if (way < 0 && along < at) || (way > 0 && along >= at + size) {
@@ -167,92 +164,8 @@ impl Bar {
         }
     }
 
-    fn redraw(&self) {
+    pub(super) fn redraw(&self) {
         // SAFETY: plain call on our own window
         unsafe { let _ = InvalidateRect(Some(self.hwnd), None, false); }
-    }
-}
-
-const CLASS: PCWSTR = w!("TurboDMScrollBar");
-
-fn register() {
-    static ONCE: Once = Once::new();
-    ONCE.call_once(|| unsafe {
-        // SAFETY: plain class registration with a static name and procedure
-        let class = WNDCLASSEXW {
-            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-            lpfnWndProc: Some(procedure),
-            hInstance: instance(),
-            hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-            lpszClassName: CLASS,
-            ..Default::default()
-        };
-        RegisterClassExW(&class);
-    });
-}
-
-extern "system" fn procedure(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    let Some(bar) = BARS.with(|b| b.borrow().get(&(hwnd.0 as isize)).cloned()) else {
-        // SAFETY: the default handling
-        return unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) };
-    };
-    // SAFETY: standard handling of our own window's messages
-    unsafe {
-        match msg {
-            WM_ERASEBKGND => return LRESULT(1),
-            WM_PAINT => Painter::paint(hwnd, |p| bar.paint(p)),
-            WM_MOUSEMOVE => {
-                let along = bar.mouse_at(lparam);
-                if !bar.hover.replace(true) {
-                    let mut track = TRACKMOUSEEVENT { cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
-                                                      dwFlags: TME_LEAVE, hwndTrack: hwnd, dwHoverTime: 0 };
-                    let _ = TrackMouseEvent(&mut track);
-                    bar.redraw();
-                }
-                if let (Some(grab), Some((_, size))) = (bar.drag.get(), bar.thumb()) {
-                    let (start, length) = bar.track();
-                    bar.scroll_to(bar.range.get().at(along - start - grab, length, size));
-                }
-            }
-            WM_MOUSELEAVE => {
-                bar.hover.set(false);
-                bar.redraw();
-            }
-            WM_LBUTTONDOWN => {
-                SetCapture(hwnd);
-                let along = bar.mouse_at(lparam);
-                match bar.thumb() {
-                    Some((at, size)) if (at..at + size).contains(&along) => bar.drag.set(Some(along - at)),
-                    Some((at, _)) => {
-                        bar.paging.set(if along < at { -1 } else { 1 });
-                        bar.page();
-                        SetTimer(Some(hwnd), REPEAT, 350, None);
-                    }
-                    None => {}
-                }
-                bar.redraw();
-            }
-            WM_LBUTTONUP | WM_CAPTURECHANGED => {
-                if msg == WM_LBUTTONUP {
-                    let _ = ReleaseCapture();
-                }
-                bar.drag.set(None);
-                bar.paging.set(0);
-                let _ = KillTimer(Some(hwnd), REPEAT);
-                bar.redraw();
-            }
-            WM_TIMER if wparam.0 == REPEAT && bar.paging.get() != 0 => {
-                bar.page();
-                SetTimer(Some(hwnd), REPEAT, 50, None);
-            }
-            // the wheel over the bar scrolls the control, as over it
-            WM_MOUSEWHEEL | WM_MOUSEHWHEEL => return LRESULT(send(bar.control, msg, wparam.0, lparam.0)),
-            WM_NCDESTROY => {
-                BARS.with(|b| b.borrow_mut().remove(&(hwnd.0 as isize)));
-                return DefWindowProcW(hwnd, msg, wparam, lparam);
-            }
-            _ => return DefWindowProcW(hwnd, msg, wparam, lparam),
-        }
-        LRESULT(0)
     }
 }

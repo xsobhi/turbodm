@@ -51,21 +51,6 @@ pub fn plain(text: &str) -> String {
     out
 }
 
-/// The letter after a single &, lower case: typed, it picks the item.
-pub fn mnemonic(text: &str) -> Option<char> {
-    let mut chars = split(text).0.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '&' {
-            match chars.next() {
-                Some('&') => {}
-                Some(letter) => return letter.to_lowercase().next(),
-                None => return None,
-            }
-        }
-    }
-    None
-}
-
 /// Lay out `items`, measuring text with `measure(text, bold)`; `scale` turns 96-DPI pixels into
 /// the screen's; at least `min_width` wide (a drop-down's button).
 pub fn measure(items: &[Item], measure: impl Fn(&str, bool) -> i32, scale: impl Fn(i32) -> i32, min_width: i32) -> Geometry {
@@ -127,26 +112,6 @@ pub fn place(at: At, size: (i32, i32), work: RECT, pad: i32) -> POINT {
     POINT { x, y }
 }
 
-/// The next item the keyboard can go to, down or up from `from` (round the end), if any.
-pub fn step(items: &[Item], from: Option<usize>, down: bool) -> Option<usize> {
-    let n = items.len();
-    let start = match (from, down) {
-        (Some(i), true) => i + 1,
-        (Some(i), false) => i + n - 1,
-        (None, true) => 0,
-        (None, false) => n.checked_sub(1)?,
-    };
-    (0..n).map(|k| if down { (start + k) % n } else { (start + n - k) % n }).find(|&i| items[i].enabled())
-}
-
-/// The items `letter` picks: the next one after `from`, and whether it's the only one.
-pub fn by_letter(items: &[Item], from: Option<usize>, letter: char) -> Option<(usize, bool)> {
-    let letter = letter.to_lowercase().next()?;
-    let matching: Vec<usize> = (0..items.len()).filter(|&i| mnemonic(items[i].text()) == Some(letter)).collect();
-    let next = matching.iter().copied().find(|&i| from.is_some_and(|f| i > f)).or(matching.first().copied())?;
-    Some((next, matching.len() == 1))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,10 +127,6 @@ mod tests {
     fn texts() {
         assert_eq!(split("&Open\tCtrl+O"), ("&Open", "Ctrl+O"));
         assert_eq!(plain("&Speed && limits"), "Speed & limits");
-        assert_eq!(mnemonic("&Speed && limits"), Some('s'));
-        assert_eq!(mnemonic("Fish && chips"), None);
-        assert_eq!(mnemonic("Open &with...\tW"), Some('w'));
-        assert_eq!(mnemonic("a.zip\t50% &done"), None); // (only the name counts)
     }
 
     #[test]
@@ -191,23 +152,6 @@ mod tests {
         assert_eq!(g.hit(10, PAD), None); // the padding
         assert_eq!(g.hit(0, 1 + PAD), None); // the border
         assert_eq!(g.hit(10, g.height - 2), None);
-    }
-
-    #[test]
-    fn keys() {
-        let items = items();
-        assert_eq!(step(&items, None, true), Some(0));
-        assert_eq!(step(&items, Some(0), true), Some(3)); // over the greyed one and the line
-        assert_eq!(step(&items, Some(5), true), Some(0)); // round the end
-        assert_eq!(step(&items, Some(0), false), Some(5));
-        assert_eq!(step(&items, None, false), Some(5));
-        assert_eq!(step(&[Line], None, true), None);
-        assert_eq!(by_letter(&items, None, 'O'), Some((0, false))); // Open and Other
-        assert_eq!(by_letter(&items, Some(0), 'o'), Some((5, false)));
-        assert_eq!(by_letter(&items, Some(5), 'o'), Some((0, false)));
-        assert_eq!(by_letter(&items, None, 't'), Some((3, true)));
-        assert_eq!(by_letter(&items, None, 'w'), Some((1, true))); // (greyed: found, but it does nothing)
-        assert_eq!(by_letter(&items, None, 'z'), None);
     }
 
     #[test]

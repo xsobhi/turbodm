@@ -4,7 +4,10 @@
 //! (bar.rs) shows in its place, following the control however it scrolls.
 
 mod bar;
+#[cfg(test)]
+mod tests;
 mod thumb;
+mod window;
 
 use bar::Bar;
 use std::cell::{Cell, RefCell};
