@@ -1,12 +1,12 @@
 //! The main window's commands: the menu bar's menus (as IDM's), the right-click menu, keyboard
 //! shortcuts, and what each does.
 
+use super::super::wnd::popup::{self, At};
 use super::super::{add, batch, dialogs, progress, refresh, settings, shell, App};
 use super::menubar;
 use std::path::Path;
 use std::rc::Rc;
 use turbodm::engine::{AddRequest, Status};
-use windows::core::HSTRING;
 use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::UI::Input::KeyboardAndMouse::{VK_DELETE, VK_F5};
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -59,30 +59,18 @@ enum Item {
 
 use Item::{Do, Line, Sub, Tick};
 
-fn build(items: &[Item]) -> HMENU {
-    // SAFETY: a new menu filled with our items; Windows frees it with its parent, or after use
-    unsafe {
-        let menu = CreatePopupMenu().unwrap_or_default();
-        for item in items {
-            let _ = match item {
-                Do(cmd, text, on) => {
-                    let flags = if *on { MF_STRING } else { MF_STRING | MF_GRAYED };
-                    AppendMenuW(menu, flags, *cmd as usize, &HSTRING::from(*text))
-                }
-                Tick(cmd, text, on) => {
-                    let flags = if *on { MF_STRING | MF_CHECKED } else { MF_STRING };
-                    AppendMenuW(menu, flags, *cmd as usize, &HSTRING::from(*text))
-                }
-                Sub(text, items) => AppendMenuW(menu, MF_POPUP, build(items).0 as usize, &HSTRING::from(*text)),
-                Line => AppendMenuW(menu, MF_SEPARATOR, 0, None),
-            };
-        }
-        menu
-    }
+/// The menus' lines, as TurboDM's menus have them (wnd/popup).
+fn build(items: &[Item]) -> Vec<popup::Item> {
+    items.iter().map(|item| match item {
+        Do(cmd, text, on) => popup::Item::Do(*cmd as u16, text.to_string(), *on),
+        Tick(cmd, text, on) => popup::Item::Tick(*cmd as u16, text.to_string(), *on),
+        Sub(text, items) => popup::Item::Sub(text.to_string(), build(items)),
+        Line => popup::Item::Line,
+    }).collect()
 }
 
 /// The menu bar's menu `index` (as `menubar::MENUS`), for what's selected now.
-pub fn bar_menu(app: &Rc<App>, index: usize) -> HMENU {
+pub fn bar_menu(app: &Rc<App>, index: usize) -> Vec<popup::Item> {
     let s = app.manager.settings();
     let selected: Vec<_> = app.main.list.selected().iter().filter_map(|id| app.manager.get(id)).collect();
     let any = !selected.is_empty();
@@ -133,16 +121,7 @@ pub fn context(owner: HWND, point: POINT) {
         Do(Cmd::Resume, "&Resume", true), Do(Cmd::Pause, "&Pause", true), Do(Cmd::Redownload, "Re&download...", true),
         Do(Cmd::Refresh, "Refresh download &address...", true), Do(Cmd::CopyUrl, "&Copy address", true), Line,
         Do(Cmd::Remove, "Remove from &list", true), Do(Cmd::DeleteFile, "Delete with &file...", true)];
-    show(owner, build(&items), point);
-}
-
-fn show(owner: HWND, menu: HMENU, point: POINT) {
-    // SAFETY: shows our menu; its choice arrives as WM_COMMAND
-    unsafe {
-        let _ = SetForegroundWindow(owner);
-        let _ = TrackPopupMenu(menu, TPM_RIGHTBUTTON, point.x, point.y, None, owner, None);
-        let _ = DestroyMenu(menu);
-    }
+    popup::command(owner, &build(&items), At::Point(point)); // (its choice comes as WM_COMMAND)
 }
 
 /// Keyboard shortcuts of the main window (Alt and a menu's letter opens it).
@@ -239,10 +218,10 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
         }
         Cmd::GitHub => shell::open(Path::new(GITHUB)),
         Cmd::Report => shell::open(Path::new(&format!("{GITHUB}/issues/new"))),
-        Cmd::MenuTasks => menubar::open(app, 0),
-        Cmd::MenuFile => menubar::open(app, 1),
-        Cmd::MenuDownloads => menubar::open(app, 2),
-        Cmd::MenuView => menubar::open(app, 3),
-        Cmd::MenuHelp => menubar::open(app, 4),
+        Cmd::MenuTasks => menubar::open(app, 0, true),
+        Cmd::MenuFile => menubar::open(app, 1, true),
+        Cmd::MenuDownloads => menubar::open(app, 2, true),
+        Cmd::MenuView => menubar::open(app, 3, true),
+        Cmd::MenuHelp => menubar::open(app, 4, true),
     }
 }

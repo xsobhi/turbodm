@@ -146,6 +146,7 @@ fn review(app: &Rc<App>, title: &str, links: Vec<String>) {
     let style = WS_TABSTOP | WS_VSCROLL | WINDOW_STYLE((ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN) as u32);
     let (list, _) = window.control(WC_EDITW, &links.join("\r\n"), style, WINDOW_EX_STYLE(0));
     field::make_field(list, vec![]);
+    wnd::scrollbar::slim(list);
     let start = window.checkbox("Start downloading now", true, |_| {});
     let (a, w) = (app.clone(), window.clone());
     let add = window.default_button("Add all", move || {

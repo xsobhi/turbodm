@@ -71,12 +71,25 @@ fn bitmap(png: Picture) -> Option<*mut GpBitmap> {
     }
 }
 
-/// The picture as a window icon (for a taskbar button): Windows scales it as it needs.
-pub fn hicon(png: Picture) -> Option<windows::Win32::UI::WindowsAndMessaging::HICON> {
-    let bitmap = bitmap(png)?;
+/// The picture as an icon `size` pixels square (the notification area's), smoothly scaled.
+pub fn hicon(png: Picture, size: i32) -> Option<windows::Win32::UI::WindowsAndMessaging::HICON> {
+    let source = bitmap(png)?;
     let mut icon = windows::Win32::UI::WindowsAndMessaging::HICON::default();
-    // SAFETY: GDI+ makes the icon from our decoded picture; it lasts the program's life
-    (unsafe { GdipCreateHICONFromBitmap(bitmap, &mut icon) } == Ok).then_some(icon)
+    // SAFETY: GDI+ objects made and freed here; the icon made from them lasts the program's life
+    unsafe {
+        let mut canvas = null_mut();
+        if GdipCreateBitmapFromScan0(size, size, 0, PARGB, None, &mut canvas) != Ok {
+            return None;
+        }
+        let mut graphics = null_mut();
+        if GdipGetImageGraphicsContext(canvas.cast(), &mut graphics) == Ok {
+            draw_scaled(graphics, source, RECT { left: 0, top: 0, right: size, bottom: size }, false);
+            GdipDeleteGraphics(graphics);
+        }
+        let made = GdipCreateHICONFromBitmap(canvas, &mut icon) == Ok;
+        GdipDisposeImage(canvas.cast());
+        made.then_some(icon)
+    }
 }
 
 /// GDI+'s 32-bit premultiplied pixels (PixelFormat32bppPARGB).

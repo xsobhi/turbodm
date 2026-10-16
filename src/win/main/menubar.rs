@@ -1,17 +1,17 @@
 //! The menu bar, as IDM's: Tasks, File, Downloads, View, Help in a row under the title bar. A
 //! click (or Alt and the underlined letter) opens a menu, and moving to another name while one
-//! is open opens that one instead, as Windows' own menu bars do.
+//! is open opens that one instead, as Windows' own menu bars do. As Mint-Y draws it, the name
+//! whose menu is open is in Mint's green, the menu right under it (wnd/popup).
 
 use super::super::theme::{self, Align, Font, Painter};
 use super::super::wnd::canvas::{self, Mouse};
+use super::super::wnd::popup::{self, At, Bar, Options, Outcome};
 use super::super::wnd::{px, Window};
 use super::super::App;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
-use windows::Win32::Graphics::Gdi::{ClientToScreen, ScreenToClient};
-use windows::Win32::System::Threading::GetCurrentThreadId;
-use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::Graphics::Gdi::{ClientToScreen, ScreenToClient, UpdateWindow};
 
 /// Its height (96-DPI pixels); the menus' names (& marks the letter Alt goes with).
 pub const HEIGHT: i32 = 28;
@@ -19,26 +19,31 @@ pub const MENUS: [&str; 5] = ["&Tasks", "&File", "&Downloads", "&View", "&Help"]
 
 #[derive(Default)]
 struct State {
-    spans: RefCell<Vec<(i32, i32)>>, // each name's left and right (canvas pixels)
     hover: Cell<Option<usize>>,
     open: Cell<Option<usize>>,
 }
 
 impl State {
     fn at(&self, x: i32) -> Option<usize> {
-        self.spans.borrow().iter().position(|&(left, right)| (left..right).contains(&x))
+        spans().iter().position(|&(left, right)| (left..right).contains(&x))
     }
+}
+
+/// Each name's left and right (canvas pixels).
+fn spans() -> Vec<(i32, i32)> {
+    let mut x = px(6);
+    MENUS.iter().map(|name| {
+        let left = x;
+        x += theme::measure(&name.replace('&', ""), Font::Body) + px(20);
+        let span = (left, x);
+        x += px(2);
+        span
+    }).collect()
 }
 
 pub struct MenuBar {
     pub hwnd: HWND,
     state: Rc<State>,
-}
-
-thread_local! {
-    // while a menu is open: the bar, and the menu the mouse moved to (opened when this one closes)
-    static TRACKING: RefCell<Option<(HWND, Rc<State>)>> = const { RefCell::new(None) };
-    static NEXT: Cell<Option<usize>> = const { Cell::new(None) };
 }
 
 impl MenuBar {
@@ -60,93 +65,69 @@ impl MenuBar {
             }
             Mouse::Down(x, _) => {
                 if let Some(i) = s.at(x) {
-                    super::super::post(move |app| open(app, i));
+                    super::super::post(move |app| open(app, i, false));
                 }
             }
             _ => {}
         });
         MenuBar { hwnd, state }
     }
+
+    /// The bar's name under `p` (screen pixels).
+    fn name_at(&self, p: POINT) -> Option<usize> {
+        let mut p = p;
+        // SAFETY: plain conversion to the bar's pixels
+        unsafe { let _ = ScreenToClient(self.hwnd, &mut p); }
+        (0..px(HEIGHT)).contains(&p.y).then(|| self.state.at(p.x)).flatten()
+    }
 }
 
 fn paint(p: &Painter, s: &State) {
     p.fill(p.rect, theme::CHROME);
-    let mut x = px(6);
-    let mut spans = vec![];
-    for (i, name) in MENUS.iter().enumerate() {
+    for (i, (name, (left, right))) in MENUS.iter().zip(spans()).enumerate() {
         let name = name.replace('&', "");
-        let width = theme::measure(&name, Font::Body) + px(20);
-        let r = windows::Win32::Foundation::RECT { left: x, top: px(3), right: x + width, bottom: p.rect.bottom - px(3) };
-        let fill = match (s.open.get(), s.hover.get()) {
-            (Some(open), _) if open == i => Some(theme::BUTTON_PRESSED),
-            (None, Some(hover)) if hover == i => Some(theme::mix(theme::CHROME, theme::BORDER, 0.55)),
-            _ => None,
+        let r = RECT { left, top: px(3), right, bottom: p.rect.bottom - px(3) };
+        let (fill, color) = match (s.open.get(), s.hover.get()) {
+            (Some(open), _) if open == i => (Some(theme::ACCENT), theme::WHITE), // its menu is open
+            (None, Some(hover)) if hover == i => (Some(theme::mix(theme::CHROME, theme::BORDER, 0.55)), theme::TEXT),
+            _ => (None, theme::TEXT),
         };
         if fill.is_some() {
             p.round(r, px(theme::RADIUS), fill, None);
         }
-        p.text(r, &name, Font::Body, theme::TEXT, Align::Center);
-        spans.push((r.left, r.right));
-        x = r.right + px(2);
+        p.text(r, &name, Font::Body, color, Align::Center);
     }
-    *s.spans.borrow_mut() = spans;
 }
 
-/// Open menu `index` under its name; while it's open, the mouse on another name opens that one.
-pub fn open(app: &Rc<App>, index: usize) {
+/// Open menu `index` under its name (`keyboard`: from Alt and its letter); while it's open, the
+/// mouse on another name, or Left and Right, open the others. The command chosen goes to the
+/// window as WM_COMMAND, as from Windows' menus (menu.rs `run`).
+pub fn open(app: &Rc<App>, index: usize, keyboard: bool) {
     let bar = &app.main.menubar;
-    let mut next = Some(index);
-    while let Some(i) = next.take() {
-        let Some(&(left, _)) = bar.state.spans.borrow().get(i) else { break };
+    let owner = app.main.window.hwnd();
+    let mut next = Some((index, keyboard));
+    while let Some((i, keyboard)) = next.take() {
+        let Some(&(left, right)) = spans().get(i) else { break };
         bar.state.open.set(Some(i));
         canvas::redraw(bar.hwnd);
-        let mut point = POINT { x: left, y: px(HEIGHT) - px(3) };
-        let menu = super::menu::bar_menu(app, i);
-        TRACKING.with(|t| *t.borrow_mut() = Some((bar.hwnd, bar.state.clone())));
-        NEXT.with(|n| n.set(None));
-        // SAFETY: our menu shown under the bar; a hook on this thread's menu loop, removed after
-        unsafe {
-            let _ = ClientToScreen(bar.hwnd, &mut point);
-            let hook = SetWindowsHookExW(WH_MSGFILTER, Some(watch), None, GetCurrentThreadId()).ok();
-            let owner = app.main.window.hwnd();
-            let _ = SetForegroundWindow(owner);
-            let _ = TrackPopupMenu(menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_LEFTBUTTON, point.x, point.y, None, owner, None);
-            if let Some(hook) = hook {
-                let _ = UnhookWindowsHookEx(hook);
-            }
-            let _ = DestroyMenu(menu);
+        // SAFETY: plain calls on our own control: drawn green now, under the menu that opens
+        unsafe { let _ = UpdateWindow(bar.hwnd); }
+        let mut corners = [POINT { x: left, y: px(3) }, POINT { x: right, y: px(HEIGHT) }];
+        for corner in &mut corners {
+            // SAFETY: plain conversion to the screen's pixels
+            unsafe { let _ = ClientToScreen(bar.hwnd, corner); }
         }
-        TRACKING.with(|t| t.borrow_mut().take());
-        next = NEXT.with(Cell::take);
+        let name = RECT { left: corners[0].x, top: corners[0].y, right: corners[1].x, bottom: corners[1].y };
+        let items = super::menu::bar_menu(app, i);
+        let at = |p: POINT| bar.name_at(p);
+        let options = Options { keyboard, bar: Some(Bar { index: i, count: MENUS.len(), at: &at }), ..Default::default() };
+        match popup::show(owner, &items, At::Below(name), options) {
+            Outcome::Chose(id) => popup::post_command(owner, id),
+            Outcome::Switch(other, keyboard) => next = Some((other, keyboard)),
+            Outcome::Closed => {}
+        }
     }
     bar.state.open.set(None);
     bar.state.hover.set(None);
     canvas::redraw(bar.hwnd);
-}
-
-/// The menu loop's messages: the mouse over another of the bar's names closes this menu, to
-/// open that one.
-unsafe extern "system" fn watch(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if code == MSGF_MENU as i32 {
-        // SAFETY: WH_MSGFILTER passes the message being handled
-        let msg = unsafe { &*(lparam.0 as *const MSG) };
-        if msg.message == WM_MOUSEMOVE {
-            TRACKING.with(|t| {
-                if let Some((hwnd, state)) = t.borrow().as_ref() {
-                    let mut point = msg.pt;
-                    // SAFETY: plain conversion to the bar's pixels
-                    unsafe { let _ = ScreenToClient(*hwnd, &mut point); }
-                    let on_bar = (0..px(HEIGHT)).contains(&point.y);
-                    if let Some(i) = state.at(point.x).filter(|_| on_bar)
-                        && state.open.get() != Some(i) {
-                        NEXT.with(|n| n.set(Some(i)));
-                        // SAFETY: closes the menu this thread shows
-                        unsafe { let _ = EndMenu(); }
-                    }
-                }
-            });
-        }
-    }
-    // SAFETY: the next hook in the chain gets the message too
-    unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }

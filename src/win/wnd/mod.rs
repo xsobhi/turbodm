@@ -12,6 +12,8 @@ pub mod labels;
 mod layout;
 pub mod look;
 pub mod moves;
+pub mod popup;
+pub mod scrollbar;
 pub mod tabs;
 
 pub use controls::*;

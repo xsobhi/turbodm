@@ -3,7 +3,7 @@
 //! torrent's peers come and go by the dozen: it shows its files instead.
 
 use super::super::theme::{self, Align, Font, Painter};
-use super::super::wnd::{canvas, place, px, send, set_visible, Window};
+use super::super::wnd::{canvas, place, px, scrollbar, send, set_visible, Window};
 use std::cell::RefCell;
 use std::rc::Rc;
 use turbodm::engine::segments::Segment;
@@ -65,6 +65,7 @@ impl Details {
         unsafe { let _ = SetWindowTheme(list, w!("Explorer"), PCWSTR::null()); }
         send(list, LVM_SETBKCOLOR, 0, theme::VIEW.0 as isize);
         send(list, LVM_SETTEXTBKCOLOR, 0, CLR_NONE as isize);
+        scrollbar::slim(list);
         let (second, last) = if torrent { ("Size", "File") } else { ("Starts at", "Info") };
         let columns = [("N.", 44, true), (second, 110, true), ("Downloaded", 110, true), (last, 300, false)];
         for (i, (title, width, right)) in columns.iter().enumerate() {

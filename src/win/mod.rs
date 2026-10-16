@@ -42,7 +42,6 @@ pub struct App {
     pub on_done: RefCell<HashMap<String, OnDone>>, // downloads with a progress window
     pub refreshing: RefCell<Option<refresh::Waiting>>, // waiting for a fresh address from the browser
     pub offered_refresh: RefCell<HashSet<String>>,     // expired links already offered a refresh
-    pub queue: RefCell<Option<Rc<wnd::Window>>>,      // the hidden download windows' taskbar button
     from_browser: RefCell<Option<(String, std::time::Instant)>>, // the extension's last link, and when
     pub update: RefCell<Option<turbodm::update::Release>>, // found while hidden: shown on show()
     pub when_done: RefCell<HashMap<String, WhenDone>>, // unlisted downloads (an update, the video helpers)
@@ -106,6 +105,7 @@ impl App {
 
     pub fn quit(&self) {
         tray::remove(self);
+        queue::remove(self);
         // SAFETY: ends our message loop
         unsafe { PostQuitMessage(0) };
     }
@@ -188,7 +188,6 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
         on_done: RefCell::default(),
         refreshing: RefCell::default(),
         offered_refresh: RefCell::default(),
-        queue: RefCell::default(),
         from_browser: RefCell::default(),
         update: RefCell::default(),
         when_done: RefCell::default(),
@@ -219,6 +218,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
     }
     main::setup(&app);
     tray::start(&app);
+    queue::start(&app);
     update::start(&app);
     helpers::start(&app);
     if background {
