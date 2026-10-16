@@ -22,7 +22,7 @@ pub enum Cmd {
     ToggleCategories, ToggleToolbar, ToggleProgress, ToggleComplete,
     SortName, SortSize, SortStatus, SortSpeed, SortLeft, SortAdded,
     GitHub, Report, MenuTasks, MenuFile, MenuDownloads, MenuView, MenuHelp,
-    AddTorrent, AddVideo,
+    AddTorrent, AddVideo, CompleteWindow,
 }
 
 pub const ALL: &[Cmd] = &[Cmd::Add, Cmd::Resume, Cmd::Pause, Cmd::ResumeAll, Cmd::PauseAll, Cmd::Remove,
@@ -34,7 +34,7 @@ pub const ALL: &[Cmd] = &[Cmd::Add, Cmd::Resume, Cmd::Pause, Cmd::ResumeAll, Cmd
     Cmd::ToggleCategories, Cmd::ToggleToolbar, Cmd::ToggleProgress, Cmd::ToggleComplete,
     Cmd::SortName, Cmd::SortSize, Cmd::SortStatus, Cmd::SortSpeed, Cmd::SortLeft, Cmd::SortAdded,
     Cmd::GitHub, Cmd::Report, Cmd::MenuTasks, Cmd::MenuFile, Cmd::MenuDownloads, Cmd::MenuView, Cmd::MenuHelp,
-    Cmd::AddTorrent, Cmd::AddVideo];
+    Cmd::AddTorrent, Cmd::AddVideo, Cmd::CompleteWindow];
 
 /// The speed limiter's choices: (command, KiB/s, its name).
 const SPEEDS: [(Cmd, u64, &str); 7] = [(Cmd::Speed0, 0, "&No limit"), (Cmd::Speed256, 256, "256 KB/s"),
@@ -86,12 +86,13 @@ pub fn bar_menu(app: &Rc<App>, index: usize) -> Vec<popup::Item> {
                   Sub("&Export", vec![Do(Cmd::Export, "To &text file...", true)]), Line,
                   Do(Cmd::Exit, "E&xit\tCtrl+Q", true)],
         1 => vec![Do(Cmd::Open, "&Open", done), Do(Cmd::OpenWith, "Open &with...", done),
-                  Do(Cmd::OpenFolder, "Open f&older", any), Line,
+                  Do(Cmd::OpenFolder, "Open f&older", any),
+                  Do(Cmd::CompleteWindow, "Download comple&te window...", done), Line,
                   Do(Cmd::Redownload, "Re&download...", any),
                   Do(Cmd::Refresh, "Refresh download &address...", any && !torrent),
                   Do(Cmd::CopyUrl, "&Copy address", any), Line,
                   Do(Cmd::Details, "&Properties (progress details)\tCtrl+I", any), Line,
-                  Do(Cmd::Remove, "&Remove from list\tDel", any), Do(Cmd::DeleteFile, "&Delete with file...", any)],
+                  Do(Cmd::Remove, "D&elete...\tDel", any), Do(Cmd::DeleteFile, "Delete with &file...", any)],
         2 => vec![Do(Cmd::Resume, "&Resume\tCtrl+R", any), Do(Cmd::Pause, "&Pause\tCtrl+P", any), Line,
                   Do(Cmd::ResumeAll, "Resume a&ll\tF5", true), Do(Cmd::PauseAll, "Pa&use all", true),
                   Do(Cmd::ClearDone, "Delete all &completed (from the list)", true), Line,
@@ -117,10 +118,11 @@ pub fn bar_menu(app: &Rc<App>, index: usize) -> Vec<popup::Item> {
 /// The downloads list's right-click menu, at `point` (screen pixels).
 pub fn context(owner: HWND, point: POINT) {
     let items = [Do(Cmd::Open, "&Open", true), Do(Cmd::OpenWith, "Open &with...", true),
-        Do(Cmd::OpenFolder, "Open f&older", true), Do(Cmd::Details, "Progress &details", true), Line,
+        Do(Cmd::OpenFolder, "Open f&older", true), Do(Cmd::CompleteWindow, "Download comple&te window...", true),
+        Do(Cmd::Details, "Progress &details", true), Line,
         Do(Cmd::Resume, "&Resume", true), Do(Cmd::Pause, "&Pause", true), Do(Cmd::Redownload, "Re&download...", true),
         Do(Cmd::Refresh, "Refresh download &address...", true), Do(Cmd::CopyUrl, "&Copy address", true), Line,
-        Do(Cmd::Remove, "Remove from &list", true), Do(Cmd::DeleteFile, "Delete with &file...", true)];
+        Do(Cmd::Remove, "De&lete...", true), Do(Cmd::DeleteFile, "Delete with &file...", true)];
     popup::command(owner, &build(&items), At::Point(point)); // (its choice comes as WM_COMMAND)
 }
 
@@ -167,6 +169,9 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
         Cmd::ClearDone => app.manager.snapshot().iter().filter(|s| s.status == Status::Completed)
             .for_each(|s| app.manager.remove(&s.id, false)), // from the list only: the files stay
         Cmd::Open => if let Some(id) = first() { shell::open_download(app, &id) },
+        // (its window again, for one closed by mistake)
+        Cmd::CompleteWindow => if let Some(s) = first().and_then(|id| app.manager.get(&id))
+            .filter(|s| s.status == Status::Completed) { super::super::complete::open(app, &s) },
         Cmd::OpenWith => if let Some(s) = first().and_then(|id| app.manager.get(&id)) { shell::open_with(&s.path) },
         Cmd::OpenFolder => if let Some(id) = first() { shell::show_download(app, &id) },
         Cmd::Details => if let Some(id) = first() { progress::open(app, &id) },
