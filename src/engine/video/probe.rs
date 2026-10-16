@@ -1,7 +1,8 @@
 //! Looking at a page with yt-dlp (-J): what video is there, the formats it comes in and where
-//! each is. Also yt-dlp's errors in plain words (shared with its own downloads).
+//! each is. With the browser's cookies or without, whichever gets it (said.rs: why not).
 
 use super::args::common;
+use super::said::{cookies_may_be_why, error_of, looks_outdated, wants_sign_in, why};
 use super::{formats, is_youtube, process, sites, tools, VideoInfo};
 use crate::engine::http::Headers;
 use std::collections::HashMap;
@@ -22,58 +23,11 @@ fn cookies_first(url: &str) -> bool {
     !is_youtube(url)
 }
 
-/// The site wants to know who's asking: the browser's cookies may get in.
-fn wants_sign_in(error: &str) -> bool {
-    let e = error.to_ascii_lowercase();
-    ["sign in", "log in", "login", "logged", "cookies", "your age", "private", "members"].iter().any(|w| e.contains(w))
-}
-
-/// yt-dlp itself may be out of date (sites change; yt-dlp follows within days).
-pub(super) fn looks_outdated(error: &str) -> bool {
-    let e = error.to_ascii_lowercase();
-    ["unable to extract", "failed to extract", "latest version", "signature", "nsig", "challenge", "precondition",
-     "http error 400", "no video formats", "no such option"].iter().any(|w| e.contains(w))
-}
-
-/// yt-dlp's last "ERROR: …" line, in a few plain words.
-pub(super) fn error_of(stderr: &str) -> Option<String> {
-    // an option it doesn't know (an old yt-dlp, such as a distribution's) is said otherwise
-    if let Some(usage) = stderr.lines().find(|l| l.contains("error: no such option")) {
-        return Some(usage.trim().to_string());
-    }
-    let line = stderr.lines().rev().find(|l| l.starts_with("ERROR:"))?;
-    let mut text = line.trim_start_matches("ERROR:").trim();
-    // "[youtube] Z4C82eyhwgU: Sign in…" → "Sign in…"
-    if text.starts_with('[')
-        && let Some((_, rest)) = text.split_once("] ") {
-            text = rest.split_once(": ").filter(|(id, _)| !id.contains(' ')).map_or(rest, |(_, r)| r);
-        }
-    // the advice for yt-dlp's own users (its options, links) goes
-    for cut in [". Use --", "; please report", ". Please report", " See  http", ". See http", " (caused by"] {
-        if let Some(i) = text.find(cut) {
-            text = &text[..i];
-        }
-    }
-    let text = text.trim().trim_end_matches('.');
-    let lower = text.to_ascii_lowercase();
-    // (Python's words for a site it can't reach)
-    let unreachable = ["failed to resolve", "getaddrinfo failed", "name or service not known",
-                       "temporary failure in name resolution", "nodename nor servname"];
-    Some(if text.starts_with("Unsupported URL") {
-        "No video found on this page".into()
-    } else if unreachable.iter().any(|w| lower.contains(w)) {
-        "Couldn't reach the site: no connection, or the address is wrong".into()
-    } else if lower.contains("timed out") {
-        "The site didn't answer in time".into()
-    } else {
-        text.to_string()
-    })
-}
-
 /// Look at a page: its video's title and the qualities it comes in. Fetches yt-dlp first if
-/// needed, retries with the browser's cookies when the site asks to sign in, and with the
-/// latest yt-dlp when it looks out of date.
+/// needed, retries with the browser's cookies when the site asks to sign in (without them when
+/// they didn't do), and with the latest yt-dlp when it looks out of date.
 pub async fn probe(client: &reqwest::Client, url: &str, headers: &Headers, timeout: u64) -> Result<VideoInfo, String> {
+    let url = &sites::clean(url);
     let look = {
         let mut looks = LOOKS.lock().unwrap();
         looks.retain(|_, (at, _)| at.elapsed() < KEEP);
@@ -106,30 +60,38 @@ pub(super) fn looking() -> bool {
 
 /// Look at the page afresh next time (its addresses expired).
 pub fn forget(url: &str) {
-    LOOKS.lock().unwrap().remove(url);
+    LOOKS.lock().unwrap().remove(&sites::clean(url));
 }
 
 async fn look_at(client: &reqwest::Client, url: &str, headers: &Headers, timeout: u64) -> Result<VideoInfo, String> {
     let mut exe = tools::yt_dlp(client).await?;
-    let mut cookies = cookies_first(url) && headers.cookies.is_some();
+    let has_cookies = headers.cookies.is_some();
+    let mut cookies = cookies_first(url) && has_cookies;
+    let (mut with, mut without) = (false, false); // tried with the browser's cookies, without them
     let (mut page, mut updated) = (url.to_string(), false);
+    let failed = |e: String| Err(why(url, &e, headers.cookies.as_deref()));
     loop {
+        *(if cookies { &mut with } else { &mut without }) = true;
         match probe_once(&exe, &page, headers, cookies, timeout).await {
             Ok(mut info) => {
                 info.with_cookies = cookies;
                 return Ok(info);
             }
-            Err(e) if !cookies && headers.cookies.is_some() && wants_sign_in(&e) => cookies = true,
+            Err(e) if has_cookies && !with && wants_sign_in(&e) => cookies = true,
+            // (as anyone would see it: the browser's sign-in may be what the site turned down)
+            Err(e) if cookies && !without && cookies_may_be_why(&e) => cookies = false,
             // (the same video elsewhere, when the page wants an account)
             Err(e) if page == url && wants_sign_in(&e) && let Some(other) = sites::alternative(url) => page = other,
             Err(e) if !updated && looks_outdated(&e) => {
                 updated = true;
+                (with, without) = (false, false); // (each way again, with the new one)
                 if tools::update(client, true).await != Ok(true) {
-                    return Err(e);
+                    return failed(e);
                 }
-                exe = tools::yt_dlp_now().ok_or(e)?;
+                let Some(new) = tools::yt_dlp_now() else { return failed(e) };
+                exe = new;
             }
-            Err(e) => return Err(e),
+            Err(e) => return failed(e),
         }
     }
 }
@@ -178,34 +140,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_yt_dlp_errors() {
-        let bot = "WARNING: [youtube] No title found\nERROR: [youtube] Z4C82eyhwgU: Sign in to confirm you’re not \
-                   a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/x";
-        let message = error_of(bot).unwrap();
-        assert_eq!(message, "Sign in to confirm you’re not a bot");
-        assert!(wants_sign_in(&message) && !looks_outdated(&message));
-        assert_eq!(error_of("ERROR: Unsupported URL: https://example.org/").as_deref(), Some("No video found on this page"));
-        let broken = "ERROR: [youtube] abc: Unable to extract yt initial data; please report this issue on  \
-                      https://github.com/yt-dlp/yt-dlp/issues . Confirm you are on the latest version using yt-dlp -U";
-        let message = error_of(broken).unwrap();
-        assert_eq!(message, "Unable to extract yt initial data");
-        assert!(looks_outdated(&message));
-        assert_eq!(error_of("ERROR: unable to download video data: HTTP Error 403: Forbidden").as_deref(),
-                   Some("unable to download video data: HTTP Error 403: Forbidden"));
-        assert_eq!(error_of("nothing here"), None);
-        let offline = "ERROR: [generic] Unable to download webpage: HTTPSConnection(host='example.org', port=443): \
-                       Failed to resolve 'example.org' ([Errno 11001] getaddrinfo failed) (caused by TransportError(\"x\"))";
-        assert_eq!(error_of(offline).as_deref(), Some("Couldn't reach the site: no connection, or the address is wrong"));
-        assert_eq!(error_of("ERROR: [vimeo] 1: Unable to download JSON metadata: The read operation timed out").as_deref(),
-                   Some("The site didn't answer in time"));
-        // a distribution's old yt-dlp, which doesn't know an option of ours: a newer one is fetched
-        let old = "Usage: yt-dlp [OPTIONS] URL [URL...]\n\nyt-dlp: error: no such option: --js-runtimes\n";
-        assert!(looks_outdated(&error_of(old).unwrap()));
-    }
-
-    #[test]
     fn youtube_gets_the_browser_cookies_only_when_it_asks() {
         assert!(!cookies_first("https://www.youtube.com/watch?v=x") && cookies_first("https://vimeo.com/1"));
-        assert!(wants_sign_in("Sign in to confirm your age") && !wants_sign_in("HTTP Error 404: Not Found"));
     }
 }
