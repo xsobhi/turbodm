@@ -41,6 +41,20 @@ fn no_split_when_the_rest_is_quick_at_this_speed() {
 }
 
 #[test]
+fn connections_added_later_share_the_rest_at_once() {
+    // one connection at 50 MB/s: on its own, nothing is worth splitting (see above); seven
+    // more just added split the rest by size, as a download started with eight would be
+    let map = SegmentMap::create(Some(40 * MB), 1, MB);
+    map.claim();
+    map.set_speed((50 * MB) as f64);
+    map.spread(7);
+    assert!((0..7).all(|_| map.claim().is_some()));
+    assert_eq!(map.snapshot().len(), 8);
+    assert!(map.snapshot().iter().all(|s| s.end.unwrap() - s.start == 5 * MB));
+    assert!(map.claim().is_none()); // (the speed counts again)
+}
+
+#[test]
 fn no_split_below_twice_min() {
     let map = SegmentMap::create(Some(2 * MB - 1), 1, MB);
     map.claim();

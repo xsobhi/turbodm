@@ -27,7 +27,13 @@ impl Env {
 
     /// The manager and its events (status changes: what shows the "Download complete" dialog).
     pub fn manager_with_events(&self, connections: usize) -> (Arc<Manager>, async_channel::Receiver<Snapshot>) {
-        let settings = Settings {
+        self.manager_with(connections, |_| {})
+    }
+
+    /// The manager with settings of its own (`change`d from the tests' usual ones).
+    pub fn manager_with(&self, connections: usize, change: impl FnOnce(&mut Settings))
+                        -> (Arc<Manager>, async_channel::Receiver<Snapshot>) {
+        let mut settings = Settings {
             download_dir: self.dir.clone(),
             use_categories: false,
             connections,
@@ -36,6 +42,7 @@ impl Env {
             timeout_secs: 10,
             ..Settings::default()
         };
+        change(&mut settings);
         Manager::new(settings, self.dir.join("downloads.json"), self.rt.handle().clone())
     }
 }

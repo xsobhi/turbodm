@@ -4,7 +4,7 @@
 //! failed run is run again: sites' links fail now and then (YouTube answers 403 once, then not).
 
 use super::args::common;
-use super::probe::{error_of, looks_outdated};
+use super::said::{error_of, looks_outdated};
 use super::progress::{self, Line, Tally};
 use super::{process, tools, Output};
 use crate::engine::task::{Status, Task};

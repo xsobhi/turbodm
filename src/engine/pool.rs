@@ -42,6 +42,7 @@ pub(super) async fn run(task: &Task, ctx: &Arc<WorkerCtx>, count: usize) -> Resu
                 let target = task.info.lock().unwrap().connections;
                 if target > want && !ctx.cancel.is_cancelled() {
                     ctx.live.fetch_add(target - want, Ordering::SeqCst);
+                    ctx.segments.spread(target - want);
                     want = target;
                 }
             }

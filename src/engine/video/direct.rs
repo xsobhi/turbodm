@@ -92,6 +92,14 @@ fn file_of(info: &TaskInfo, source: &Source) -> PathBuf {
     part_file(&info.directory, stem(info.filename.as_deref().unwrap_or("video")), &source.format_id, &source.ext)
 }
 
+/// The smallest piece worth a connection of its own. A video's parts come one after the other,
+/// the sound often only 2-3 MB: with a file's 1 MB it would have two connections of the eight
+/// asked for, so a part's pieces may go down to its share of them (not below 256 KB).
+fn smallest_split(size: Option<u64>, connections: usize, min_split: u64) -> u64 {
+    const SMALLEST: u64 = 256 << 10;
+    size.map_or(min_split, |size| min_split.min((size / connections.max(1) as u64).max(SMALLEST)))
+}
+
 /// The part's file's size, if it's in.
 fn size_of(file: &Path) -> Option<u64> {
     std::fs::metadata(file).ok().filter(|m| m.is_file()).map(|m| m.len())
@@ -127,6 +135,7 @@ async fn part(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken, ind
     let resumable = probe.resumable && size.is_some();
     // what's downloaded of it already (saved with the download) is kept if it's the same stream
     let saved = task.segments.lock().unwrap().clone();
+    let split = smallest_split(size, connections.max(settings.connections), settings.min_split_kib * 1024);
     let same = |map: &SegmentMap| map.snapshot().iter().filter_map(|s| s.end).max() == size;
     let (map, opened) = {
         let mut info = task.info.lock().unwrap();
@@ -136,7 +145,7 @@ async fn part(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken, ind
             None => {
                 let _ = std::fs::remove_file(&partial);
                 let count = if resumable { connections } else { 1 };
-                Arc::new(SegmentMap::create(size, count, settings.min_split_kib * 1024))
+                Arc::new(SegmentMap::create(size, count, split))
             }
         };
         if let Some(job) = info.video.as_mut() {
@@ -146,7 +155,7 @@ async fn part(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken, ind
         }
         (map, open_part(&partial, size))
     };
-    map.set_min_split(settings.min_split_kib * 1024);
+    map.set_min_split(split);
     *task.segments.lock().unwrap() = Some(map.clone());
     let count = if resumable { connections } else { 1 };
     let ctx = Arc::new(WorkerCtx {

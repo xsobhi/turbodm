@@ -3,10 +3,11 @@
 //! The file is cut into one segment per connection. When a connection finishes, it
 //! takes the second half of the largest segment still downloading, so every
 //! connection stays busy until the very end; a connection that stops receiving has
-//! the rest of its part taken over instead of holding up the download.
+//! the rest of its part taken over instead of holding up the download. Connections added
+//! later (the add dialog's early download, confirmed) share out the rest at once.
 
 use serde::{Deserialize, Serialize};
-use std::sync::{atomic::{AtomicU64, Ordering}, Mutex};
+use std::sync::{atomic::{AtomicU64, AtomicUsize, Ordering}, Mutex};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -55,6 +56,7 @@ pub struct SegmentMap {
     segs: Mutex<Vec<Segment>>,
     min_split: Mutex<u64>,
     speed_floor: AtomicU64, // what one connection gets through in SPLIT_SECONDS now
+    spreading: AtomicUsize, // connections just added: they split by size alone, not speed
 }
 
 /// Like IDM, a free connection takes over half a part only if that still takes this long.
@@ -84,7 +86,15 @@ impl SegmentMap {
 
     pub fn from_segments(segs: Vec<Segment>, min_split: u64) -> Self {
         let segs = segs.into_iter().map(|s| Segment { active: false, ahead: 0, heard: None, ..s }).collect();
-        SegmentMap { segs: Mutex::new(segs), min_split: Mutex::new(min_split), speed_floor: AtomicU64::new(0) }
+        SegmentMap { segs: Mutex::new(segs), min_split: Mutex::new(min_split), speed_floor: AtomicU64::new(0),
+                     spreading: AtomicUsize::new(0) }
+    }
+
+    /// `n` connections were added to those running (the add dialog's early single connection
+    /// was confirmed): they share out the rest as if they'd been there from the start, not
+    /// only what wouldn't be done within SPLIT_SECONDS at the speed of one.
+    pub fn spread(&self, n: usize) {
+        self.spreading.fetch_add(n, Ordering::Relaxed);
     }
 
     pub fn set_min_split(&self, bytes: u64) {
@@ -99,8 +109,11 @@ impl SegmentMap {
     /// Work for a connection: an idle segment, all of a stuck one's rest, or half of the
     /// biggest busy one.
     pub fn claim(&self) -> Option<usize> {
-        let min_split = (*self.min_split.lock().unwrap()).max(self.speed_floor.load(Ordering::Relaxed));
         let mut segs = self.segs.lock().unwrap();
+        // (taken from, emptied, only while `segs` is locked: never below 0)
+        let spreading = self.spreading.load(Ordering::Relaxed) > 0;
+        let floor = if spreading { 0 } else { self.speed_floor.load(Ordering::Relaxed) };
+        let min_split = (*self.min_split.lock().unwrap()).max(floor);
         if let Some(i) = segs.iter().position(|s| !s.active && !s.finished()) {
             (segs[i].active, segs[i].heard) = (true, None);
             return Some(i);
@@ -110,13 +123,17 @@ impl SegmentMap {
             .filter(|(_, s)| s.active && (!stalled || s.heard.is_some_and(|t| now.duration_since(t) > STALLED)))
             .filter_map(|(i, s)| s.unreceived().filter(|&r| r > 0).map(|r| (i, r)))
             .max_by_key(|&(_, r)| r);
-        let (best, keep) = match busiest(true) {
-            Some((i, _)) => (i, 0), // stuck (often near the end): take everything it hasn't got
-            None => match busiest(false)? {
-                (i, remaining) if remaining >= 2 * min_split => (i, remaining / 2),
-                _ => return None,
-            },
+        let (best, keep) = match (busiest(true), busiest(false)) {
+            (Some((i, _)), _) => (i, 0), // stuck (often near the end): take everything it hasn't got
+            (None, Some((i, remaining))) if remaining >= 2 * min_split => (i, remaining / 2),
+            _ => {
+                self.spreading.store(0, Ordering::Relaxed); // (nothing left worth sharing)
+                return None;
+            }
         };
+        if spreading {
+            self.spreading.fetch_sub(1, Ordering::Relaxed);
+        }
         let middle = segs[best].got() + segs[best].start + keep;
         let end = segs[best].end;
         segs[best].end = Some(middle);
