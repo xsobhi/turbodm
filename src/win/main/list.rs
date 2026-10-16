@@ -1,9 +1,9 @@
 //! The downloads list: Windows' list view in details mode, virtual (rows are drawn on demand,
 //! so it stays quick), with Explorer's look, rows drawn like the Linux list's (draw.rs),
-//! sortable columns and the selection kept by download.
+//! sortable columns and the selection kept by download, and Mint-Y's slim scroll bars.
 
 use super::super::theme;
-use super::super::wnd::{px, send, Window};
+use super::super::wnd::{px, scrollbar, send, Window};
 use super::cells::{Row, COLUMNS};
 use super::draw::{self, ROW};
 use std::cell::{Cell, RefCell};
@@ -41,6 +41,7 @@ impl List {
         send(hwnd, LVM_SETBKCOLOR, 0, theme::VIEW.0 as isize);
         send(hwnd, LVM_SETTEXTBKCOLOR, 0, CLR_NONE as isize);
         send(hwnd, LVM_SETTEXTCOLOR, 0, theme::TEXT.0 as isize);
+        scrollbar::slim(hwnd); // Mint-Y's slim scroll bars, not Windows'
         for (i, (title, width)) in COLUMNS.iter().enumerate() {
             let text = HSTRING::from(*title);
             let column = LVCOLUMNW { mask: LVCF_TEXT | LVCF_WIDTH | LVCF_FMT, fmt: LVCFMT_LEFT, cx: px(*width),
