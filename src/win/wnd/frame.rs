@@ -5,17 +5,17 @@
 //! Windows 10 draws a dark line just outside a window's inside, wherever it has a frame, which on
 //! TurboDM's light windows showed as a black outline on three sides (none on top, where the title
 //! bar is ours). There the whole window is its inside: no frame, so no line. It draws a light one
-//! of its own, the same all round (moves.rs keeps its controls inside it); Windows still gives it
-//! its shadow, and its edges, a few pixels in, resize it. Windows 11 draws a light edge itself.
+//! of its own, the same all round (moves.rs keeps its controls inside it), and its edges, a few
+//! pixels in, resize it. (Not Windows' shadow: asking for it, by stretching the frame into the
+//! window, lets what's behind show through wherever the window hasn't painted yet, as while it's
+//! resized.) Windows 11 draws a light edge itself.
 
 use super::caption::{self, Button, Caption};
 use super::{moves, px, Window};
 use std::rc::Rc;
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
-use windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
 use windows::Win32::Graphics::Gdi::ScreenToClient;
-use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -151,12 +151,6 @@ impl Window {
         unsafe {
             let mut asked = RECT::default(); // (the inside it was made with)
             let _ = GetClientRect(hwnd, &mut asked);
-            if frameless {
-                // its shadow without a frame: Windows draws one for a frame reaching in (by a pixel,
-                // which the window paints over)
-                let margins = MARGINS { cxLeftWidth: 1, cxRightWidth: 1, cyTopHeight: 1, cyBottomHeight: 1 };
-                let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
-            }
             let _ = SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
             if moves::edge(hwnd) > 0 {
                 // the frame gone, the same inside as asked for, with the edge around it

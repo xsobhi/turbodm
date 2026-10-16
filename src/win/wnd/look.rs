@@ -85,7 +85,10 @@ fn class_is(hwnd: HWND, name: &str) -> bool {
 /// otherwise. `None`: not handled here.
 pub(super) fn handle(win: &Window, msg: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
     match msg {
-        WM_ERASEBKGND => Some(LRESULT(1)), // all painted in WM_PAINT
+        WM_ERASEBKGND => {
+            erase(win, HDC(wparam.0 as *mut _));
+            Some(LRESULT(1))
+        }
         WM_PAINT => {
             paint(win);
             Some(LRESULT(0))
@@ -129,6 +132,27 @@ pub(super) fn handle(win: &Window, msg: u32, wparam: WPARAM, lparam: LPARAM) -> 
             })
         }
         _ => None,
+    }
+}
+
+/// What the window's background will be, at once (while it's resized, before it's painted
+/// whole): its colour, its surfaces, its edge.
+fn erase(win: &Window, dc: HDC) {
+    let mut r = RECT::default();
+    // SAFETY: plain queries and fills on the DC Windows passes
+    unsafe {
+        let _ = GetClientRect(win.hwnd(), &mut r);
+        FillRect(dc, &r, theme::brush(theme::CHROME));
+        for (s, color) in win.surfaces.borrow().iter() {
+            FillRect(dc, s, theme::brush(*color));
+        }
+        let edge = super::moves::edge(win.hwnd());
+        if edge > 0 {
+            for side in [RECT { right: edge, ..r }, RECT { left: r.right - edge, ..r }, RECT { bottom: edge, ..r },
+                         RECT { top: r.bottom - edge, ..r }] {
+                FillRect(dc, &side, theme::brush(theme::EDGE));
+            }
+        }
     }
 }
 

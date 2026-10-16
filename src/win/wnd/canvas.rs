@@ -29,6 +29,7 @@ pub enum Mouse {
 
 type OnMouse = Rc<dyn Fn(Mouse)>;
 type OnHit = Rc<dyn Fn(i32, i32) -> bool>;
+type OnWheel = Rc<dyn Fn(i32)>;
 
 struct Canvas {
     paint: Box<dyn Fn(&Painter)>,
@@ -37,6 +38,7 @@ struct Canvas {
     tips: Cell<HWND>, // its tooltip window, once it has tips
     tip_count: Cell<usize>,
     hit: RefCell<Option<OnHit>>,
+    wheel: RefCell<Option<OnWheel>>,
 }
 
 thread_local! {
@@ -58,7 +60,8 @@ impl Window {
                             Some(self.hwnd()), Some(HMENU(id as usize as *mut _)), Some(instance()), None)
         }.unwrap_or_default();
         let canvas = Canvas { paint: Box::new(paint), mouse: RefCell::default(), tracking: Cell::new(false),
-                              tips: Cell::default(), tip_count: Cell::new(0), hit: RefCell::default() };
+                              tips: Cell::default(), tip_count: Cell::new(0), hit: RefCell::default(),
+                              wheel: RefCell::default() };
         CANVASES.with(|c| c.borrow_mut().insert(hwnd.0 as isize, Rc::new(canvas)));
         hwnd
     }
@@ -68,6 +71,14 @@ impl Window {
 pub fn on_mouse(hwnd: HWND, f: impl Fn(Mouse) + 'static) {
     if let Some(canvas) = get(hwnd) {
         *canvas.mouse.borrow_mut() = Some(Rc::new(f));
+    }
+}
+
+/// What to do when the mouse wheel turns over the canvas: `f` gets how far (120 a notch; up is
+/// more than 0).
+pub fn on_wheel(hwnd: HWND, f: impl Fn(i32) + 'static) {
+    if let Some(canvas) = get(hwnd) {
+        *canvas.wheel.borrow_mut() = Some(Rc::new(f));
     }
 }
 
@@ -179,6 +190,13 @@ extern "system" fn procedure(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
                 mouse(Mouse::Up(x, y));
             }
             WM_LBUTTONDBLCLK => mouse(Mouse::Double(x, y)),
+            WM_MOUSEWHEEL => {
+                let wheel = canvas.wheel.borrow().clone();
+                if let Some(wheel) = wheel {
+                    wheel(((wparam.0 >> 16) & 0xffff) as u16 as i16 as i32);
+                    return LRESULT(0);
+                }
+            }
             WM_NCDESTROY => {
                 CANVASES.with(|c| c.borrow_mut().remove(&(hwnd.0 as isize)));
             }

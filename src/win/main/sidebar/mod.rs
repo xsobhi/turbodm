@@ -1,10 +1,15 @@
 //! The sidebar, as on Linux Mint (and like IDM's category tree): downloads by state and by kind
-//! of file, with counts; the free space where downloads go at the bottom.
+//! of file, with counts; the free space where downloads go at the bottom. In a short window (or
+//! on a screen scaled up) the rows stop above the free space and scroll: by the mouse wheel, or
+//! by Mint's slim scroll bar at the right (dragged, or clicked above or below its thumb).
 
 use super::super::theme::pictures::{self as pic, Picture};
 use super::super::theme::{self, Align, Font, Painter};
 use super::super::wnd::canvas::{self, Mouse};
 use super::super::wnd::{px, Window};
+mod scroll;
+
+use scroll::{content, overflow, rows_bottom, scroll_bar, thumb};
 use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::rc::Rc;
@@ -69,6 +74,9 @@ struct State {
     counts: Vec<usize>,
     disk: Option<(u64, u64)>, // free, total
     checked: Option<Instant>,
+    scroll: i32, // how far the rows are scrolled up (canvas pixels)
+    drag: Option<(i32, i32)>, // the thumb held: where the mouse and the scroll were then
+    bar_hot: bool, // the mouse over the scroll bar
 }
 
 pub struct Sidebar {
@@ -77,9 +85,9 @@ pub struct Sidebar {
     state: Rc<RefCell<State>>,
 }
 
-/// Each row's index in ROWS, top and bottom (canvas pixels).
-fn rows() -> impl Iterator<Item = (usize, i32, i32)> {
-    let mut y = px(4);
+/// Each row's index in ROWS, top and bottom (canvas pixels), scrolled up by `scroll`.
+fn rows(scroll: i32) -> impl Iterator<Item = (usize, i32, i32)> {
+    let mut y = px(4) - scroll;
     ROWS.iter().enumerate().map(move |(i, row)| {
         let height = px(if matches!(row, Row::Heading(_)) { HEADING } else { ENTRY });
         y += height;
@@ -95,8 +103,22 @@ impl Sidebar {
         let (s, v) = (state.clone(), view.clone());
         let hwnd = window.canvas(move |p| paint(p, &s.borrow(), v.get()));
         let (s, v) = (state.clone(), view.clone());
+        let s2 = state.clone();
+        canvas::on_wheel(hwnd, move |delta| {
+            let mut state = s2.borrow_mut();
+            let scroll = (state.scroll - delta * px(ENTRY) / 120).clamp(0, overflow(hwnd, &state));
+            if scroll != state.scroll {
+                state.scroll = scroll;
+                canvas::redraw(hwnd);
+            }
+        });
         canvas::on_mouse(hwnd, move |event| {
-            let entry = |y: i32| rows().find(|&(i, top, bottom)| y >= top && y < bottom && matches!(ROWS[i], Row::Entry(..)));
+            if scroll_bar(hwnd, &mut s.borrow_mut(), &event) {
+                return; // (the scroll bar's)
+            }
+            let (scroll, rows_end) = (s.borrow().scroll.min(overflow(hwnd, &s.borrow())), rows_bottom(hwnd, &s.borrow()));
+            let entry = |y: i32| rows(scroll).find(|&(i, top, bottom)| y >= top && y < bottom && y < rows_end
+                                                    && matches!(ROWS[i], Row::Entry(..)));
             let hover = match event {
                 Mouse::Move(_, y) | Mouse::Down(_, y) | Mouse::Up(_, y) | Mouse::Double(_, y) => entry(y).map(|e| e.0),
                 Mouse::Leave => None,
@@ -146,7 +168,11 @@ fn free_space(dir: &Path) -> Option<(u64, u64)> {
 fn paint(p: &Painter, state: &State, view: View) {
     p.fill(p.rect, theme::VIEW);
     let right = p.rect.right;
-    for (i, top, bottom) in rows() {
+    // (scrolled no further than there is to see: the window may have grown since)
+    let footer = if state.disk.is_some() { px(FOOTER) } else { 0 };
+    let room = p.rect.bottom - footer;
+    let scroll = state.scroll.min((content() - room).max(0));
+    for (i, top, bottom) in rows(scroll) {
         match ROWS[i] {
             Row::Heading(text) => {
                 let r = RECT { left: px(14), top: top + px(10), right: right - px(12), bottom };
@@ -170,8 +196,13 @@ fn paint(p: &Painter, state: &State, view: View) {
             }
         }
     }
+    if let Some(t) = thumb(right, room, scroll, state.bar_hot) {
+        let color = if state.bar_hot { theme::DIM } else { theme::mix(theme::VIEW, theme::DIM, 0.45) };
+        p.round(t, (t.right - t.left) / 2, Some(color), None);
+    }
     let Some((free, total)) = state.disk else { return };
     let top = p.rect.bottom - px(FOOTER);
+    p.fill(RECT { left: 0, top, right, bottom: p.rect.bottom }, theme::VIEW); // (over rows that go on below)
     p.fill(RECT { left: 0, top, right, bottom: top + 1 }, theme::BORDER);
     let line = format!("{} free of {}", human_size(Some(free)), human_size(Some(total)));
     p.text(RECT { left: px(14), top: top + px(10), right: right - px(12), bottom: top + px(30) }, &line,
