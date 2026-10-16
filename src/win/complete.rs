@@ -1,7 +1,8 @@
 //! "Download complete": what was downloaded and where it is, and what to do next. The file on
 //! white, as Explorer shows files (its big icon, its name, its size and kind); the choices in a
-//! grey bar at the bottom, as Windows' and GTK's dialogs have them, Open first among them. A box
-//! beside the name drags the file out, as IDM's does: into a folder, a chat, anywhere files go.
+//! grey bar at the bottom, as Windows' and GTK's dialogs have them, Open first among them. A small
+//! square at the bottom right, with the file's icon, drags the file out, as IDM's does: into a
+//! folder, a chat, anywhere files go.
 
 use super::theme::{self, Align, Font};
 use super::wnd::canvas::{self, Mouse};
@@ -16,19 +17,19 @@ use windows::core::{Interface, HSTRING};
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Gdi::{DT_END_ELLIPSIS, DT_NOPREFIX, DT_PATH_ELLIPSIS, DT_SINGLELINE, DT_VCENTER};
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-use windows::Win32::UI::Controls::{IImageList, ImageList_Draw, HIMAGELIST, ILD_TRANSPARENT};
-use windows::Win32::UI::Shell::{SHGetFileInfoW, SHGetImageList, SHFILEINFOW, SHGFI_SYSICONINDEX, SHIL_EXTRALARGE};
+use windows::Win32::UI::Controls::{IImageList, ImageList_Draw, ImageList_GetIconSize, HIMAGELIST, ILD_TRANSPARENT};
+use windows::Win32::UI::Shell::{SHGetFileInfoW, SHGetImageList, SHFILEINFOW, SHGFI_SYSICONINDEX, SHIL_EXTRALARGE, SHIL_SMALL};
 use windows::Win32::UI::WindowsAndMessaging::IDCANCEL;
 
 /// Sizes, 96-DPI pixels: the window's width, its white part's height, the file's icon.
 const WIDTH: i32 = 560;
 const BODY: i32 = 186;
 const ICON: i32 = 48;
-const DRAG: (i32, i32) = (150, 52); // the drag box
+const DRAG: (i32, i32) = (40, wnd::FIELD + 2); // the drag square, as tall as the buttons
 
 pub fn open(app: &Rc<App>, snap: &Snapshot) {
     let window = Window::dialog("Download complete", None, (WIDTH, BODY + 64), false);
-    let big = big_icon(&snap.path);
+    let big = icon_of(&snap.path, SHIL_EXTRALARGE);
     let (name, line) = (snap.filename.clone(), finished_line(snap));
     let header = window.canvas(move |p| {
         p.fill(p.rect, theme::VIEW);
@@ -55,7 +56,7 @@ pub fn open(app: &Rc<App>, snap: &Snapshot) {
             p.draw_text(r, value, Font::Body, theme::TEXT, cut | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
         }
     });
-    let again = window.checkbox("Don't show this again", false, |_| {});
+    let again = window.checkbox("Don't show again", false, |_| {});
     let (path, w) = (snap.path.clone(), window.clone());
     // (the window goes at once; the other program starts after)
     let with = window.button("Open with…", move || { w.close(); shell::open_with(&path); });
@@ -75,32 +76,42 @@ pub fn open(app: &Rc<App>, snap: &Snapshot) {
         true
     });
 
-    place(header, 24, 24, WIDTH - 48 - DRAG.0 - 12, 52);
-    place(drag, WIDTH - 24 - DRAG.0, 24, DRAG.0, DRAG.1);
+    place(header, 24, 24, WIDTH - 48, 52);
     place(card, 24, 96, WIDTH - 48, 70);
     window.set_surfaces(vec![(rect(0, 0, WIDTH, BODY), theme::VIEW), (rect(0, BODY, WIDTH, 1), theme::BORDER)]);
-    let mut footer = Rows::new(20, BODY + 16, 0, WIDTH - 40);
-    place(again, 20, BODY + 18, 210, 28);
+    // the buttons, and the drag square right of them, in the window's corner
+    place(drag, WIDTH - 20 - DRAG.0, BODY + 16, DRAG.0, DRAG.1);
+    canvas::set_tips(drag, &[(RECT { left: 0, top: 0, right: wnd::px(DRAG.0), bottom: wnd::px(DRAG.1) },
+                              "Drag the file to a folder, a chat\u{2026} anywhere files go".into())]);
+    let mut footer = Rows::new(20, BODY + 16, 0, WIDTH - 40 - DRAG.0 - 8);
+    place(again, 20, BODY + 18, 150, 28);
     let bottom = footer.buttons(&[with, folder, open]);
     wnd::set_client_height(window.hwnd(), bottom + 16);
     wnd::center(window.hwnd());
     window.show_in_front();
 }
 
-/// "Drag the file": pressed and moved, the file goes along with the mouse, to drop anywhere.
+/// The drag square: the file's own small icon, as a button would look; pressed and moved, the
+/// file goes along with the mouse, to drop anywhere.
 fn drag_box(window: &Window, path: std::path::PathBuf) -> windows::Win32::Foundation::HWND {
     let hover = Rc::new(Cell::new(false));
     let h = hover.clone();
+    let small = icon_of(&path, SHIL_SMALL);
     let hwnd = window.canvas(move |p| {
-        p.fill(p.rect, theme::VIEW);
+        p.fill(p.rect, theme::CHROME);
         let line = if h.get() { theme::ACCENT } else { theme::BORDER };
-        let fill = theme::mix(theme::VIEW, theme::ACCENT, if h.get() { 0.12 } else { 0.05 });
-        p.round(p.rect, wnd::px(theme::RADIUS + 2), Some(fill), Some(line));
-        let half = p.rect.bottom / 2;
-        p.text(RECT { left: 0, top: wnd::px(6), right: p.rect.right, bottom: half + wnd::px(2) }, "Drag the file",
-               Font::Strong, theme::TEXT, Align::Center);
-        p.text(RECT { left: 0, top: half, right: p.rect.right, bottom: p.rect.bottom - wnd::px(6) },
-               "to a folder, a chat\u{2026}", Font::Body, theme::DIM, Align::Center);
+        let fill = if h.get() { theme::mix(theme::VIEW, theme::ACCENT, 0.12) } else { theme::VIEW };
+        p.round(p.rect, wnd::px(theme::RADIUS), Some(fill), Some(line));
+        if let Some((list, index)) = &small {
+            let (mut width, mut height) = (0, 0);
+            // SAFETY: an icon of Windows' list, its size asked and drawn into our canvas, centred
+            unsafe {
+                let list = HIMAGELIST(list.as_raw() as isize);
+                let _ = ImageList_GetIconSize(list, Some(&mut width), Some(&mut height));
+                let _ = ImageList_Draw(list, *index, p.gdi(), (p.rect.right - width) / 2, (p.rect.bottom - height) / 2,
+                                       ILD_TRANSPARENT);
+            }
+        }
     });
     let owner = window.hwnd();
     canvas::on_mouse(hwnd, move |event| match event {
@@ -129,14 +140,14 @@ fn drag_box(window: &Window, path: std::path::PathBuf) -> windows::Win32::Founda
     hwnd
 }
 
-/// The file's icon, big, as Explorer shows it (the program's own, for a program): Windows' list
-/// of big icons and its place in it.
-fn big_icon(path: &Path) -> Option<(IImageList, i32)> {
+/// The file's icon as Explorer shows it (the program's own, for a program): Windows' list of
+/// icons of that size (SHIL_EXTRALARGE, SHIL_SMALL…) and its place in it.
+fn icon_of(path: &Path, size: u32) -> Option<(IImageList, i32)> {
     let mut info = SHFILEINFOW::default();
     // SAFETY: queries into our struct; the image list is Windows' own
     unsafe {
         SHGetFileInfoW(&HSTRING::from(path.as_os_str()), FILE_ATTRIBUTE_NORMAL, Some(&mut info),
                        std::mem::size_of::<SHFILEINFOW>() as u32, SHGFI_SYSICONINDEX);
-        Some((SHGetImageList::<IImageList>(SHIL_EXTRALARGE as i32).ok()?, info.iIcon))
+        Some((SHGetImageList::<IImageList>(size as i32).ok()?, info.iIcon))
     }
 }
