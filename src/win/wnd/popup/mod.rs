@@ -9,6 +9,8 @@ mod draw;
 mod keys;
 mod layout;
 mod mouse;
+#[cfg(test)]
+mod tests;
 mod track;
 mod window;
 
@@ -106,3 +108,4 @@ pub fn post_command(owner: HWND, id: u16) {
     // SAFETY: posting to our own window
     unsafe { let _ = PostMessageW(Some(owner), WM_COMMAND, WPARAM(id as usize), LPARAM(0)); }
 }
+

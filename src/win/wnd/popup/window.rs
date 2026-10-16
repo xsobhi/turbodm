@@ -1,12 +1,12 @@
 //! A menu's window: a layered pop-up (its pixels have their own transparency: the round corners,
 //! the shadow around) that never takes the keyboard or activates. What it shows is drawn into a
-//! bitmap of its own (`Surface::show`), which Windows puts on the screen as it is.
+//! bitmap of its own (`Surface::show`), which Windows puts on the screen as it is. (Pictures of
+//! it: PrintWindow's PW_RENDERFULLCONTENT, on black; or tests.rs, as it is.)
 
 use super::layout::{RADIUS, SHADOW};
 use crate::win::theme::Painter;
 use crate::win::wnd::{instance, px};
-use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::cell::Cell;
 use std::sync::Once;
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
@@ -14,8 +14,6 @@ use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 thread_local! {
-    /// Each menu window's bitmap (memory DC) and size, for printing it (PrintWindow).
-    static SHOWN: RefCell<HashMap<isize, (isize, i32, i32)>> = RefCell::default();
     /// Windows asked the menus to close (another window took the mouse, TurboDM lost the focus).
     pub static CANCELLED: Cell<bool> = const { Cell::new(false) };
 }
@@ -50,7 +48,6 @@ impl Surface {
             let dc = CreateCompatibleDC(None);
             let bitmap = CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS, &mut bits, None, 0).unwrap_or_default();
             let old = SelectObject(dc, bitmap.into());
-            SHOWN.with(|s| s.borrow_mut().insert(hwnd.0 as isize, (dc.0 as isize, width, height)));
             let mask = mask(width, height, margin, px(RADIUS) as f32);
             Surface { hwnd, body, margin, size: (width, height), dc, bitmap, old, bits: bits.cast(), mask }
         }
@@ -82,11 +79,19 @@ impl Surface {
             }
         }
     }
+
+    /// What it shows: premultiplied BGRA pixels, row by row (tests).
+    #[cfg(test)]
+    pub fn pixels(&self) -> (Vec<u32>, i32, i32) {
+        let (width, height) = self.size;
+        // SAFETY: the bitmap's pixels, as many as it has
+        let pixels = unsafe { std::slice::from_raw_parts(self.bits, (width * height) as usize) };
+        (pixels.to_vec(), width, height)
+    }
 }
 
 impl Drop for Surface {
     fn drop(&mut self) {
-        SHOWN.with(|s| s.borrow_mut().remove(&(self.hwnd.0 as isize)));
         // SAFETY: ours, made in `new`
         unsafe {
             let _ = DestroyWindow(self.hwnd);
@@ -160,26 +165,10 @@ extern "system" fn procedure(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
         WM_CANCELMODE => cancel(hwnd),
         WM_CAPTURECHANGED if lparam.0 != hwnd.0 as isize => cancel(hwnd),
         WM_ACTIVATEAPP if wparam.0 == 0 => cancel(hwnd),
-        WM_PRINT | WM_PRINTCLIENT => {
-            print(hwnd, HDC(wparam.0 as *mut _));
-            return LRESULT(0);
-        }
         _ => {}
     }
     // SAFETY: the default handling
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
-}
-
-/// The menu as it looks on white, into `target` (PrintWindow: pictures of it).
-fn print(hwnd: HWND, target: HDC) {
-    let Some((dc, width, height)) = SHOWN.with(|s| s.borrow().get(&(hwnd.0 as isize)).copied()) else { return };
-    let blend = BLENDFUNCTION { BlendOp: AC_SRC_OVER as u8, SourceConstantAlpha: 255, AlphaFormat: AC_SRC_ALPHA as u8,
-                                ..Default::default() };
-    // SAFETY: drawing our bitmap into the DC we were given
-    unsafe {
-        let _ = FillRect(target, &RECT { left: 0, top: 0, right: width, bottom: height }, crate::win::theme::brush(crate::win::theme::WHITE));
-        let _ = AlphaBlend(target, 0, 0, width, height, HDC(dc as *mut _), 0, 0, width, height, blend);
-    }
 }
 
 #[cfg(test)]

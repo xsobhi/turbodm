@@ -139,7 +139,15 @@ impl<'a> Menu<'a> {
             At::Below(r) => POINT { x: r.left, y: r.bottom },
             At::Beside(parent, top) => POINT { x: parent.right, y: top },
         };
-        let p = layout::place(at, (geo.width, geo.height), work_area(at_point), px(PAD));
+        let mut p = layout::place(at, (geo.width, geo.height), work_area(at_point), px(PAD));
+        if moves::offscreen() {
+            // (tests: never on a screen, even where the mouse is)
+            // SAFETY: plain query
+            let screens = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) };
+            if p.x + geo.width > screens {
+                p.x = screens - 30_000 + p.x.rem_euclid(10_000);
+            }
+        }
         let body = RECT { left: p.x, top: p.y, right: p.x + geo.width, bottom: p.y + geo.height };
         let surface = Surface::new(self.owner, body);
         self.levels.push(Level { items, geo, surface, selected: None, opener });

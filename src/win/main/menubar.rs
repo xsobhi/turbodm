@@ -8,7 +8,7 @@ use super::super::wnd::canvas::{self, Mouse};
 use super::super::wnd::popup::{self, At, Bar, Options, Outcome};
 use super::super::wnd::{px, Window};
 use super::super::App;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::rc::Rc;
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{ClientToScreen, ScreenToClient, UpdateWindow};
@@ -19,15 +19,26 @@ pub const MENUS: [&str; 5] = ["&Tasks", "&File", "&Downloads", "&View", "&Help"]
 
 #[derive(Default)]
 struct State {
-    spans: RefCell<Vec<(i32, i32)>>, // each name's left and right (canvas pixels)
     hover: Cell<Option<usize>>,
     open: Cell<Option<usize>>,
 }
 
 impl State {
     fn at(&self, x: i32) -> Option<usize> {
-        self.spans.borrow().iter().position(|&(left, right)| (left..right).contains(&x))
+        spans().iter().position(|&(left, right)| (left..right).contains(&x))
     }
+}
+
+/// Each name's left and right (canvas pixels).
+fn spans() -> Vec<(i32, i32)> {
+    let mut x = px(6);
+    MENUS.iter().map(|name| {
+        let left = x;
+        x += theme::measure(&name.replace('&', ""), Font::Body) + px(20);
+        let span = (left, x);
+        x += px(2);
+        span
+    }).collect()
 }
 
 pub struct MenuBar {
@@ -71,19 +82,11 @@ impl MenuBar {
     }
 }
 
-/// Where name `i` is drawn (canvas pixels), its left side at `x`.
-fn name_rect(x: i32, name: &str, height: i32) -> RECT {
-    let width = theme::measure(name, Font::Body) + px(20);
-    RECT { left: x, top: px(3), right: x + width, bottom: height - px(3) }
-}
-
 fn paint(p: &Painter, s: &State) {
     p.fill(p.rect, theme::CHROME);
-    let mut x = px(6);
-    let mut spans = vec![];
-    for (i, name) in MENUS.iter().enumerate() {
+    for (i, (name, (left, right))) in MENUS.iter().zip(spans()).enumerate() {
         let name = name.replace('&', "");
-        let r = name_rect(x, &name, p.rect.bottom);
+        let r = RECT { left, top: px(3), right, bottom: p.rect.bottom - px(3) };
         let (fill, color) = match (s.open.get(), s.hover.get()) {
             (Some(open), _) if open == i => (Some(theme::ACCENT), theme::WHITE), // its menu is open
             (None, Some(hover)) if hover == i => (Some(theme::mix(theme::CHROME, theme::BORDER, 0.55)), theme::TEXT),
@@ -93,10 +96,7 @@ fn paint(p: &Painter, s: &State) {
             p.round(r, px(theme::RADIUS), fill, None);
         }
         p.text(r, &name, Font::Body, color, Align::Center);
-        spans.push((r.left, r.right));
-        x = r.right + px(2);
     }
-    *s.spans.borrow_mut() = spans;
 }
 
 /// Open menu `index` under its name (`keyboard`: from Alt and its letter); while it's open, the
@@ -107,7 +107,7 @@ pub fn open(app: &Rc<App>, index: usize, keyboard: bool) {
     let owner = app.main.window.hwnd();
     let mut next = Some((index, keyboard));
     while let Some((i, keyboard)) = next.take() {
-        let Some(&(left, right)) = bar.state.spans.borrow().get(i) else { break };
+        let Some(&(left, right)) = spans().get(i) else { break };
         bar.state.open.set(Some(i));
         canvas::redraw(bar.hwnd);
         // SAFETY: plain calls on our own control: drawn green now, under the menu that opens

@@ -74,8 +74,10 @@ fn apply(hwnd: HWND, hidden: usize) {
         data.hIcon = icon();
         tray::copy(&mut data.szTip, &tip);
     }
-    let done = NOTIFY.with(Cell::get)(what, &data);
-    // (not added: the taskbar isn't there yet; tried again next time, or when it's back)
+    let notify = NOTIFY.with(Cell::get);
+    // (TaskbarCreated also comes with the icon still there, when the screen's scale changes: the
+    // icon is just updated then; not there at all, the taskbar isn't: tried again next time)
+    let done = notify(what, &data) || (what == NIM_ADD && notify(NIM_MODIFY, &data));
     if done || what == NIM_DELETE {
         TIP.with(|t| *t.borrow_mut() = (what != NIM_DELETE).then_some(tip));
     }
@@ -212,13 +214,23 @@ mod tests {
     }
 
     #[test]
+    fn still_there_when_the_taskbar_says_it_is_new() {
+        NOTIFY.with(|n| n.set(|what, data| record(what, data) && what != NIM_ADD)); // (Windows: it's there already)
+        let hwnd = HWND::default();
+        taskbar_back(hwnd, 1);
+        assert_eq!(calls(), vec![(NIM_ADD, ID, "TurboDM: 1 download".to_string()), (NIM_MODIFY, ID, "TurboDM: 1 download".to_string())]);
+        apply(hwnd, 0);
+        assert_eq!(calls(), vec![(NIM_DELETE, ID, String::new())]); // (known to be there)
+    }
+
+    #[test]
     fn added_later_when_the_taskbar_is_not_there() {
         NOTIFY.with(|n| n.set(record));
         WORKS.with(|w| w.set(false));
         let hwnd = HWND::default();
         apply(hwnd, 2);
         apply(hwnd, 2);
-        assert_eq!(calls().iter().filter(|c| c.0 == NIM_ADD).count(), 2); // tried again
+        assert_eq!(calls().iter().filter(|c| c.0 == NIM_ADD).count(), 2); // tried again (each with a NIM_MODIFY)
         WORKS.with(|w| w.set(true));
         taskbar_back(hwnd, 2);
         apply(hwnd, 2);
