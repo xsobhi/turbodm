@@ -5,9 +5,21 @@ use super::info::{Container, Plan, Sound, VideoInfo, Want};
 use super::{probe, tools};
 use crate::engine::http::Headers;
 use crate::engine::Shared;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 /// What the browser is told when the helpers aren't set up yet (the app asks for them).
 pub const NEEDS_HELPERS: &str = "Videos need yt-dlp and FFmpeg: get them in TurboDM";
+
+/// When the browser last asked for a menu, and how long its choice may take to come.
+static ASKED: Mutex<Option<Instant>> = Mutex::new(None);
+const CHOOSING: Duration = Duration::from_secs(180);
+
+/// A page is being looked at, or the browser showed a video's menu lately (the choice comes
+/// next, and finds the look here): a TurboDM the browser started for it stays meanwhile.
+pub fn wanted() -> bool {
+    probe::looking() || ASKED.lock().unwrap().is_some_and(|at| at.elapsed() < CHOOSING)
+}
 
 /// A choice's id: "1080p/mp4", "video/webm" (a video the site gives no height for), "audio/mp3".
 pub fn choice_id(want: Want) -> String {
@@ -66,7 +78,9 @@ pub async fn qualities(shared: &Shared, url: &str, headers: &Headers) -> Result<
         return Err(NEEDS_HELPERS.into());
     }
     let settings = shared.settings();
-    let found = probe(&shared.client(), url, headers, settings.timeout_secs).await?;
+    let found = probe(&shared.client(), url, headers, settings.timeout_secs).await;
+    *ASKED.lock().unwrap() = Some(Instant::now()); // (from the answer: the menu shows now)
+    let found = found?;
     let mut menu = found.menu(&settings.video_format);
     if tools::ffmpeg().is_none() {
         menu.retain(|p| !p.needs_ffmpeg()); // (Linux without FFmpeg: what works without it)

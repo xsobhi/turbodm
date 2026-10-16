@@ -25,7 +25,7 @@ pub mod tools;
 mod ytdlp;
 
 pub use info::{remembered, Container, Plan, Sound, VideoInfo, Want};
-pub use menu::{choice_id, qualities, want_of, NEEDS_HELPERS};
+pub use menu::{choice_id, qualities, want_of, wanted, NEEDS_HELPERS};
 pub use names::{filename, remove_files};
 pub use place::{move_running, move_stopped};
 pub use probe::{forget, look_ahead, probe};

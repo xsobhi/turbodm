@@ -55,7 +55,19 @@ pub(super) fn error_of(stderr: &str) -> Option<String> {
         }
     }
     let text = text.trim().trim_end_matches('.');
-    Some(if text.starts_with("Unsupported URL") { "No video found on this page".into() } else { text.to_string() })
+    let lower = text.to_ascii_lowercase();
+    // (Python's words for a site it can't reach)
+    let unreachable = ["failed to resolve", "getaddrinfo failed", "name or service not known",
+                       "temporary failure in name resolution", "nodename nor servname"];
+    Some(if text.starts_with("Unsupported URL") {
+        "No video found on this page".into()
+    } else if unreachable.iter().any(|w| lower.contains(w)) {
+        "Couldn't reach the site: no connection, or the address is wrong".into()
+    } else if lower.contains("timed out") {
+        "The site didn't answer in time".into()
+    } else {
+        text.to_string()
+    })
 }
 
 /// Look at a page: its video's title and the qualities it comes in. Fetches yt-dlp first if
@@ -85,6 +97,11 @@ pub fn look_ahead(shared: &crate::engine::Shared, rt: &tokio::runtime::Handle, u
     rt.spawn(async move {
         let _ = probe(&client, &url, &headers, timeout).await;
     });
+}
+
+/// A page is being looked at.
+pub(super) fn looking() -> bool {
+    LOOKS.lock().unwrap().values().any(|(_, look)| !look.initialized())
 }
 
 /// Look at the page afresh next time (its addresses expired).
@@ -176,6 +193,11 @@ mod tests {
         assert_eq!(error_of("ERROR: unable to download video data: HTTP Error 403: Forbidden").as_deref(),
                    Some("unable to download video data: HTTP Error 403: Forbidden"));
         assert_eq!(error_of("nothing here"), None);
+        let offline = "ERROR: [generic] Unable to download webpage: HTTPSConnection(host='example.org', port=443): \
+                       Failed to resolve 'example.org' ([Errno 11001] getaddrinfo failed) (caused by TransportError(\"x\"))";
+        assert_eq!(error_of(offline).as_deref(), Some("Couldn't reach the site: no connection, or the address is wrong"));
+        assert_eq!(error_of("ERROR: [vimeo] 1: Unable to download JSON metadata: The read operation timed out").as_deref(),
+                   Some("The site didn't answer in time"));
         // a distribution's old yt-dlp, which doesn't know an option of ours: a newer one is fetched
         let old = "Usage: yt-dlp [OPTIONS] URL [URL...]\n\nyt-dlp: error: no such option: --js-runtimes\n";
         assert!(looks_outdated(&error_of(old).unwrap()));
