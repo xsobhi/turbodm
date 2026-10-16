@@ -10,7 +10,7 @@ mod link;
 mod start;
 mod video;
 
-pub use video::add_video;
+pub use start::add_video;
 pub mod torrent; // add_torrent_file, for the main window's menu
 
 use super::theme::{self, icon};

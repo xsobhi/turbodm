@@ -1,15 +1,41 @@
-//! Start (or Download later) for a video: what was picked is added like any download (TurboDM
-//! downloads its streams itself, on all its connections); FFmpeg, if it's needed and missing, is
-//! got first (helpers.rs). Also what a choice takes: its file's extension, and the line under the
-//! title saying it.
+//! Asking for a video (the menu's Download video…, the browser's), and Start (or Download later)
+//! for one: what was picked is added like any download (TurboDM downloads its streams itself, on
+//! all its connections); FFmpeg, if it's needed and missing, is got first (helpers.rs). Also what
+//! a choice takes: its file's extension, and the line under the title saying it.
 
 use super::super::wnd::set_text;
-use super::super::{helpers, App};
+use super::super::{browsers, helpers, progress, App};
 use super::{done, remember_folder, Form};
 use std::rc::Rc;
 use turbodm::engine::video::{self, remembered, tools, Output, Plan, VideoJob};
 use turbodm::engine::AddRequest;
 use turbodm::util::human_size;
+
+/// "Download video": the Add dialog for a web page's video (Tasks → Download video…; the
+/// browser's comes through `App::handle_video`). An empty `url`: the link on the clipboard.
+pub fn add_video(app: &Rc<App>, url: String) {
+    helpers::with_helpers(app, move |app| super::open_form(app, AddRequest { url, ..Default::default() }, true));
+}
+
+impl App {
+    /// A video on a web page, from the browser: its qualities in the Add dialog, or (no dialog)
+    /// straight to the list in the quality picked last, once the page is looked at.
+    pub fn handle_video(self: &Rc<Self>, req: AddRequest, silent: bool) {
+        if req.user_agent.is_some() {
+            browsers::mark_offered(self); // from the extension
+        }
+        helpers::with_helpers(self, move |app| {
+            if !silent && app.manager.settings().show_add_dialog {
+                super::open_form(app, req, true);
+            } else {
+                let id = app.manager.add(AddRequest { start: true, video: Some(Default::default()), ..req });
+                if app.manager.settings().show_progress_window {
+                    progress::open(app, &id);
+                }
+            }
+        });
+    }
+}
 
 /// Start (true) or Download later.
 pub(super) fn submit(app: &Rc<App>, form: &Rc<Form>, start_now: bool) {

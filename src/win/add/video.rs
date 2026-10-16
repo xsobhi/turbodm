@@ -4,7 +4,7 @@
 //! Opus. Starting it is start.rs; yt-dlp and FFmpeg are got first if they're missing (helpers.rs).
 
 use super::super::wnd::{enable, set_text};
-use super::super::{browsers, helpers, progress, App};
+use super::super::{helpers, App};
 use super::start::{hint, with_ext};
 use super::{link, to_end, Form};
 use std::cell::{Cell, RefCell};
@@ -12,35 +12,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use turbodm::engine::http::Headers;
 use turbodm::engine::video::{self, tools, Container, Plan, VideoInfo, Want};
-use turbodm::engine::AddRequest;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{DestroyWindow, SetWindowPos, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE};
-
-/// "Download video": the Add dialog for a web page's video (Tasks → Download video…; the
-/// browser's comes through `App::handle_video`). An empty `url`: the link on the clipboard.
-pub fn add_video(app: &Rc<App>, url: String) {
-    helpers::with_helpers(app, move |app| super::open_form(app, AddRequest { url, ..Default::default() }, true));
-}
-
-impl App {
-    /// A video on a web page, from the browser: its qualities in the Add dialog, or (no dialog)
-    /// straight to the list in the quality picked last, once the page is looked at.
-    pub fn handle_video(self: &Rc<Self>, req: AddRequest, silent: bool) {
-        if req.user_agent.is_some() {
-            browsers::mark_offered(self); // from the extension
-        }
-        helpers::with_helpers(self, move |app| {
-            if !silent && app.manager.settings().show_add_dialog {
-                super::open_form(app, req, true);
-            } else {
-                let id = app.manager.add(AddRequest { start: true, video: Some(Default::default()), ..req });
-                if app.manager.settings().show_progress_window {
-                    progress::open(app, &id);
-                }
-            }
-        });
-    }
-}
 
 pub type Probed = Arc<Mutex<Option<(u64, Result<VideoInfo, String>)>>>;
 
