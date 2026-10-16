@@ -2,6 +2,7 @@
 //! that release's SHA2-256SUMS, updated every few days or when a page fails in a way that looks
 //! like an outdated yt-dlp), else Linux's own.
 
+use super::setup::{size_of, Helper};
 use super::{checksum_for, dir, download, get, on_path, EXE};
 use crate::config::own_user_agent;
 use crate::engine::task::unix_now;
@@ -106,21 +107,34 @@ async fn latest_sums(client: &reqwest::Client) -> Result<(String, String), Strin
     Ok((tag, sums))
 }
 
+/// Where yt-dlp comes from, for the setup window's download.
+pub(super) async fn helper(client: &reqwest::Client) -> Result<Helper, String> {
+    let (tag, sums) = latest_sums(client).await?;
+    let sha256 = checksum_for(&sums, ASSET).ok_or("yt-dlp's release has no checksum for this system")?;
+    let url = format!("{RELEASES}/download/{tag}/{ASSET}");
+    Ok(Helper { name: "yt-dlp", size: size_of(client, &url).await, url, file: ASSET.into(), sha256, version: tag })
+}
+
+/// A checked download of release `tag` into place.
+pub(super) fn install(fresh: &Path, tag: &str) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(fresh, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+    }
+    replace(fresh, &own()).map_err(|e| format!("Couldn't install yt-dlp: {e}"))?;
+    let _ = std::fs::write(version_file(), tag);
+    let _ = std::fs::write(checked_file(), unix_now().to_string());
+    Ok(())
+}
+
 async fn fetch(client: &reqwest::Client) -> Result<(), String> {
     let (tag, sums) = latest_sums(client).await?;
     let expected = checksum_for(&sums, ASSET).ok_or("yt-dlp's release has no checksum for this system")?;
     let url = format!("{RELEASES}/download/{tag}/{ASSET}");
     let fresh = dir().join(format!("yt-dlp{EXE}.download"));
     download(client, &url, &fresh, &expected, None).await.map_err(|e| format!("Couldn't get yt-dlp: {e}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&fresh, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
-    }
-    replace(&fresh, &own()).map_err(|e| format!("Couldn't install yt-dlp: {e}"))?;
-    let _ = std::fs::write(version_file(), &tag);
-    let _ = std::fs::write(checked_file(), unix_now().to_string());
-    Ok(())
+    install(&fresh, &tag)
 }
 
 /// Put `fresh` where `target` is. A running program can't be overwritten on Windows, but it

@@ -104,6 +104,7 @@ impl TaskInfo {
             user_agent: self.user_agent.clone(),
             referrer: self.referrer.clone(),
             cookies: self.cookies.clone(),
+            extra: vec![],
         }
     }
 
@@ -127,7 +128,7 @@ pub struct Task {
     /// Wakes the running download to add connections up to `info.connections` (a torrent
     /// waiting for its add dialog: that it was confirmed).
     pub grow: tokio::sync::Notify,
-    /// A video download's activity and parts, while yt-dlp runs.
+    /// A video download's activity (and its parts, while yt-dlp downloads it).
     pub video: video::Live,
     /// A torrent's live numbers, from its runner.
     pub torrent: Mutex<TorrentView>,
@@ -174,7 +175,10 @@ impl Task {
                 return size;
             }
         if let Some(video) = &info.video {
-            return video.done; // as yt-dlp reports it
+            // the parts in, and what arrived of the one under way (none while yt-dlp downloads it)
+            let done = video.done;
+            drop(info);
+            return done + self.segments.lock().unwrap().as_ref().map_or(0, |s| s.total_received());
         }
         if let Some(torrent) = &info.torrent {
             return torrent.have;

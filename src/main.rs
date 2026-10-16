@@ -6,7 +6,7 @@
 //!   turbodm --native-host       browser native-messaging host
 //!   turbodm --register          (re)connect the browser extension; --unregister undoes it
 //!   turbodm get URL [-c N] [-d DIR]   download in the terminal, no window
-//!   turbodm video URL [-q 720p] [-d DIR] [--list] [--ffmpeg]   a video from a web page, the same way
+//!   turbodm video URL [-q 720p|MP3] [-f MP4|WebM|MKV] [--list]   a video from a web page, the same way
 
 #![cfg_attr(windows, windows_subsystem = "windows")] // no console window behind the app
 

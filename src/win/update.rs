@@ -6,7 +6,7 @@ use super::wnd::{self, Rows, Window, LINE};
 use super::{dialogs, post, progress, App};
 use std::rc::Rc;
 use std::time::Duration;
-use turbodm::engine::{AddRequest, Snapshot};
+use turbodm::engine::{AddRequest, Snapshot, Status};
 use turbodm::update::{self, installed_by_setup, run_installer, RELEASES_PAGE};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -98,15 +98,17 @@ fn install(app: &Rc<App>, url: &str, version: &str) {
         directory: Some(std::env::temp_dir()),
         ..Default::default()
     });
-    *app.updating.borrow_mut() = Some(id.clone());
+    app.when_done.borrow_mut().insert(id.clone(), Box::new(downloaded));
     progress::open(app, &id);
 }
 
 /// The update's installer is here: run it (it asks for admin rights) and quit, so it can replace
 /// this version; downloads under way are paused and saved, and the installer reopens TurboDM.
 /// No "Download complete" window, as in IDM.
-pub fn downloaded(app: &Rc<App>, snap: &Snapshot) {
-    app.updating.take();
+fn downloaded(app: &Rc<App>, snap: &Snapshot) {
+    if snap.status != Status::Completed {
+        return; // (its progress window says why)
+    }
     progress::close(app, &snap.id);
     app.on_done.borrow_mut().remove(&snap.id);
     match run_installer(&snap.path) {

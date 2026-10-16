@@ -11,6 +11,7 @@ pub struct Headers {
     pub user_agent: Option<String>,
     pub referrer: Option<String>,
     pub cookies: Option<String>, // "a=1; b=2", as sent by the browser extension
+    pub extra: Vec<(String, String)>, // others a site wants (yt-dlp says which, for a video's parts)
 }
 
 #[derive(Debug)]
@@ -83,6 +84,12 @@ fn header_map(h: &Headers, range: Option<(u64, Option<u64>)>) -> HeaderMap {
         if let Some(v) = value.and_then(|v| HeaderValue::from_str(&v).ok()) {
             map.insert(name, v);
         }
+    }
+    for (name, value) in &h.extra {
+        if let (Ok(name), Ok(value)) = (header::HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_str(value))
+            && !map.contains_key(&name) {
+                map.insert(name, value);
+            }
     }
     map
 }

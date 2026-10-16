@@ -80,7 +80,7 @@ pub fn check(app: &Rc<App>, form: &Rc<Form>) {
         return;
     }
     let req = &form.req;
-    let headers = Headers { user_agent: req.user_agent.clone(), referrer: req.referrer.clone(), cookies: req.cookies.clone() };
+    let headers = Headers { user_agent: req.user_agent.clone(), referrer: req.referrer.clone(), cookies: req.cookies.clone(), extra: vec![] };
     let (client, probed, number) = (app.manager.shared.client(), form.probed.clone(), form.probe_id.get());
     app.rt.spawn(async move {
         let answer = http::probe(&client, &url, &headers).await.map_err(|e| e.to_string());

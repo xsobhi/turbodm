@@ -5,6 +5,7 @@ pub mod limiter;
 pub mod manager;
 mod runner;
 mod disk;
+mod pool;
 pub mod segments;
 pub mod state;
 pub mod task;

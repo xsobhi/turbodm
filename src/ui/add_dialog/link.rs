@@ -73,7 +73,7 @@ fn probe(ctx: &Rc<Ctx>, form: &Rc<Form>, req: &AddRequest) {
     form.probe_id.set(id);
     form.info.set_text("Checking link…");
     let headers = Headers { user_agent: req.user_agent.clone(), referrer: req.referrer.clone(),
-                            cookies: req.cookies.clone() };
+                            cookies: req.cookies.clone(), extra: vec![] };
     let client = ctx.manager.shared.client();
     let job = ctx.rt.spawn(async move { http::probe(&client, &url, &headers).await });
     let (form, settings) = (form.clone(), ctx.manager.settings());

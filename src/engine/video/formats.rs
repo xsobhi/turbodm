@@ -1,10 +1,11 @@
 //! Reading `yt-dlp -J`: the page's video and every format it comes in, as yt-dlp describes
-//! them (numbers may come as floats or be missing); choices.rs makes the short list from them.
+//! them (numbers may come as floats or be missing), with where each is and what to send for it.
 
-use super::choices::choices;
 use super::info::VideoInfo;
+use super::Source;
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 /// One of the site's formats.
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -25,6 +26,43 @@ pub(super) struct Format {
     pub(super) dynamic_range: Option<String>,
     pub(super) has_drm: Value, // true, false or "maybe"
     pub(super) language_preference: Option<f64>,
+    url: Option<String>,
+    http_headers: BTreeMap<String, Value>,
+    downloader_options: Option<Value>, // {"http_chunk_size": 10485760}
+    cookies: Option<String>,           // "a=1; Domain=.x.com; Path=/; …" for its address
+}
+
+impl Format {
+    /// Where it is and what to send for it, for TurboDM's connections.
+    pub(super) fn source(&self, duration: Option<f64>) -> Source {
+        let mut headers: Vec<(String, String)> = self.http_headers.iter()
+            .filter_map(|(name, value)| value.as_str().map(|v| (name.clone(), v.to_string()))).collect();
+        let cookies = self.cookies.as_deref().map(cookie_pairs).unwrap_or_default();
+        if !cookies.is_empty() && !headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("cookie")) {
+            headers.push(("Cookie".into(), cookies));
+        }
+        let chunk = self.downloader_options.as_ref().and_then(|o| o.get("http_chunk_size")).and_then(Value::as_f64);
+        Source {
+            format_id: self.format_id.clone(),
+            url: self.url.clone().unwrap_or_default(),
+            headers,
+            protocol: self.protocol.clone().unwrap_or_default(),
+            ext: self.ext.clone(),
+            size: size(self, duration),
+            chunk: chunk.filter(|c| *c > 0.0).map_or(0, |c| c as u64),
+            done: false,
+        }
+    }
+}
+
+/// yt-dlp's cookies for an address ("a=1; Domain=.x.com; Path=/; Secure; b=2…") as a Cookie
+/// header ("a=1; b=2").
+fn cookie_pairs(cookies: &str) -> String {
+    const ATTRIBUTES: [&str; 7] = ["domain", "path", "expires", "max-age", "samesite", "secure", "httponly"];
+    cookies.split(';').filter_map(|pair| {
+        let (name, value) = pair.trim().split_once('=')?;
+        (!ATTRIBUTES.contains(&name.trim().to_ascii_lowercase().as_str())).then(|| format!("{}={value}", name.trim()))
+    }).collect::<Vec<_>>().join("; ")
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -64,15 +102,14 @@ pub(super) fn parse(json: &[u8], page_url: &str) -> Result<VideoInfo, String> {
     if page.formats.is_empty() && !page.single.format_id.is_empty() {
         page.formats.push(page.single.clone());
     }
-    let duration = page.duration.filter(|d| *d > 0.0);
     Ok(VideoInfo {
         url: page.webpage_url.clone().filter(|u| u.starts_with("http")).unwrap_or_else(|| page_url.to_string()),
         title: page.title.clone().filter(|t| !t.trim().is_empty()).unwrap_or_else(|| "video".into()),
         thumbnail: page.thumbnail.clone().filter(|t| t.starts_with("http")),
-        duration,
+        duration: page.duration.filter(|d| *d > 0.0),
         site: site_name(page.extractor_key.as_deref().unwrap_or_default()),
-        choices: choices(&page.formats, duration),
         with_cookies: false,
+        formats: page.formats,
     })
 }
 
@@ -84,6 +121,8 @@ fn site_name(key: &str) -> String {
         k if k.starts_with("Youtube") => "YouTube",
         "DailyMotion" => "Dailymotion",
         k if k.starts_with("Twitch") => "Twitch",
+        k if k.starts_with("BiliBili") => "Bilibili",
+        k if k.starts_with("TikTok") => "TikTok",
         "Twitter" => "X",
         other => other,
     }.to_string()

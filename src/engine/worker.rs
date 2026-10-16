@@ -19,6 +19,7 @@ pub struct WorkerCtx {
     pub url: String,
     pub headers: Headers,
     pub resumable: bool,
+    pub chunk: u64, // the most to ask for in one request (YouTube's 10 MB); 0: a part at once
     pub retries: u32,
     pub limiters: [Arc<RateLimiter>; 2], // all downloads, this download
     pub cancel: CancellationToken,
@@ -84,7 +85,7 @@ async fn fetch(ctx: &WorkerCtx, index: usize) -> Result<Flow, String> {
             ctx.segments.restart(index); // a plain stream can't continue: start over
         }
         let seg = ctx.segments.get(index);
-        let range = ctx.resumable.then_some((seg.pos(), seg.end));
+        let range = ctx.resumable.then(|| (seg.pos(), request_end(seg.pos(), seg.end, ctx.chunk)));
         let opened = tokio::select! {
             r = http::open(&ctx.client, &ctx.url, &ctx.headers, range) => r,
             _ = ctx.cancel.cancelled() => return Ok(Flow::Continue),
@@ -116,15 +117,27 @@ async fn fetch(ctx: &WorkerCtx, index: usize) -> Result<Flow, String> {
         if ctx.segments.get(index).done > before {
             failures = 0; // it got somewhere: a long download's occasional drop starts the count afresh
         }
+        // all of a chunk asked for arrived (a site that wants small requests): the next one
+        let chunk_done = matches!(range, Some((_, Some(end))) if ctx.segments.get(index).pos() >= end);
         match streamed {
             Ok(true) => failures = 0,
             Ok(false) if ctx.cancel.is_cancelled() => return Ok(Flow::Continue),
+            Ok(false) if chunk_done => failures = 0,
             Ok(false) => failures = backoff(ctx, failures, "connection closed early".into()).await?,
             Err(StreamError::Write(msg)) => return Err(msg),
             Err(StreamError::Network(msg)) => failures = backoff(ctx, failures, msg).await?,
         }
     }
     Ok(Flow::Continue)
+}
+
+/// Where a request from `pos` ends: the part's end, or sooner when requests are kept to `chunk`.
+fn request_end(pos: u64, end: Option<u64>, chunk: u64) -> Option<u64> {
+    match (end, chunk) {
+        (end, 0) => end,
+        (Some(end), chunk) => Some(end.min(pos + chunk)),
+        (None, chunk) => Some(pos + chunk),
+    }
 }
 
 async fn backoff(ctx: &WorkerCtx, failures: u32, reason: String) -> Result<u32, String> {

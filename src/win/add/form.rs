@@ -19,7 +19,7 @@ pub struct Form {
     pub(super) browse: Cell<HWND>, // the folder button in the path's field
     pub(super) remember: Cell<HWND>,
     pub(super) info: Cell<HWND>,
-    pub(super) names: Cell<[HWND; 3]>,   // "Address", "Save to", "Quality" (videos)
+    pub(super) names: Cell<[HWND; 4]>,   // "Address", "Save to", "Quality" and "Format" (videos)
     pub(super) buttons: Cell<[HWND; 3]>, // Cancel, Download later, Start download
     pub(super) chosen: Cell<bool>,   // the user typed or picked the path: don't replace it
     pub(super) probe_id: Cell<u64>,  // results of older checks are ignored
@@ -77,18 +77,24 @@ impl Form {
         set_text(self.remember.get(), &format!("Always save {} to this folder", kind_words(&name)));
     }
 
-    /// Place everything (again: a video adds its quality and title), and fit the window to it.
+    /// Place everything (again: a video adds its quality, format and title), and fit the window.
     pub(super) fn layout(&self) {
         let video = self.video.found.borrow().is_some();
-        let [address, save_to, quality] = self.names.get();
-        wnd::set_visible(quality, video);
-        wnd::set_visible(self.video.title.get(), video);
+        let [address, save_to, quality, format] = self.names.get();
+        for hwnd in [quality, format, self.video.title.get()] {
+            wnd::set_visible(hwnd, video);
+        }
         // laid out as the Linux dialog: names on the right of their column, then the fields
         let mut rows = Rows::new(18, 18, 84, 584);
         rows.field(Some(address), self.url.get(), FIELD);
         rows.field(Some(save_to), self.path.get(), FIELD);
         if video {
+            // [Quality ▾]  Format [MP4 ▾]
+            let y = rows.y;
             rows.field(Some(quality), self.video.quality.get(), FIELD);
+            wnd::place(self.video.quality.get(), 18 + 84, y, 316, FIELD);
+            wnd::place(format, 18 + 84 + 316, y + (FIELD - LINE) / 2, 64, LINE);
+            wnd::place(self.video.format.get(), 18 + 84 + 316 + 72, y, 584 - 84 - 316 - 72, FIELD);
         }
         rows.field(None, self.remember.get(), LINE + 6);
         if video {
