@@ -166,11 +166,54 @@
     }
   }
 
-  // Where it goes on `video`: where it was dragged on this site, else by the top right corner.
+  // Where it goes on `video`: where it was dragged on this site, else by the top right corner,
+  // left of the player's own buttons there (YouTube's ⓘ, its mini player's ×…).
   function place(video, r) {
     const p = places[SITE];
-    if (p) put(r.left + p.x * r.width, r.top + p.y * r.height, r);
-    else put(r.right - EDGE - ICON / 2, Math.max(r.top, 0) + EDGE + ICON / 2, r);
+    if (p) return put(r.left + p.x * r.width, r.top + p.y * r.height, r);
+    const y = Math.max(r.top, 0) + EDGE + ICON / 2;
+    put(clearOf(video, r, r.right - EDGE - ICON / 2, y), y, r);
+  }
+
+  // The rightmost spot along the top, from `x` leftwards, with none of the player's buttons
+  // under the icon: YouTube's (found even while they're faded out, so the icon doesn't jump when
+  // they come back), and whatever clickable thing is there on other sites. Kept per video and
+  // size (the mini player is another size).
+  const clear = new WeakMap();
+
+  function clearOf(video, r, x, y) {
+    const key = `${Math.round(r.width)}x${Math.round(r.height)}`;
+    const known = clear.get(video);
+    if (known && known.key === key) return r.right - known.offset;
+    const player = video.closest(".html5-video-player");
+    const theirs = player
+      ? [...player.querySelectorAll(".ytp-chrome-top-buttons, .ytp-miniplayer-close-button, .ytp-miniplayer-button-container")]
+          .map((e) => e.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0)
+      : [];
+    const half = ICON / 2 + 2;
+    const free = (cx) => !theirs.some((b) => cx + half > b.left && cx - half < b.right && y + half > b.top && y - half < b.bottom)
+      && !clickableAt(video, cx, y);
+    let spot = x;
+    for (let k = 0; k < 10 && !free(spot); k++) {
+      const next = spot - (ICON + 6);
+      if (next - ICON / 2 < r.left + 8) break;
+      spot = next;
+    }
+    if (!free(spot)) spot = x; // (nowhere free along the top: the corner)
+    clear.set(video, { key, offset: r.right - spot });
+    return spot;
+  }
+
+  // Something clickable of the page's above the video at (x, y), under where the icon would be.
+  function clickableAt(video, x, y) {
+    for (const [dx, dy] of [[0, 0], [-ICON / 2 + 4, -ICON / 2 + 4], [ICON / 2 - 4, ICON / 2 - 4]]) {
+      for (const e of document.elementsFromPoint(x + dx, y + dy)) {
+        if (e === host) continue; // (ours)
+        if (e === video) break; // (down to the video: nothing of theirs on top)
+        if (e.closest('button, a[href], [role="button"]')) return true;
+      }
+    }
+    return false;
   }
 
   function show(video, ms) {
