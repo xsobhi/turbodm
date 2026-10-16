@@ -69,10 +69,11 @@ async function handOff({ url, filename, directory, referrer, fileSize, cookies, 
 // A video on a web page (YouTube and the many sites TurboDM's yt-dlp knows): TurboDM looks at the
 // page and offers its qualities. An older TurboDM doesn't know this message ("bad message"): the
 // button says so instead of failing silently.
-async function handOffVideo({ url, referrer, storeId }) {
+async function handOffVideo({ url, referrer, storeId, choice }) {
   const reply = await sendNative({
     type: "video",
     url,
+    choice: choice || null, // the quality picked in the page's menu (videomenu.js); else TurboDM asks
     referrer: referrer || null,
     cookies: (await cookieHeader(url, storeId)) || null,
     userAgent: navigator.userAgent,
@@ -205,7 +206,17 @@ api.contextMenus.onClicked.addListener((info, tab) => {
 // and the "Download this video" button on videos (videobutton.js).
 // A plain video file playing on a page ("media-file") goes as an ordinary download.
 // "video-peek": a video playing, for a running TurboDM to look at early (it isn't started for it).
+// "video-qualities": what the video button's menu offers, as TurboDM says.
 api.runtime.onMessage.addListener((message, sender, reply) => {
+  if (message && message.type === "video-qualities") {
+    const storeId = sender.tab && sender.tab.cookieStoreId;
+    cookieHeader(message.url, storeId)
+      .then((cookies) => sendNative({ type: "videoQualities", url: message.url, referrer: message.referrer || null,
+                                      cookies: cookies || null, userAgent: navigator.userAgent }))
+      .then((answer) => reply(answer || { ok: false }))
+      .catch((err) => reply({ ok: false, error: String(err) }));
+    return true; // answering asynchronously
+  }
   if (message && message.type === "video-peek") {
     const storeId = sender.tab && sender.tab.cookieStoreId;
     cookieHeader(message.url, storeId).then((cookies) =>
@@ -217,7 +228,7 @@ api.runtime.onMessage.addListener((message, sender, reply) => {
   if (!message || !["video", "media-file"].includes(message.type)) return false;
   const storeId = message.storeId ?? (sender.tab && sender.tab.cookieStoreId);
   const hand = message.type === "video" ? handOffVideo : handOff;
-  hand({ url: message.url, referrer: message.referrer, storeId })
+  hand({ url: message.url, referrer: message.referrer, storeId, choice: message.choice })
     .then((ok) => reply({ ok }))
     .catch((err) => reply({ ok: false, error: String(err) }));
   return true; // answering asynchronously

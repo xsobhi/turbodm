@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TurboDM Integration",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "Send browser downloads and videos to TurboDM, a fast multi-connection download manager, with cookies and referrer so protected links work.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -23,7 +23,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["videobutton.js"],
+      "js": ["videomenu.js", "videobutton.js"],
       "all_frames": true,
       "run_at": "document_idle"
     }
