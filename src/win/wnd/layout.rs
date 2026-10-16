@@ -1,6 +1,6 @@
 //! Placing controls (in 96-DPI pixels, scaled to the screen) and windows on the screen.
 
-use super::moves::{content_top, move_window};
+use super::moves::{content_top, edge, move_window};
 use super::{field, px, send};
 use windows::Win32::UI::Controls::BCM_GETIDEALSIZE;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
@@ -43,7 +43,8 @@ pub fn client_size(hwnd: HWND) -> (i32, i32) {
     let mut rect = RECT::default();
     // SAFETY: plain query
     unsafe { let _ = GetClientRect(hwnd, &mut rect); }
-    (rect.right * 96 / px(96), rect.bottom * 96 / px(96))
+    let edges = 2 * edge(hwnd); // (inside the line it draws around itself)
+    ((rect.right - edges) * 96 / px(96), (rect.bottom - edges) * 96 / px(96))
 }
 
 /// Resize the window so its inside is `height` (96-DPI pixels) tall below its title bar, keeping
@@ -55,7 +56,7 @@ pub fn set_client_height(hwnd: HWND, height: i32) {
         let _ = GetWindowRect(hwnd, &mut outer);
         let _ = GetClientRect(hwnd, &mut inner);
         let frame = (outer.bottom - outer.top) - inner.bottom;
-        let _ = SetWindowPos(hwnd, None, 0, 0, outer.right - outer.left, px(height) + content_top(hwnd) + frame,
+        let _ = SetWindowPos(hwnd, None, 0, 0, outer.right - outer.left, px(height) + content_top(hwnd) + 2 * edge(hwnd) + frame,
                              SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 }

@@ -33,8 +33,10 @@ impl Window {
     /// such as the page of tabs; the controls on them take their colour.
     pub fn set_surfaces(&self, surfaces: Vec<(RECT, COLORREF)>) {
         let top = super::moves::content_top(self.hwnd()); // (below its own title bar)
+        let edge = super::moves::edge(self.hwnd()); // (inside the line it draws around itself)
         let surfaces: Vec<_> = surfaces.into_iter()
-            .map(|(r, color)| (RECT { top: r.top + top, bottom: r.bottom + top, ..r }, color)).collect();
+            .map(|(r, color)| (RECT { left: r.left + edge, top: r.top + top + edge, right: r.right + edge,
+                                      bottom: r.bottom + top + edge }, color)).collect();
         if *self.surfaces.borrow() != surfaces {
             *self.surfaces.borrow_mut() = surfaces;
             // SAFETY: plain call on our window (its controls are drawn again as they move)
@@ -135,11 +137,20 @@ fn paint(win: &Window) {
     let surfaces = win.surfaces.borrow().clone();
     // SAFETY: plain query
     let focus = unsafe { GetFocus() };
+    let edge = super::moves::edge(hwnd);
     Painter::paint(hwnd, |p| {
         p.fill(p.rect, theme::CHROME);
         for (r, color) in &surfaces {
             p.fill(*r, *color);
         }
         super::field::paint_frames(p, hwnd, focus);
+        // its own edge, the same all round (frame.rs)
+        if edge > 0 {
+            let RECT { right, bottom, .. } = p.rect;
+            for r in [RECT { right: edge, ..p.rect }, RECT { left: right - edge, ..p.rect },
+                      RECT { bottom: edge, ..p.rect }, RECT { top: bottom - edge, ..p.rect }] {
+                p.fill(r, theme::EDGE);
+            }
+        }
     });
 }

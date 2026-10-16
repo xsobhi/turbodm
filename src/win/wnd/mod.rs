@@ -18,6 +18,7 @@ pub use controls::*;
 pub use layout::*;
 pub use field::{enable, set_visible};
 pub use moves::batch;
+pub use frame::let_edges_resize;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;

@@ -68,6 +68,7 @@ impl MainWindow {
         });
         let main = MainWindow { window, list, caption, sidebar, toolbar, menubar, search, status, status_text,
                                 split: Rc::new(Cell::new(210)), shown: Cell::new((true, true)) };
+        wnd::let_edges_resize(main.window.hwnd()); // (Windows 10: no frame outside to grab)
         wnd::center(main.window.hwnd());
         main
     }

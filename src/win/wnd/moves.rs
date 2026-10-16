@@ -1,5 +1,6 @@
 //! Moving controls: all of a window's at once while it's laid out (one repaint: resizing stays
-//! smooth, nothing smears), and the room a window's own title bar takes at the top of it.
+//! smooth, nothing smears), the room a window's own title bar takes at the top of it, and the
+//! line it draws around itself (its edge, frame.rs): its controls are placed inside that.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -9,6 +10,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 thread_local! {
     static BATCH: Cell<isize> = const { Cell::new(0) }; // the moves being collected (HDWP)
     static TOPS: RefCell<HashMap<isize, i32>> = RefCell::default(); // window → where its content starts
+    static EDGES: RefCell<HashMap<isize, i32>> = RefCell::default(); // window → its own edge's width
 }
 
 /// `TURBODM_OFFSCREEN=1`: windows open off the screen, without taking the focus (automated
@@ -27,14 +29,31 @@ pub fn set_content_top(window: HWND, top: i32) {
     TOPS.with(|t| t.borrow_mut().insert(window.0 as isize, top));
 }
 
+/// How wide the line is that a window draws around itself (screen pixels; 0: none).
+pub fn edge(window: HWND) -> i32 {
+    EDGES.with(|e| e.borrow().get(&(window.0 as isize)).copied().unwrap_or(0))
+}
+
+pub fn set_edge(window: HWND, width: i32) {
+    EDGES.with(|e| e.borrow_mut().insert(window.0 as isize, width));
+}
+
 pub fn forget(window: HWND) {
     TOPS.with(|t| t.borrow_mut().remove(&(window.0 as isize)));
+    EDGES.with(|e| e.borrow_mut().remove(&(window.0 as isize)));
 }
 
 /// Move a control to `r` (screen pixels in its window): with the others, during `batch`.
 /// Without Windows copying its old picture to the new place first (that copy is what showed
 /// as ghosted text and icons while resizing): it's drawn again whole (see `paint_now`).
-pub fn move_window(hwnd: HWND, r: RECT) {
+pub fn move_window(hwnd: HWND, mut r: RECT) {
+    // (inside the window's own edge, if it draws one)
+    // SAFETY: plain queries
+    let child = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32 & WS_CHILD.0 != 0;
+    if let Some(window) = child.then(|| unsafe { GetParent(hwnd) }.ok()).flatten() {
+        let edge = edge(window);
+        (r.left, r.top, r.right, r.bottom) = (r.left + edge, r.top + edge, r.right + edge, r.bottom + edge);
+    }
     let (width, height) = (r.right - r.left, r.bottom - r.top);
     let flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS;
     let batch = BATCH.with(Cell::get);

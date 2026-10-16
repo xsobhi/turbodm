@@ -47,7 +47,8 @@ pub fn setup(app: &Rc<App>) {
             Some(LRESULT(0))
         }
         WM_SIZE => {
-            super::super::app().main.layout((lparam.0 & 0xffff) as i32, ((lparam.0 >> 16) & 0xffff) as i32);
+            let edges = 2 * wnd::moves::edge(hwnd); // (inside the line it draws around itself)
+            super::super::app().main.layout((lparam.0 & 0xffff) as i32 - edges, ((lparam.0 >> 16) & 0xffff) as i32 - edges);
             wnd::moves::paint_now(hwnd);
             Some(LRESULT(0))
         }

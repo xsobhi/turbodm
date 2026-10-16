@@ -28,6 +28,7 @@ pub const fn rgb(hex: u32) -> COLORREF {
 pub const CHROME: COLORREF = rgb(0xefeff0); // around the content: toolbar, status line, tab row, dialogs
 pub const VIEW: COLORREF = rgb(0xffffff); // the content: the list, the sidebar, the tabs' pages
 pub const BORDER: COLORREF = rgb(0xd6d6da); // lines between areas
+pub const EDGE: COLORREF = rgb(0xc4c4c9); // the line around a window (Windows 10: wnd/frame.rs)
 pub const SEPARATOR: COLORREF = rgb(0xededef); // between the list's rows
 pub const TEXT: COLORREF = rgb(0x303030);
 pub const DIM: COLORREF = rgb(0x77777c); // names of values, headings, small print
