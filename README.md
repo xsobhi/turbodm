@@ -97,6 +97,11 @@ On Windows, TurboDM draws it itself, so it matches rather than looking like a po
 - smooth resizing: each window is drawn in one pass into a buffer and shown at once, and its
   controls move together
 
+On Windows, *Options → Look* changes it, at once on every window: Mint-Y, Mint-Y Dark, Mint-X,
+Windows 11 and Windows 10 (light and dark, with Windows' title bar buttons and selection), Ubuntu,
+GNOME, KDE Breeze (light and dark), elementary OS, Pop!_OS, Manjaro, Arch, Nord, Dracula,
+Catppuccin and Solarized, and your own accent, background and text colours over any of them.
+
 ### Fast by design
 
 - Rust + tokio: 32 connections without 32 OS threads; reqwest forced to **HTTP/1.1 with one TCP
