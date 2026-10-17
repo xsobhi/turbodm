@@ -99,6 +99,7 @@ pub fn setup(app: &Rc<App>) {
     unsafe { SetTimer(Some(hwnd), REFRESH_TIMER, 100, None) };
     clipboard::start(hwnd);
     let s = app.manager.settings();
+    app.main.toolbar.show_text(s.toolbar_text);
     app.main.show_parts(s.show_categories, s.show_toolbar); // (and lays it out)
 }
 

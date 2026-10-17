@@ -22,7 +22,7 @@ pub enum Cmd {
     ToggleCategories, ToggleToolbar, ToggleProgress, ToggleComplete,
     SortName, SortSize, SortStatus, SortSpeed, SortLeft, SortAdded,
     GitHub, Report, MenuTasks, MenuFile, MenuDownloads, MenuView, MenuHelp,
-    AddTorrent, AddVideo, CompleteWindow, YouTube,
+    AddTorrent, AddVideo, CompleteWindow, YouTube, ToggleToolbarText,
 }
 
 pub const ALL: &[Cmd] = &[Cmd::Add, Cmd::Resume, Cmd::Pause, Cmd::ResumeAll, Cmd::PauseAll, Cmd::Remove,
@@ -34,7 +34,7 @@ pub const ALL: &[Cmd] = &[Cmd::Add, Cmd::Resume, Cmd::Pause, Cmd::ResumeAll, Cmd
     Cmd::ToggleCategories, Cmd::ToggleToolbar, Cmd::ToggleProgress, Cmd::ToggleComplete,
     Cmd::SortName, Cmd::SortSize, Cmd::SortStatus, Cmd::SortSpeed, Cmd::SortLeft, Cmd::SortAdded,
     Cmd::GitHub, Cmd::Report, Cmd::MenuTasks, Cmd::MenuFile, Cmd::MenuDownloads, Cmd::MenuView, Cmd::MenuHelp,
-    Cmd::AddTorrent, Cmd::AddVideo, Cmd::CompleteWindow, Cmd::YouTube];
+    Cmd::AddTorrent, Cmd::AddVideo, Cmd::CompleteWindow, Cmd::YouTube, Cmd::ToggleToolbarText];
 
 /// The speed limiter's choices: (command, KiB/s, its name).
 const SPEEDS: [(Cmd, u64, &str); 7] = [(Cmd::Speed0, 0, "&No limit"), (Cmd::Speed256, 256, "256 KB/s"),
@@ -103,7 +103,8 @@ pub fn bar_menu(app: &Rc<App>, index: usize) -> Vec<popup::Item> {
         3 => {
             let (column, _) = app.main.list.sorting();
             vec![Tick(Cmd::ToggleCategories, "&Categories", s.show_categories),
-                 Tick(Cmd::ToggleToolbar, "&Toolbar", s.show_toolbar), Line,
+                 Tick(Cmd::ToggleToolbar, "&Toolbar", s.show_toolbar),
+                 Tick(Cmd::ToggleToolbarText, "Toolbar te&xt", s.toolbar_text), Line,
                  Sub("&Arrange files", SORTS.iter().map(|&(cmd, c, name, _)| Tick(cmd, name, column == c)).collect()),
                  Line, Tick(Cmd::ToggleProgress, "Show download &progress window", s.show_progress_window),
                  Tick(Cmd::ToggleComplete, "Show download comp&lete window", s.show_complete_dialog)]
@@ -212,6 +213,10 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
             settings(&|s| if cmd == Cmd::ToggleCategories { s.show_categories ^= true } else { s.show_toolbar ^= true });
             let s = app.manager.settings();
             app.main.show_parts(s.show_categories, s.show_toolbar);
+        }
+        Cmd::ToggleToolbarText => {
+            settings(&|s| s.toolbar_text ^= true);
+            app.main.toolbar_text(app.manager.settings().toolbar_text);
         }
         Cmd::ToggleProgress => settings(&|s| s.show_progress_window ^= true),
         Cmd::ToggleComplete => settings(&|s| s.show_complete_dialog ^= true),

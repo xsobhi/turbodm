@@ -106,6 +106,7 @@ pub struct Settings {
     pub browsers_offered: bool,    // the "add the extension to your browser" guide was shown
     pub show_categories: bool,     // the main window's categories (View → Categories)
     pub show_toolbar: bool,        // and its toolbar (View → Toolbar)
+    pub toolbar_text: bool,        // the toolbar's names under its icons (View → Toolbar text; off: smaller)
     pub video_quality: String,     // the video quality picked last ("720p", "Audio"), offered first next time
     #[serde(default)]
     pub seed: bool,                // keep sharing finished torrents (off: stop once complete)
@@ -140,6 +141,7 @@ impl Default for Settings {
             browsers_offered: false,
             show_categories: true,
             show_toolbar: true,
+            toolbar_text: true,
             video_quality: String::new(),
             seed: false,
             video_format: String::new(),

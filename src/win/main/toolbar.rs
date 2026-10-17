@@ -1,11 +1,12 @@
-//! The toolbar, as on Linux (and like IDM's): 3D icons with their names under them, in groups.
+//! The toolbar, as on Linux (and like IDM's): 3D icons with their names under them, in groups;
+//! or, smaller, the icons alone (View → Toolbar text), their names in their tooltips.
 
 use super::super::theme::pictures::{self as pic, Picture};
 use super::super::theme::{self, Align, Font, Painter};
 use super::super::wnd::canvas::{self, Mouse};
 use super::super::wnd::{px, Window};
 use super::menu::Cmd;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use windows::Win32::Foundation::{HWND, RECT};
 
@@ -25,10 +26,23 @@ const BUTTONS: [Option<(Picture, Cmd, &str, &str)>; 12] = [
     Some((pic::OPTIONS, Cmd::Settings, "Options", "Preferences (Ctrl+,)")),
 ];
 
-/// Height of the toolbar; a button's width; the room a separator takes (96-DPI pixels).
-pub const HEIGHT: i32 = 60;
-const WIDTH: i32 = 76;
+/// The toolbar's height and a button's width (96-DPI pixels), with the names under the icons and
+/// without; the room a separator takes.
+const SIZES: [(i32, i32); 2] = [(60, 76), (40, 44)];
 const SEPARATOR: i32 = 11;
+
+thread_local! {
+    static TEXT: Cell<bool> = const { Cell::new(true) }; // the names under the icons
+}
+
+/// The toolbar's height now (96-DPI pixels).
+pub fn height() -> i32 {
+    size().0
+}
+
+fn size() -> (i32, i32) {
+    SIZES[usize::from(!TEXT.get())]
+}
 
 #[derive(Default)]
 struct State {
@@ -44,11 +58,12 @@ pub struct Toolbar {
 
 /// Where each button is (canvas pixels), by its index in BUTTONS; and separators' middles.
 fn areas() -> (Vec<(usize, RECT)>, Vec<i32>) {
+    let (height, width) = size();
     let (mut buttons, mut separators, mut x) = (Vec::new(), Vec::new(), px(6));
     for (i, button) in BUTTONS.iter().enumerate() {
         if button.is_some() {
-            buttons.push((i, RECT { left: x, top: px(4), right: x + px(WIDTH), bottom: px(HEIGHT - 4) }));
-            x += px(WIDTH + 2);
+            buttons.push((i, RECT { left: x, top: px(4), right: x + px(width), bottom: px(height - 4) }));
+            x += px(width + 2);
         } else {
             separators.push(x + px(SEPARATOR) / 2 - 1);
             x += px(SEPARATOR);
@@ -86,10 +101,15 @@ impl Toolbar {
                 super::super::post(move |app| super::menu::run(app, cmd));
             }
         });
-        let tips: Vec<(RECT, String)> = areas().0.into_iter()
-            .filter_map(|(i, r)| BUTTONS[i].map(|(_, _, _, tip)| (r, tip.to_string()))).collect();
-        canvas::set_tips(hwnd, &tips);
+        canvas::set_tips(hwnd, &tips());
         Toolbar { hwnd, state }
+    }
+
+    /// The names under the icons, or not (smaller).
+    pub fn show_text(&self, on: bool) {
+        TEXT.set(on);
+        canvas::set_tips(self.hwnd, &tips());
+        canvas::redraw(self.hwnd);
     }
 
     pub fn enable(&self, cmd: Cmd, on: bool) {
@@ -104,11 +124,19 @@ impl Toolbar {
     }
 }
 
+/// Each button's tooltip (with its name, when that isn't under it).
+fn tips() -> Vec<(RECT, String)> {
+    areas().0.into_iter().filter_map(|(i, r)| BUTTONS[i].map(|(_, _, name, tip)| {
+        (r, if TEXT.get() { tip.to_string() } else { format!("{name}: {tip}") })
+    })).collect()
+}
+
 fn paint(p: &Painter, state: &State) {
     p.fill(p.rect, theme::CHROME);
     let (buttons, separators) = areas();
+    let inset = if TEXT.get() { 16 } else { 10 };
     for x in separators {
-        p.fill(RECT { left: x, top: px(16), right: x + 1, bottom: px(HEIGHT - 16) }, theme::BORDER);
+        p.fill(RECT { left: x, top: px(inset), right: x + 1, bottom: px(height() - inset) }, theme::BORDER);
     }
     for (i, r) in buttons {
         let Some((picture, cmd, name, _)) = BUTTONS[i] else { continue };
@@ -119,6 +147,10 @@ fn paint(p: &Painter, state: &State) {
             p.round(r, px(theme::RADIUS), Some(fill), None);
         }
         let color = if enabled { theme::TEXT } else { theme::DISABLED };
+        if !TEXT.get() {
+            p.picture(r, picture, 26, !enabled);
+            continue;
+        }
         p.picture(RECT { top: r.top + px(4), bottom: r.top + px(32), ..r }, picture, 26, !enabled);
         p.text(RECT { top: r.top + px(30), bottom: r.bottom - px(4), ..r }, name, Font::Caption, color, Align::Center);
     }

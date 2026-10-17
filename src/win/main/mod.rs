@@ -105,8 +105,14 @@ impl MainWindow {
     /// Where the sidebar and the list start (screen pixels): under the title bar, the menu bar
     /// and the toolbar (if it's shown).
     fn body_top(&self) -> i32 {
-        let toolbar = if self.shown.get().1 { toolbar::HEIGHT } else { 0 };
+        let toolbar = if self.shown.get().1 { toolbar::height() } else { 0 };
         px(caption::HEIGHT + menubar::HEIGHT + toolbar)
+    }
+
+    /// The toolbar's names under its icons, or not (View → Toolbar text), and lay out again.
+    pub fn toolbar_text(&self, on: bool) {
+        self.toolbar.show_text(on);
+        self.relayout();
     }
 
     /// Show the categories and the toolbar, or not (View's options), and lay out again.
