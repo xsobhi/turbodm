@@ -51,10 +51,16 @@ $("open").addEventListener("click", async () => {
 
 // "Download video on this page", for web pages
 let page = null;
-api.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+api.tabs.query({ active: true, currentWindow: true }).then(async ([tab]) => {
   // (not on YouTube for the Chrome Web Store's copy: its rules don't allow it; background.js)
-  const storeCopy = ["enaaoegoakgmcdbhepcoflfmpeodipob"].includes(api.runtime.id);
+  const storeCopy = api.runtime.id === "enaaoegoakgmcdbhepcoflfmpeodipob";
   const youtube = /^https?:\/\/([^/]*\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be)(\/|$)/i.test((tab && tab.url) || "");
+  // (nor where TurboDM's full extension is on too: that one does it)
+  const answer = await api.runtime.sendMessage({ type: "resting?" }).catch(() => null);
+  if (answer && answer.resting) {
+    $("resting").hidden = false;
+    return;
+  }
   if (tab && /^https?:/i.test(tab.url || "") && !(storeCopy && youtube)) {
     page = tab;
     $("video").hidden = false;

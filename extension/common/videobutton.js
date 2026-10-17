@@ -25,6 +25,7 @@
   const SITE = location.hostname.replace(/^www\./, "");
 
   let on = true;
+  let resting = false; // the store's copy, where TurboDM's full extension is on too (background.js)
   let places = {}; // where it was dragged, by site: {x, y}, the icon's centre as fractions of the video
   let host = null;
   let box = null;
@@ -43,6 +44,10 @@
   api.storage.local.get({ videoButton: true, videoButtonPlaces: {} }).then((s) => {
     on = s.videoButton !== false;
     places = s.videoButtonPlaces || {};
+  }, () => {});
+  api.runtime.sendMessage({ type: "resting?" }).then((answer) => {
+    resting = Boolean(answer && answer.resting);
+    if (resting) hide(true);
   }, () => {});
   api.storage.onChanged.addListener((changes) => {
     if (changes.videoButton) {
@@ -219,7 +224,7 @@
   }
 
   function show(video, ms) {
-    if (!on || dragging) return;
+    if (!on || resting || dragging) return;
     const r = big(video);
     if (!r) return;
     const what = message(video);

@@ -129,7 +129,7 @@ if (BEFORE_SAVE_AS) {
     (async () => {
       let accepted = false;
       try {
-        if (wanted(url, item.totalBytes || item.fileSize, await getSettings())) {
+        if (!(await resting()) && wanted(url, item.totalBytes || item.fileSize, await getSettings())) {
           accepted = await handOff({ url, filename: basename(item.filename), referrer: await pageOf(item),
                                      fileSize: item.totalBytes || item.fileSize });
         }
@@ -179,7 +179,8 @@ api.downloads.onCreated.addListener(async (item) => {
 // The copy installed from the Chrome Web Store, whose rules don't allow downloading YouTube's
 // videos: no video button there (its manifest leaves YouTube out), no "Download video" on its
 // pages, and its videos not sent. (TurboDM itself still takes them, from Download video….)
-const STORE_COPY = ["enaaoegoakgmcdbhepcoflfmpeodipob"].includes(api.runtime.id);
+const STORE_ID = "enaaoegoakgmcdbhepcoflfmpeodipob";
+const STORE_COPY = api.runtime.id === STORE_ID;
 const YOUTUBE = /^https?:\/\/([^/]*\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be)(\/|$)/i;
 
 function storeLeavesOut(url) {
@@ -192,12 +193,43 @@ function showVideoMenuFor(url) {
 }
 
 if (STORE_COPY) {
-  api.tabs.onActivated.addListener(({ tabId }) => api.tabs.get(tabId).then((tab) => showVideoMenuFor(tab.url), () => {}));
+  api.tabs.onActivated.addListener(({ tabId }) => {
+    resting();
+    api.tabs.get(tabId).then((tab) => showVideoMenuFor(tab.url), () => {});
+  });
   api.tabs.onUpdated.addListener((_, change, tab) => change.url !== undefined && tab.active && showVideoMenuFor(change.url));
 }
 
+// TurboDM's full extension, the one added by hand (it has YouTube; TurboDM's "YouTube in your
+// browser" window shows how). Where it's on too, the store's copy rests: no downloads sent twice,
+// no second button on videos, no second menu.
+const FULL_ID = "edlkglikdjabdhlailjmdopnlocdegbe";
+let full = { at: 0, here: false };
+
+async function resting() {
+  if (!STORE_COPY) return false;
+  if (Date.now() - full.at < 10000) return full.here;
+  let here = false;
+  try {
+    here = Boolean((await api.runtime.sendMessage(FULL_ID, { type: "turbodm-full?" }))?.full);
+  } catch {
+    /* not added, or turned off */
+  }
+  const changed = full.at > 0 && here !== full.here;
+  full = { at: Date.now(), here };
+  if (changed) createMenus();
+  return here;
+}
+
+if (!STORE_COPY && api.runtime.onMessageExternal) {
+  api.runtime.onMessageExternal.addListener((message, sender, reply) => {
+    if (message && message.type === "turbodm-full?" && sender.id === STORE_ID) reply({ full: true });
+  });
+}
+
 function createMenus() {
-  api.contextMenus.removeAll(() => {
+  api.contextMenus.removeAll(async () => {
+    if (await resting()) return; // (the full extension has them)
     api.contextMenus.create({ id: "tdm-link", title: "Download with TurboDM", contexts: ["link"] });
     api.contextMenus.create({
       id: "tdm-media",
@@ -240,6 +272,10 @@ api.contextMenus.onClicked.addListener((info, tab) => {
 // "video-peek": a video playing, for a running TurboDM to look at early (it isn't started for it).
 // "video-qualities": what the video button's menu offers, as TurboDM says.
 api.runtime.onMessage.addListener((message, sender, reply) => {
+  if (message && message.type === "resting?") {
+    resting().then((rest) => reply({ resting: rest }));
+    return true; // answering asynchronously
+  }
   if (message && ["video", "video-qualities", "video-peek"].includes(message.type) && storeLeavesOut(message.url)) {
     reply({ ok: false, error: "Videos from YouTube can't be downloaded with this browser's store add-on" });
     return false;
