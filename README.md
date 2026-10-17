@@ -149,9 +149,14 @@ The extension comes with TurboDM, in:
   *Browser extension folder*)
 
 TurboDM connects itself to the browsers when it starts (`turbodm --register` does it by hand).
-On Windows, the first time it starts, Firefox asks to add the signed extension. Once the
-extension is in the Chrome Web Store, Chrome, Edge and Brave will ask by themselves too
-([docs/extension-stores.md](docs/extension-stores.md)). Until then, load it by hand:
+On Windows, the first time it starts, Firefox asks to add the signed extension, and Chrome, Edge
+and Brave ask by themselves to turn on the one from the Chrome Web Store
+([docs/extension-stores.md](docs/extension-stores.md)).
+
+The Chrome Web Store doesn't allow extensions that download YouTube videos, so its copy leaves
+YouTube out; everything else works with it. For YouTube in Chrome, Edge and Brave, add the full
+extension by hand (TurboDM's *Help → YouTube in your browser* shows how, with pictures); where both
+are on, the store's copy steps aside:
 
 - **Chrome / Brave / Chromium / Edge**: open `chrome://extensions` (or `brave://extensions`), turn on
   *Developer mode*, click *Load unpacked* and pick the `chrome` folder from above.

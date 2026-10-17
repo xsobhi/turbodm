@@ -5,7 +5,7 @@
 
 use super::theme::pictures::{self, Picture};
 use super::theme::{self};
-use super::wnd::{self, button_width, place, set_text, set_visible, Rows, Window, FIELD, LINE};
+use super::wnd::{self, button_width, place, set_text, Rows, Window, FIELD, LINE};
 use super::{shell, App};
 use std::rc::Rc;
 use turbodm::browsers as find;
@@ -18,7 +18,7 @@ const STEP: i32 = 40; // where a step's pictures and buttons start, under its wo
 
 pub fn open(_app: &Rc<App>) {
     let window = Window::dialog("YouTube in your browser", None, (WIDTH, 600), false);
-    let heading = window.heading("Download YouTube videos from Chrome, Edge and Brave");
+    let heading = window.heading("YouTube videos in Chrome, Edge and Brave");
     let intro = window.note(
         "Google doesn't let extensions from the Chrome Web Store download YouTube videos, so the TurboDM \
          extension these browsers add by themselves leaves YouTube out; everything else works with it. \
@@ -32,8 +32,7 @@ pub fn open(_app: &Rc<App>) {
     } else {
         "1.  Open your browser's extensions page:"
     });
-    let told = window.note("");
-    set_visible(told, false);
+    let told = window.note("Click yours: TurboDM opens it, with the page's address copied for its address bar.");
     let opens: Vec<_> = browsers.into_iter().map(|browser| {
         let text = if added.contains(&browser.name) { format!("{} (added)", browser.name) } else { browser.name.to_string() };
         window.button(&text, move || {
@@ -45,7 +44,6 @@ pub fn open(_app: &Rc<App>) {
             } else {
                 format!("Couldn't open {}: open it, and go to {page}.", browser.name)
             });
-            set_visible(told, true);
         })
     }).collect();
 
