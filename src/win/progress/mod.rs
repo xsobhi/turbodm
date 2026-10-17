@@ -42,8 +42,8 @@ fn arrange(window: &Window, details: &Details, buttons: [HWND; 4], shown: bool) 
     let page_bottom = if shown { details.place(PAD, below_bar + 16, WIDTH - 2 * PAD) } else { below_bar } + PAD;
     details.show(shown);
     // the pages are a lighter layer under the tabs, as on Linux
-    window.set_surfaces(vec![(rect(0, TABS, WIDTH, 1), theme::BORDER),
-                             (rect(0, TABS + 1, WIDTH, page_bottom - TABS - 1), theme::VIEW)]);
+    window.set_surfaces(vec![(rect(0, TABS, WIDTH, 1), theme::border()),
+                             (rect(0, TABS + 1, WIDTH, page_bottom - TABS - 1), theme::view())]);
     let y = page_bottom + 14;
     wnd::place(buttons[0], PAD, y, 130, FIELD + 2);
     for (i, button) in buttons[1..].iter().enumerate() {

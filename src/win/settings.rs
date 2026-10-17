@@ -156,9 +156,9 @@ pub fn open(app: &Rc<App>) {
         shown.push(controls);
     }
     let page_bottom = bottom + PAD - 10;
-    window.set_surfaces(vec![(rect(0, TABS, WIDTH, 1), theme::BORDER),
-                             (rect(0, TABS + 1, WIDTH, page_bottom - TABS - 1), theme::VIEW),
-                             (rect(0, page_bottom, WIDTH, 1), theme::BORDER)]);
+    window.set_surfaces(vec![(rect(0, TABS, WIDTH, 1), theme::border()),
+                             (rect(0, TABS + 1, WIDTH, page_bottom - TABS - 1), theme::view()),
+                             (rect(0, page_bottom, WIDTH, 1), theme::border())]);
     let show_page = move |page: usize| {
         for (i, controls) in shown.iter().enumerate() {
             controls.iter().for_each(|c| set_visible(*c, i == page));

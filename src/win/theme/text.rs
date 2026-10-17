@@ -25,10 +25,11 @@ fn format(engine: &Engine, which: Font) -> Option<IDWriteTextFormat> {
         Font::Title => (19, true),
         Font::Icons(size) => (size, false),
     };
+    let face = super::themes::current().face;
     let (family, collection) = match (which, &engine.ubuntu) {
         (Font::Icons(_), _) => (icon_face(), None),
-        (_, Some(ubuntu)) => ("Ubuntu", Some(ubuntu)),
-        (_, None) => ("Segoe UI", None),
+        (_, Some(ubuntu)) if face == super::themes::Face::Ubuntu => ("Ubuntu", Some(ubuntu)),
+        _ => ("Segoe UI", None),
     };
     let weight = if bold { DWRITE_FONT_WEIGHT_BOLD } else { DWRITE_FONT_WEIGHT_NORMAL };
     // SAFETY: plain object creation

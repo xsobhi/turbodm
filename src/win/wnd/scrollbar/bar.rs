@@ -99,7 +99,7 @@ impl Bar {
     }
 
     pub(super) fn paint(&self, p: &Painter) {
-        p.fill(p.rect, theme::VIEW);
+        p.fill(p.rect, theme::view());
         let Some((at, size)) = self.thumb() else { return };
         let busy = self.hover.get() || self.drag.get().is_some();
         let width = px(if busy { WIDE } else { SLIM });
@@ -111,12 +111,12 @@ impl Bar {
         };
         if busy {
             let (start, length) = self.track();
-            p.round(rect(start, start + length), width / 2, Some(theme::mix(theme::VIEW, theme::TRACK, 0.6)), None);
+            p.round(rect(start, start + length), width / 2, Some(theme::mix(theme::view(), theme::track(), 0.6)), None);
         }
         let color = match (self.drag.get(), self.hover.get()) {
-            (Some(_), _) => theme::ACCENT,
-            (None, true) => theme::mix(theme::VIEW, theme::DIM, 0.8),
-            _ => theme::mix(theme::VIEW, theme::DIM, 0.5),
+            (Some(_), _) => theme::accent(),
+            (None, true) => theme::mix(theme::view(), theme::dim(), 0.8),
+            _ => theme::mix(theme::view(), theme::dim(), 0.5),
         };
         p.round(rect(at, at + size), width / 2, Some(color), None);
     }

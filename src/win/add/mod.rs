@@ -98,7 +98,7 @@ fn open_form(app: &Rc<App>, req: AddRequest, video: bool, from_main: bool) {
     field::make_field(path, vec![browse]); // the folder button inside the field, at its end
     form.remember.set(window.checkbox("", false, |_| {}));
     form.info.set(window.label("Enter a link"));
-    window.set_text_color(form.info.get(), theme::DIM);
+    window.set_text_color(form.info.get(), theme::dim());
     form.video.title.set(window.label(""));
     form.names.set(["Address", "Save to", "Quality", "Format"].map(|l| window.name(l)));
     let (a, f) = (app.clone(), form.clone());

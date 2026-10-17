@@ -57,10 +57,10 @@ impl Window {
 fn surface_at(win: &Window, r: RECT) -> COLORREF {
     let (x, y) = ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
     if super::field::inside_field(win.hwnd(), x, y) {
-        return theme::VIEW; // a field's buttons are on its white
+        return theme::view(); // a field's buttons are on its white
     }
     win.surfaces.borrow().iter().rev().find(|(s, _)| x >= s.left && x < s.right && y >= s.top && y < s.bottom)
-        .map_or(theme::CHROME, |(_, color)| *color)
+        .map_or(theme::chrome(), |(_, color)| *color)
 }
 
 fn rect_in(control: HWND, parent: HWND) -> RECT {
@@ -96,9 +96,9 @@ pub(super) fn handle(win: &Window, msg: u32, wparam: WPARAM, lparam: LPARAM) -> 
         WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
             let (dc, control) = (HDC(wparam.0 as *mut _), HWND(lparam.0 as *mut _));
             let (bg, fg) = if class_is(control, "Edit") {
-                (theme::VIEW, theme::TEXT)
+                (theme::view(), theme::text())
             } else {
-                let fg = win.colors.borrow().get(&(control.0 as isize)).copied().unwrap_or(theme::TEXT);
+                let fg = win.colors.borrow().get(&(control.0 as isize)).copied().unwrap_or(theme::text());
                 (surface_at(win, rect_in(control, win.hwnd())), fg)
             };
             // SAFETY: the DC Windows passes for drawing the control
@@ -114,8 +114,8 @@ pub(super) fn handle(win: &Window, msg: u32, wparam: WPARAM, lparam: LPARAM) -> 
             let bg = surface_at(win, rect_in(item.hwndItem, win.hwnd()));
             // SAFETY: plain query
             let enabled = unsafe { windows::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled(item.hwndItem) }.as_bool();
-            let color = if !enabled { theme::DISABLED }
-                        else { win.colors.borrow().get(&(item.hwndItem.0 as isize)).copied().unwrap_or(theme::TEXT) };
+            let color = if !enabled { theme::disabled() }
+                        else { win.colors.borrow().get(&(item.hwndItem.0 as isize)).copied().unwrap_or(theme::text()) };
             super::labels::draw(item, bg, color).then_some(LRESULT(1))
         }
         WM_NOTIFY => {
@@ -142,7 +142,7 @@ fn erase(win: &Window, dc: HDC) {
     // SAFETY: plain queries and fills on the DC Windows passes
     unsafe {
         let _ = GetClientRect(win.hwnd(), &mut r);
-        FillRect(dc, &r, theme::brush(theme::CHROME));
+        FillRect(dc, &r, theme::brush(theme::chrome()));
         for (s, color) in win.surfaces.borrow().iter() {
             FillRect(dc, s, theme::brush(*color));
         }
@@ -150,7 +150,7 @@ fn erase(win: &Window, dc: HDC) {
         if edge > 0 {
             for side in [RECT { right: edge, ..r }, RECT { left: r.right - edge, ..r }, RECT { bottom: edge, ..r },
                          RECT { top: r.bottom - edge, ..r }] {
-                FillRect(dc, &side, theme::brush(theme::EDGE));
+                FillRect(dc, &side, theme::brush(theme::edge()));
             }
         }
     }
@@ -163,7 +163,7 @@ fn paint(win: &Window) {
     let focus = unsafe { GetFocus() };
     let edge = super::moves::edge(hwnd);
     Painter::paint(hwnd, |p| {
-        p.fill(p.rect, theme::CHROME);
+        p.fill(p.rect, theme::chrome());
         for (r, color) in &surfaces {
             p.fill(*r, *color);
         }
@@ -173,7 +173,7 @@ fn paint(win: &Window) {
             let RECT { right, bottom, .. } = p.rect;
             for r in [RECT { right: edge, ..p.rect }, RECT { left: right - edge, ..p.rect },
                       RECT { bottom: edge, ..p.rect }, RECT { top: bottom - edge, ..p.rect }] {
-                p.fill(r, theme::EDGE);
+                p.fill(r, theme::edge());
             }
         }
     });

@@ -119,9 +119,9 @@ pub fn open(_app: &Rc<App>) {
 /// A screenshot, at its size (`pictures::shot_size`), in a thin frame.
 fn shot(window: &Window, png: Picture) -> windows::Win32::Foundation::HWND {
     window.canvas(move |p| {
-        p.fill(p.rect, theme::VIEW);
+        p.fill(p.rect, theme::view());
         let one = wnd::px(1);
         p.shot(RECT { left: one, top: one, right: p.rect.right - one, bottom: p.rect.bottom - one }, png);
-        p.round(p.rect, 0, None, Some(theme::BORDER));
+        p.round(p.rect, 0, None, Some(theme::border()));
     })
 }

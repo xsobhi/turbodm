@@ -3,7 +3,7 @@
 
 use super::look::{marked, DROPDOWN, FLAT, ICON, PRIMARY, SWITCH};
 use super::{px, send, text};
-use crate::win::theme::{self, Font, Painter, ACCENT, RADIUS, WHITE};
+use crate::win::theme::{self, Font, Painter, WHITE};
 use windows::Win32::Foundation::{COLORREF, HWND, RECT};
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::UI::Controls::*;
@@ -44,22 +44,22 @@ fn push(p: &Painter, d: &NMCUSTOMDRAW, behind: COLORREF) {
     let darker = |c: COLORREF, by: f64| theme::mix(c, COLORREF(0), by);
     let (fill, border, color) = if marked(hwnd, FLAT) {
         let fill = if down { Some(theme::pressed(behind)) } else if hot { Some(theme::hover(behind)) } else { None };
-        (fill, None, if disabled { theme::DISABLED } else { theme::TEXT })
+        (fill, None, if disabled { theme::disabled() } else { theme::text() })
     } else if marked(hwnd, PRIMARY) && !disabled {
-        let fill = if down { darker(ACCENT, 0.12) } else if hot { theme::mix(ACCENT, WHITE, 0.12) } else { ACCENT };
-        (Some(fill), Some(darker(ACCENT, 0.12)), WHITE)
+        let fill = if down { darker(theme::accent(), 0.12) } else if hot { theme::mix(theme::accent(), WHITE, 0.12) } else { theme::accent() };
+        (Some(fill), Some(darker(theme::accent(), 0.12)), theme::on_accent())
     } else if disabled {
-        (Some(theme::mix(theme::BUTTON, behind, 0.5)), Some(theme::mix(theme::BUTTON_BORDER, behind, 0.5)), theme::DISABLED)
+        (Some(theme::mix(theme::button(), behind, 0.5)), Some(theme::mix(theme::button_border(), behind, 0.5)), theme::disabled())
     } else {
-        let fill = if down { theme::BUTTON_PRESSED } else if hot { theme::BUTTON_HOVER } else { theme::BUTTON };
-        (Some(fill), Some(if hot || down { darker(theme::BUTTON_BORDER, 0.1) } else { theme::BUTTON_BORDER }), theme::TEXT)
+        let fill = if down { theme::button_pressed() } else if hot { theme::button_hover() } else { theme::button() };
+        (Some(fill), Some(if hot || down { darker(theme::button_border(), 0.1) } else { theme::button_border() }), theme::text())
     };
-    p.round(r, px(RADIUS), fill, border);
+    p.round(r, px(theme::radius()), fill, border);
     let cues = state.contains(CDIS_SHOWKEYBOARDCUES);
     if state.contains(CDIS_FOCUS) && cues {
-        let ring = if marked(hwnd, PRIMARY) { theme::mix(WHITE, ACCENT, 0.3) } else { ACCENT };
+        let ring = if marked(hwnd, PRIMARY) { theme::mix(WHITE, theme::accent(), 0.3) } else { theme::accent() };
         p.round(RECT { left: r.left + px(2), top: r.top + px(2), right: r.right - px(2), bottom: r.bottom - px(2) },
-                px(RADIUS - 1), None, Some(ring));
+                px(theme::radius() - 1), None, Some(ring));
     }
     let label = text(hwnd);
     if marked(hwnd, ICON) {
@@ -88,21 +88,21 @@ fn check(p: &Painter, d: &NMCUSTOMDRAW) {
     let size = px(16);
     let check = RECT { left: r.left + 1, top: middle - size / 2, right: r.left + 1 + size, bottom: middle - size / 2 + size };
     if ticked {
-        let fill = if disabled { theme::DISABLED } else if hot { theme::mix(ACCENT, WHITE, 0.12) } else { ACCENT };
-        p.round(check, px(RADIUS), Some(fill), None);
-        p.icon(check, theme::icon::CHECK, 12, WHITE);
+        let fill = if disabled { theme::disabled() } else if hot { theme::mix(theme::accent(), WHITE, 0.12) } else { theme::accent() };
+        p.round(check, px(theme::radius()), Some(fill), None);
+        p.icon(check, theme::icon::CHECK, 12, theme::on_accent());
     } else {
-        let line = if disabled { theme::BORDER } else if hot { ACCENT } else { theme::mix(theme::BUTTON_BORDER, COLORREF(0), 0.12) };
-        p.round(check, px(RADIUS), Some(theme::VIEW), Some(line));
+        let line = if disabled { theme::border() } else if hot { theme::accent() } else { theme::mix(theme::button_border(), COLORREF(0), 0.12) };
+        p.round(check, px(theme::radius()), Some(theme::view()), Some(line));
     }
     let cues = state.contains(CDIS_SHOWKEYBOARDCUES);
     let label = RECT { left: check.right + px(8), ..r };
     let prefix = if cues { DRAW_TEXT_FORMAT(0) } else { DT_HIDEPREFIX };
-    let color = if disabled { theme::DISABLED } else { theme::TEXT };
+    let color = if disabled { theme::disabled() } else { theme::text() };
     p.draw_text(label, &text(hwnd), Font::Body, color, prefix | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
     if state.contains(CDIS_FOCUS) && cues {
         p.round(RECT { left: check.left - 1, top: check.top - 1, right: check.right + 1, bottom: check.bottom + 1 },
-                px(RADIUS), None, Some(ACCENT));
+                px(theme::radius()), None, Some(theme::accent()));
     }
 }
 
@@ -115,11 +115,11 @@ fn switch(p: &Painter, d: &NMCUSTOMDRAW) {
     let top = (r.top + r.bottom - height) / 2;
     let track = RECT { left: r.left + 1, top, right: r.left + 1 + width, bottom: top + height };
     let fill = match (on, disabled, hot) {
-        (true, true, _) => theme::DISABLED,
-        (true, _, true) => theme::mix(ACCENT, WHITE, 0.12),
-        (true, ..) => ACCENT,
-        (false, _, true) => theme::mix(theme::TRACK, COLORREF(0), 0.06),
-        (false, ..) => theme::TRACK,
+        (true, true, _) => theme::disabled(),
+        (true, _, true) => theme::mix(theme::accent(), WHITE, 0.12),
+        (true, ..) => theme::accent(),
+        (false, _, true) => theme::mix(theme::track(), COLORREF(0), 0.06),
+        (false, ..) => theme::track(),
     };
     p.round(track, height / 2, Some(fill), None);
     let knob = height - px(4);
@@ -127,6 +127,6 @@ fn switch(p: &Painter, d: &NMCUSTOMDRAW) {
     p.round(RECT { left, top: top + px(2), right: left + knob, bottom: top + px(2) + knob }, knob / 2, Some(WHITE), None);
     if state.contains(CDIS_FOCUS) && state.contains(CDIS_SHOWKEYBOARDCUES) {
         let ring = RECT { left: track.left - 1, top: track.top - 1, right: track.right + 1, bottom: track.bottom + 1 };
-        p.round(ring, height / 2 + 1, None, Some(ACCENT));
+        p.round(ring, height / 2 + 1, None, Some(theme::accent()));
     }
 }

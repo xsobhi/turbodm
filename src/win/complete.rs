@@ -33,28 +33,28 @@ pub fn open(app: &Rc<App>, snap: &Snapshot) {
     let big = icon_of(&snap.path, SHIL_EXTRALARGE);
     let (name, line) = (snap.filename.clone(), finished_line(snap));
     let header = window.canvas(move |p| {
-        p.fill(p.rect, theme::VIEW);
+        p.fill(p.rect, theme::view());
         if let Some((list, index)) = &big {
             // SAFETY: drawing an icon of Windows' list into our canvas
             unsafe { let _ = ImageList_Draw(HIMAGELIST(list.as_raw() as isize), *index, p.gdi(), 0, 0, ILD_TRANSPARENT); }
         }
         let left = wnd::px(ICON + 16);
-        p.text(RECT { left, top: 0, right: p.rect.right, bottom: wnd::px(28) }, &name, Font::Title, theme::TEXT, Align::Left);
-        p.text(RECT { left, top: wnd::px(28), right: p.rect.right, bottom: wnd::px(50) }, &line, Font::Body, theme::DIM, Align::Left);
+        p.text(RECT { left, top: 0, right: p.rect.right, bottom: wnd::px(28) }, &name, Font::Title, theme::text(), Align::Left);
+        p.text(RECT { left, top: wnd::px(28), right: p.rect.right, bottom: wnd::px(50) }, &line, Font::Body, theme::dim(), Align::Left);
     });
     let drag = drag_box(&window, snap.path.clone());
     // where it is and where it came from, in a light card
     let rows = [("Saved to", snap.path.display().to_string()), ("From", snap.url.clone())];
     let card = window.canvas(move |p| {
-        p.fill(p.rect, theme::VIEW);
-        p.round(p.rect, wnd::px(theme::RADIUS + 2), Some(theme::mix(theme::VIEW, theme::CHROME, 0.6)), Some(theme::BORDER));
+        p.fill(p.rect, theme::view());
+        p.round(p.rect, wnd::px(theme::radius() + 2), Some(theme::mix(theme::view(), theme::chrome(), 0.6)), Some(theme::border()));
         for (i, (name, value)) in rows.iter().enumerate() {
             let top = wnd::px(9 + 26 * i as i32);
             let bottom = top + wnd::px(26);
-            p.text(RECT { left: wnd::px(14), top, right: wnd::px(84), bottom }, name, Font::Body, theme::DIM, Align::Left);
+            p.text(RECT { left: wnd::px(14), top, right: wnd::px(84), bottom }, name, Font::Body, theme::dim(), Align::Left);
             let cut = if i == 0 { DT_PATH_ELLIPSIS } else { DT_END_ELLIPSIS }; // a path keeps its file name
             let r = RECT { left: wnd::px(90), top, right: p.rect.right - wnd::px(14), bottom };
-            p.draw_text(r, value, Font::Body, theme::TEXT, cut | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+            p.draw_text(r, value, Font::Body, theme::text(), cut | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
         }
     });
     let again = window.checkbox("Don't show again", false, |_| {});
@@ -79,7 +79,7 @@ pub fn open(app: &Rc<App>, snap: &Snapshot) {
 
     place(header, 24, 24, WIDTH - 48, 52);
     place(card, 24, 96, WIDTH - 48, 70);
-    window.set_surfaces(vec![(rect(0, 0, WIDTH, BODY), theme::VIEW), (rect(0, BODY, WIDTH, 1), theme::BORDER)]);
+    window.set_surfaces(vec![(rect(0, 0, WIDTH, BODY), theme::view()), (rect(0, BODY, WIDTH, 1), theme::border())]);
     // the buttons, and the drag square right of them, in the window's corner
     place(drag, WIDTH - 20 - DRAG.0, BODY + 16, DRAG.0, DRAG.1);
     canvas::set_tips(drag, &[(RECT { left: 0, top: 0, right: wnd::px(DRAG.0), bottom: wnd::px(DRAG.1) },
@@ -98,10 +98,10 @@ fn drag_box(window: &Window, path: std::path::PathBuf) -> windows::Win32::Founda
     let hover = Rc::new(Cell::new(false));
     let h = hover.clone();
     let hwnd = window.canvas(move |p| {
-        p.fill(p.rect, theme::CHROME);
-        let line = if h.get() { theme::ACCENT } else { theme::BORDER };
-        let fill = if h.get() { theme::mix(theme::VIEW, theme::ACCENT, 0.12) } else { theme::VIEW };
-        p.round(p.rect, wnd::px(theme::RADIUS), Some(fill), Some(line));
+        p.fill(p.rect, theme::chrome());
+        let line = if h.get() { theme::accent() } else { theme::border() };
+        let fill = if h.get() { theme::mix(theme::view(), theme::accent(), 0.12) } else { theme::view() };
+        p.round(p.rect, wnd::px(theme::radius()), Some(fill), Some(line));
         let size = wnd::px(26); // (the pointer's picture has room around its arrows)
         // SAFETY: Windows' shared pointer, drawn into our canvas, centred
         unsafe {

@@ -26,23 +26,23 @@ pub fn menu(p: &Painter, o: POINT, look: &Look) {
     let at = |left: i32, top: i32, right: i32, bottom: i32| RECT { left: o.x + left, top: o.y + top, right: o.x + right, bottom: o.y + bottom };
     // the line around it is what's left of the border's colour, under the white
     let body = at(0, 0, geo.width, geo.height);
-    p.fill(p.rect, theme::BORDER);
+    p.fill(p.rect, theme::border());
     p.round(RECT { left: body.left + 1, top: body.top + 1, right: body.right - 1, bottom: body.bottom - 1 },
-            px(RADIUS) - 1, Some(theme::VIEW), None);
+            px(RADIUS) - 1, Some(theme::view()), None);
     for (i, item) in look.items.iter().enumerate() {
         let (top, bottom) = geo.rows[i];
         if let Item::Line = item {
             let y = (top + bottom) / 2;
-            p.fill(at(1, y, geo.width - 1, y + 1), theme::mix(theme::VIEW, theme::BORDER, 0.75));
+            p.fill(at(1, y, geo.width - 1, y + 1), theme::mix(theme::view(), theme::border(), 0.75));
             continue;
         }
         let row = at(1, top, geo.width - 1, bottom);
         let lit = look.selected == Some(i) && item.enabled();
         if lit {
-            p.fill(row, theme::ACCENT);
+            p.fill(row, theme::selected());
         }
-        let color = if !item.enabled() { theme::DISABLED } else if lit { theme::WHITE } else { theme::TEXT };
-        let faint = if !item.enabled() { theme::DISABLED } else if lit { theme::mix(theme::WHITE, theme::ACCENT, 0.18) } else { theme::DIM };
+        let color = if !item.enabled() { theme::disabled() } else if lit { theme::on_selected(false) } else { theme::text() };
+        let faint = if !item.enabled() { theme::disabled() } else if lit { theme::mix(theme::on_selected(false), theme::selected(), 0.18) } else { theme::dim() };
         if let Item::Tick(_, _, true) = item {
             p.icon(at(px(8), top, geo.text - px(4), bottom), icon::CHECK, 12, color);
         }

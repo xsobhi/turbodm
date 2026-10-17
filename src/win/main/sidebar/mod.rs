@@ -166,7 +166,7 @@ fn free_space(dir: &Path) -> Option<(u64, u64)> {
 }
 
 fn paint(p: &Painter, state: &State, view: View) {
-    p.fill(p.rect, theme::VIEW);
+    p.fill(p.rect, theme::view());
     let right = p.rect.right;
     // (scrolled no further than there is to see: the window may have grown since)
     let footer = if state.disk.is_some() { px(FOOTER) } else { 0 };
@@ -176,18 +176,24 @@ fn paint(p: &Painter, state: &State, view: View) {
         match ROWS[i] {
             Row::Heading(text) => {
                 let r = RECT { left: px(14), top: top + px(10), right: right - px(12), bottom };
-                p.text(r, text, Font::CaptionStrong, theme::DIM, Align::Left);
+                p.text(r, text, Font::CaptionStrong, theme::dim(), Align::Left);
             }
             Row::Entry(entry, name, picture) => {
                 // the chosen one a full-width row in Mint's green, as GTK draws Mint's sidebars
                 let r = RECT { left: 0, top, right, bottom };
                 let picked = entry == view;
                 if picked {
-                    p.fill(r, theme::ACCENT);
+                    p.fill(r, theme::selected());
+                    if theme::selected() != theme::accent() {
+                        // tinted (Windows' look): a short bar in the accent colour on its left, as Windows 11's
+                        let middle = (r.top + r.bottom) / 2;
+                        p.round(RECT { left: px(3), top: middle - px(8), right: px(6), bottom: middle + px(8) }, px(2),
+                                Some(theme::accent()), None);
+                    }
                 } else if state.hover == Some(i) {
-                    p.fill(r, theme::hover(theme::VIEW));
+                    p.fill(r, theme::hover(theme::view()));
                 }
-                let (color, dim) = if picked { (theme::WHITE, theme::WHITE) } else { (theme::TEXT, theme::DIM) };
+                let (color, dim) = if picked { (theme::on_selected(false), theme::on_selected(true)) } else { (theme::text(), theme::dim()) };
                 p.picture(RECT { left: px(10), right: px(32), ..r }, picture, 20, false);
                 p.text(RECT { left: px(40), right: right - px(48), ..r }, name, Font::Body, color, Align::Left);
                 if let Some(n) = state.counts.get(i).filter(|&&n| n > 0) {
@@ -197,19 +203,19 @@ fn paint(p: &Painter, state: &State, view: View) {
         }
     }
     if let Some(t) = thumb(right, room, scroll, state.bar_hot) {
-        let color = if state.bar_hot { theme::DIM } else { theme::mix(theme::VIEW, theme::DIM, 0.45) };
+        let color = if state.bar_hot { theme::dim() } else { theme::mix(theme::view(), theme::dim(), 0.45) };
         p.round(t, (t.right - t.left) / 2, Some(color), None);
     }
     let Some((free, total)) = state.disk else { return };
     let top = p.rect.bottom - px(FOOTER);
-    p.fill(RECT { left: 0, top, right, bottom: p.rect.bottom }, theme::VIEW); // (over rows that go on below)
-    p.fill(RECT { left: 0, top, right, bottom: top + 1 }, theme::BORDER);
+    p.fill(RECT { left: 0, top, right, bottom: p.rect.bottom }, theme::view()); // (over rows that go on below)
+    p.fill(RECT { left: 0, top, right, bottom: top + 1 }, theme::border());
     let line = format!("{} free of {}", human_size(Some(free)), human_size(Some(total)));
     p.text(RECT { left: px(14), top: top + px(10), right: right - px(12), bottom: top + px(30) }, &line,
-           Font::Caption, theme::DIM, Align::Left);
+           Font::Caption, theme::dim(), Align::Left);
     let bar = RECT { left: px(14), top: top + px(38), right: right - px(14), bottom: top + px(42) };
     let used = 1.0 - free as f64 / total.max(1) as f64;
-    p.round(bar, px(2), Some(theme::TRACK), None);
+    p.round(bar, px(2), Some(theme::track()), None);
     let fill = RECT { right: bar.left + ((bar.right - bar.left) as f64 * used) as i32, ..bar };
-    p.round(fill, px(2), Some(if used > 0.9 { theme::DANGER } else { theme::ACCENT }), None);
+    p.round(fill, px(2), Some(if used > 0.9 { theme::danger() } else { theme::accent() }), None);
 }

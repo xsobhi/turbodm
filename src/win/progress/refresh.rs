@@ -19,9 +19,9 @@ impl ProgressWindow {
         };
         // the status in the accent colour while it works (IDM's blue "Receiving data…")
         let status = match s.status {
-            Status::Error => theme::DANGER,
-            status if status.is_active() => theme::ACCENT,
-            _ => theme::TEXT,
+            Status::Error => theme::danger(),
+            status if status.is_active() => theme::accent(),
+            _ => theme::text(),
         };
         let resume = match &s.torrent {
             Some(t) if t.uploaded > 0 => format!("{}   ·   shared {}", peers_text(&s), human_size(Some(t.uploaded))),
@@ -30,14 +30,14 @@ impl ProgressWindow {
             None => "No (single connection, can't pause and resume)".into(),
         };
         self.info.set(vec![
-            (s.url.clone(), theme::TEXT),
-            (s.path.display().to_string(), theme::TEXT),
+            (s.url.clone(), theme::text()),
+            (s.path.display().to_string(), theme::text()),
             (status_line(&s), status),
-            (human_size(s.size), theme::TEXT),
-            (downloaded, theme::TEXT),
-            (rate_text(&s), theme::TEXT),
-            (eta_text(&s), theme::TEXT),
-            (resume, theme::TEXT),
+            (human_size(s.size), theme::text()),
+            (downloaded, theme::text()),
+            (rate_text(&s), theme::text()),
+            (eta_text(&s), theme::text()),
+            (resume, theme::text()),
         ]);
         let title = match s.progress {
             Some(p) => format!("{:.0}% {}", p * 100.0, s.filename),

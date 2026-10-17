@@ -36,14 +36,14 @@ fn drawn_as_mint_y() {
     let alpha = |x: i32, y: i32| at(x, y) >> 24;
     let (top, bottom) = geo.rows[1];
     // the chosen line: Mint's green, across, inside the line around; its name in white
-    assert_eq!(at(m + 2, m + (top + bottom) / 2), opaque(theme::ACCENT));
-    assert_eq!(at(m + geo.width - 2, m + top + 1), opaque(theme::ACCENT));
+    assert_eq!(at(m + 2, m + (top + bottom) / 2), opaque(theme::accent()));
+    assert_eq!(at(m + geo.width - 2, m + top + 1), opaque(theme::accent()));
     let white = (m + geo.text..m + geo.text + px(80)).flat_map(|x| (m + top..m + bottom).map(move |y| (x, y)))
         .filter(|&(x, y)| at(x, y) == opaque(theme::WHITE)).count();
     assert!(white > 10, "{white} white pixels");
     // white inside a grey line, round corners, a shadow below more than above, none far off
-    assert_eq!(at(m + geo.width / 2, m + 2), opaque(theme::VIEW));
-    assert_eq!(at(m + geo.width / 2, m), opaque(theme::BORDER));
+    assert_eq!(at(m + geo.width / 2, m + 2), opaque(theme::view()));
+    assert_eq!(at(m + geo.width / 2, m), opaque(theme::border()));
     assert!(alpha(m, m) < 128);
     assert!(alpha(m + geo.width / 2, m + geo.height + 2) > alpha(m + geo.width / 2, m - 3));
     assert!(alpha(m + geo.width / 2, m - 3) > 0);

@@ -31,20 +31,23 @@ pub fn custom_draw(list: HWND, rows: &[Row], lparam: LPARAM) -> LRESULT {
     let mut whole = RECT { left: LVIR_BOUNDS as i32, ..Default::default() };
     send(list, LVM_GETITEMRECT, index, &mut whole as *mut _ as isize);
     let selected = send(list, LVM_GETITEMSTATE, index, LVIS_SELECTED.0 as isize) & LVIS_SELECTED.0 as isize != 0;
-    // as GTK draws lists on Mint: lines between rows, the selected one in Mint's green
+    // as GTK draws lists on Mint: lines between rows, the selected one in Mint's green (or the
+    // look's: tinted, on Windows')
     let look = if selected {
-        Look { bg: theme::ACCENT, text: theme::WHITE, dim: theme::WHITE, track: theme::mix(theme::ACCENT, theme::WHITE, 0.35), bar: theme::WHITE }
+        let (bg, text) = (theme::selected(), theme::on_selected(false));
+        let bar = if bg == theme::accent() { text } else { theme::accent() };
+        Look { bg, text, dim: theme::on_selected(true), track: theme::mix(bg, text, 0.25), bar }
     } else {
         let hot = draw.nmcd.uItemState.contains(CDIS_HOT);
-        let bg = if hot { theme::hover(theme::VIEW) } else { theme::VIEW };
-        Look { bg, text: theme::TEXT, dim: theme::DIM, track: theme::TRACK, bar: theme::ACCENT }
+        let bg = if hot { theme::hover(theme::view()) } else { theme::view() };
+        Look { bg, text: theme::text(), dim: theme::dim(), track: theme::track(), bar: theme::accent() }
     };
     // the whole row at once: its background and file icon first, then its words and bar in one
     // smooth pass
     Painter::over(draw.nmcd.hdc, whole, |p| {
         p.fill(whole, look.bg);
         if !selected {
-            p.fill(RECT { top: whole.bottom - 1, ..whole }, theme::SEPARATOR);
+            p.fill(RECT { top: whole.bottom - 1, ..whole }, theme::separator());
         }
         let name = cell(list, index, 0);
         let text_left = icon(p, name, row);
@@ -74,7 +77,7 @@ fn below_rows(list: HWND, count: usize, dc: windows::Win32::Graphics::Gdi::HDC) 
     // SAFETY: plain query
     unsafe { let _ = windows::Win32::UI::WindowsAndMessaging::GetClientRect(list, &mut client); }
     if last.bottom < client.bottom {
-        Painter::over(dc, client, |p| p.fill(RECT { top: last.bottom, ..client }, theme::VIEW));
+        Painter::over(dc, client, |p| p.fill(RECT { top: last.bottom, ..client }, theme::view()));
     }
 }
 

@@ -41,21 +41,21 @@ impl Details {
         let caption = if torrent { "Progress of each file" } else { "Start positions and progress of each connection" };
         let map = window.canvas(move |p| {
             let data = d.borrow();
-            p.fill(p.rect, theme::VIEW);
+            p.fill(p.rect, theme::view());
             let r = p.rect;
             let caption = if data.video { "The video and its sound, downloaded one after the other" } else { caption };
-            p.text(RECT { bottom: px(18), ..r }, caption, Font::Body, theme::DIM, Align::Left);
+            p.text(RECT { bottom: px(18), ..r }, caption, Font::Body, theme::dim(), Align::Left);
             let bar = RECT { top: r.bottom - px(14), ..r };
-            p.fill(bar, theme::TRACK);
+            p.fill(bar, theme::track());
             let Some(size) = data.size.filter(|&s| s > 0) else { return };
             let x = |bytes: u64| bar.left + (bytes as f64 / size as f64 * (bar.right - bar.left) as f64) as i32;
             for seg in &data.segments {
                 let (start, end) = (x(seg.start), x(seg.start + seg.got()).max(x(seg.start) + (seg.got() > 0) as i32));
-                p.fill(RECT { left: start, right: end, ..bar }, theme::ACCENT); // what arrived
+                p.fill(RECT { left: start, right: end, ..bar }, theme::accent()); // what arrived
                 if seg.active && !seg.finished() {
-                    p.fill(RECT { left: end - px(2), right: end + 1, ..bar }, theme::GREEN); // a connection at work
+                    p.fill(RECT { left: end - px(2), right: end + 1, ..bar }, theme::green()); // a connection at work
                 }
-                p.fill(RECT { left: start, right: start + 1, ..bar }, theme::VIEW); // where each part starts
+                p.fill(RECT { left: start, right: start + 1, ..bar }, theme::view()); // where each part starts
             }
         });
         let style = WINDOW_STYLE(LVS_REPORT | LVS_NOSORTHEADER | LVS_SINGLESEL) | WS_TABSTOP;
@@ -63,7 +63,7 @@ impl Details {
         send(list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, (LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER) as isize);
         // SAFETY: Explorer's look for the list
         unsafe { let _ = SetWindowTheme(list, w!("Explorer"), PCWSTR::null()); }
-        send(list, LVM_SETBKCOLOR, 0, theme::VIEW.0 as isize);
+        send(list, LVM_SETBKCOLOR, 0, theme::view().0 as isize);
         send(list, LVM_SETTEXTBKCOLOR, 0, CLR_NONE as isize);
         scrollbar::slim(list);
         let (second, last) = if torrent { ("Size", "File") } else { ("Starts at", "Info") };
@@ -166,9 +166,9 @@ fn draw(list: HWND, rows: &[[String; 4]], lparam: LPARAM) -> LRESULT {
         r.right = r.left + send(list, LVM_GETCOLUMNWIDTH, 0, 0) as i32;
     }
     Painter::over(draw.nmcd.hdc, r, |p| {
-        p.fill(r, theme::VIEW);
+        p.fill(r, theme::view());
         let inner = RECT { left: r.left + px(6), right: r.right - px(6), ..r };
-        p.text(inner, text, Font::Body, theme::TEXT, if column == 3 { Align::Left } else { Align::Right });
+        p.text(inner, text, Font::Body, theme::text(), if column == 3 { Align::Left } else { Align::Right });
     });
     LRESULT(CDRF_SKIPDEFAULT as isize)
 }

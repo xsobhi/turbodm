@@ -62,9 +62,9 @@ impl MainWindow {
         let status_text: Rc<RefCell<String>> = Rc::default();
         let text = status_text.clone();
         let status = window.canvas(move |p| {
-            p.fill(p.rect, theme::CHROME);
+            p.fill(p.rect, theme::chrome());
             let r = RECT { left: px(12), right: p.rect.right - px(12), ..p.rect };
-            p.text(r, &text.borrow(), Font::Body, theme::TEXT, Align::Left);
+            p.text(r, &text.borrow(), Font::Body, theme::text(), Align::Left);
         });
         let main = MainWindow { window, list, caption, sidebar, toolbar, menubar, search, status, status_text,
                                 split: Rc::new(Cell::new(210)), shown: Cell::new((true, true)) };
@@ -154,11 +154,11 @@ impl MainWindow {
             let body = top + 1;
             let gap = if split > 0 { px(GAP) } else { 0 };
             let line = split + gap / 2;
-            let mut surfaces = vec![(RECT { left: 0, top, right: width, bottom: body }, theme::BORDER),
-                                    (RECT { left: 0, top: bottom, right: width, bottom: bottom + 1 }, theme::BORDER)];
+            let mut surfaces = vec![(RECT { left: 0, top, right: width, bottom: body }, theme::border()),
+                                    (RECT { left: 0, top: bottom, right: width, bottom: bottom + 1 }, theme::border())];
             if split > 0 {
-                surfaces.push((RECT { left: split, top: body, right: split + gap, bottom }, theme::VIEW));
-                surfaces.push((RECT { left: line, top: body, right: line + 1, bottom }, theme::BORDER));
+                surfaces.push((RECT { left: split, top: body, right: split + gap, bottom }, theme::view()));
+                surfaces.push((RECT { left: line, top: body, right: line + 1, bottom }, theme::border()));
             }
             self.window.set_surfaces(surfaces);
             show(self.sidebar.hwnd, split > 0);

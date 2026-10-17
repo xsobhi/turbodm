@@ -1,13 +1,15 @@
-//! How TurboDM looks on Windows: like it does on Linux Mint (GTK with the Mint-Y theme): flat
-//! light greys around white content, crisp 1-pixel lines, small corners, Mint's green for what's
-//! chosen, Mint's font (Ubuntu), and symbolic icons from Windows' own icon font (Segoe Fluent
-//! Icons, or Segoe MDL2 Assets on Windows 10).
+//! How TurboDM looks on Windows: at first like it does on Linux Mint (GTK with the Mint-Y theme):
+//! flat light greys around white content, crisp 1-pixel lines, small corners, Mint's green for
+//! what's chosen, Mint's font (Ubuntu), and symbolic icons from Windows' own icon font (Segoe
+//! Fluent Icons, or Segoe MDL2 Assets on Windows 10). Or another look (themes.rs: Options → Look):
+//! everything asks the look in use for its colours as it draws.
 
 mod d2d;
 mod fallback;
 mod paint;
 pub mod pictures;
 mod text;
+pub mod themes;
 
 pub use d2d::stop;
 pub use paint::{measure, Align, Painter};
@@ -24,27 +26,49 @@ pub const fn rgb(hex: u32) -> COLORREF {
     COLORREF(((hex & 0xff) << 16) | (hex & 0xff00) | ((hex >> 16) & 0xff))
 }
 
-// Mint-Y (light)
-pub const CHROME: COLORREF = rgb(0xefeff0); // around the content: toolbar, status line, tab row, dialogs
-pub const VIEW: COLORREF = rgb(0xffffff); // the content: the list, the sidebar, the tabs' pages
-pub const BORDER: COLORREF = rgb(0xd6d6da); // lines between areas
-pub const EDGE: COLORREF = rgb(0xc4c4c9); // the line around a window (Windows 10: wnd/frame.rs)
-pub const SEPARATOR: COLORREF = rgb(0xededef); // between the list's rows
-pub const TEXT: COLORREF = rgb(0x303030);
-pub const DIM: COLORREF = rgb(0x77777c); // names of values, headings, small print
-pub const DISABLED: COLORREF = rgb(0xb2b2b6);
-pub const ACCENT: COLORREF = rgb(0x35a854); // Mint-Y's green
 pub const WHITE: COLORREF = rgb(0xffffff);
-pub const BUTTON: COLORREF = rgb(0xfafafa);
-pub const BUTTON_HOVER: COLORREF = rgb(0xffffff);
-pub const BUTTON_PRESSED: COLORREF = rgb(0xe4e4e7);
-pub const BUTTON_BORDER: COLORREF = rgb(0xc8c8cc);
-pub const ENTRY_BORDER: COLORREF = rgb(0xc8c8cc);
-pub const TRACK: COLORREF = rgb(0xdedee2); // the empty part of progress bars
-pub const GREEN: COLORREF = rgb(0x33d17a); // a connection at work, on the connections map
-pub const DANGER: COLORREF = rgb(0xe0393e); // errors; the download disk almost full
+
+// The look in use's colours (themes.rs: Palette says what each is for)
+macro_rules! colors {
+    ($($name:ident),*) => {
+        $(pub fn $name() -> COLORREF { themes::current().palette.$name })*
+    };
+}
+colors!(chrome, view, border, edge, separator, text, dim, disabled, accent, on_accent, button, button_hover,
+        button_pressed, button_border, entry_border, track, green, danger);
+
 /// Corners of buttons, fields and highlights (96-DPI pixels): small, as Mint's.
-pub const RADIUS: i32 = 3;
+pub fn radius() -> i32 {
+    themes::current().radius
+}
+
+/// What's chosen (a row, a sidebar entry, a menu item): the accent colour, or (Windows' look)
+/// a tint of it on the content's colour.
+pub fn selected() -> COLORREF {
+    let theme = themes::current();
+    match theme.selection {
+        themes::Selection::Filled => theme.palette.accent,
+        themes::Selection::Subtle => mix(theme.palette.view, theme.palette.accent, if theme.dark() { 0.3 } else { 0.16 }),
+    }
+}
+
+/// Text on what's chosen; `dim` for its small print.
+pub fn on_selected(dim: bool) -> COLORREF {
+    let theme = themes::current();
+    match (theme.selection, dim) {
+        (themes::Selection::Filled, _) => theme.palette.on_accent,
+        (themes::Selection::Subtle, false) => theme.palette.text,
+        (themes::Selection::Subtle, true) => theme.palette.dim,
+    }
+}
+
+/// Use the look `id` with the user's colours over it (Options → Look), from now on; returns the
+/// look's palette until now. Windows already open take it with `wnd::retheme`.
+pub fn apply(id: &str, own: themes::Own) -> themes::Palette {
+    let before = themes::set(themes::resolve(id, own));
+    d2d::forget_formats(); // (its font may be another)
+    before.palette
+}
 
 /// Between `a` (0.0) and `b` (1.0).
 pub fn mix(a: COLORREF, b: COLORREF, t: f64) -> COLORREF {
@@ -55,14 +79,15 @@ pub fn mix(a: COLORREF, b: COLORREF, t: f64) -> COLORREF {
     COLORREF(channel(0) | channel(8) | channel(16))
 }
 
-/// What the mouse is on (a row, a toolbar button, a tab), over `bg`.
+/// What the mouse is on (a row, a toolbar button, a tab), over `bg`: a little darker, or on a
+/// dark colour a little lighter.
 pub fn hover(bg: COLORREF) -> COLORREF {
-    mix(bg, COLORREF(0), 0.05)
+    if themes::is_dark(bg) { mix(bg, WHITE, 0.07) } else { mix(bg, COLORREF(0), 0.05) }
 }
 
 /// …while it's pressed.
 pub fn pressed(bg: COLORREF) -> COLORREF {
-    mix(bg, COLORREF(0), 0.1)
+    if themes::is_dark(bg) { mix(bg, WHITE, 0.13) } else { mix(bg, COLORREF(0), 0.1) }
 }
 
 /// Text sizes and weights, in Mint's font (Ubuntu, 10 pt); `Icons` is Windows' icon font at
@@ -82,9 +107,10 @@ pub enum Font {
 const UBUNTU: [&[u8]; 2] = [include_bytes!("../../../data/fonts/Ubuntu-Regular.ttf"),
                             include_bytes!("../../../data/fonts/Ubuntu-Bold.ttf")];
 
+/// The look's font: Ubuntu (if TurboDM's copy loads), or Windows' own Segoe UI.
 fn text_face() -> &'static str {
-    static FACE: OnceLock<&str> = OnceLock::new();
-    FACE.get_or_init(|| {
+    static UBUNTU_LOADED: OnceLock<bool> = OnceLock::new();
+    let ubuntu = *UBUNTU_LOADED.get_or_init(|| {
         let mut loaded = 0;
         for data in UBUNTU {
             let mut count = 0u32;
@@ -92,26 +118,36 @@ fn text_face() -> &'static str {
             let handle = unsafe { AddFontMemResourceEx(data.as_ptr().cast(), data.len() as u32, None, (&raw mut count).cast_const()) };
             loaded += (!handle.is_invalid()) as usize;
         }
-        if loaded == UBUNTU.len() { "Ubuntu" } else { "Segoe UI" }
-    })
+        loaded == UBUNTU.len()
+    });
+    if ubuntu && themes::current().face == themes::Face::Ubuntu { "Ubuntu" } else { "Segoe UI" }
+}
+
+thread_local! {
+    // the fonts made, by kind and face (all kept: controls may still use one of another look's)
+    static FONTS: RefCell<HashMap<(Font, &'static str), isize>> = RefCell::default();
 }
 
 pub fn font(which: Font) -> HFONT {
-    thread_local! {
-        static FONTS: RefCell<HashMap<Font, isize>> = RefCell::default();
-    }
-    let handle = FONTS.with(|fonts| *fonts.borrow_mut().entry(which).or_insert_with(|| create(which)));
+    let key = (which, if matches!(which, Font::Icons(_)) { icon_face() } else { text_face() });
+    let handle = FONTS.with(|fonts| *fonts.borrow_mut().entry(key).or_insert_with(|| create(which, key.1)));
     HFONT(handle as *mut _)
 }
 
-fn create(which: Font) -> isize {
-    let (face, pixels, bold) = match which {
-        Font::Body => (text_face(), 13, false),
-        Font::Strong => (text_face(), 13, true),
-        Font::Caption => (text_face(), 12, false),
-        Font::CaptionStrong => (text_face(), 12, true),
-        Font::Title => (text_face(), 19, true),
-        Font::Icons(size) => (icon_face(), size, false),
+/// The look's font of the kind `old` is (another look's): for controls, when the look changes.
+pub fn refont(old: HFONT) -> Option<HFONT> {
+    let kind = FONTS.with(|fonts| fonts.borrow().iter().find(|(_, h)| **h == old.0 as isize).map(|((kind, _), _)| *kind))?;
+    Some(font(kind))
+}
+
+fn create(which: Font, face: &str) -> isize {
+    let (pixels, bold) = match which {
+        Font::Body => (13, false),
+        Font::Strong => (13, true),
+        Font::Caption => (12, false),
+        Font::CaptionStrong => (12, true),
+        Font::Title => (19, true),
+        Font::Icons(size) => (size, false),
     };
     let mut logfont = LOGFONTW {
         lfHeight: -px(pixels),

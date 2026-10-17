@@ -132,21 +132,21 @@ fn tips() -> Vec<(RECT, String)> {
 }
 
 fn paint(p: &Painter, state: &State) {
-    p.fill(p.rect, theme::CHROME);
+    p.fill(p.rect, theme::chrome());
     let (buttons, separators) = areas();
     let inset = if TEXT.get() { 16 } else { 10 };
     for x in separators {
-        p.fill(RECT { left: x, top: px(inset), right: x + 1, bottom: px(height() - inset) }, theme::BORDER);
+        p.fill(RECT { left: x, top: px(inset), right: x + 1, bottom: px(height() - inset) }, theme::border());
     }
     for (i, r) in buttons {
         let Some((picture, cmd, name, _)) = BUTTONS[i] else { continue };
         let enabled = !state.disabled.contains(&cmd);
         if enabled && state.hover == Some(i) {
             let pressed = state.down == Some(i);
-            let fill = if pressed { theme::pressed(theme::CHROME) } else { theme::hover(theme::CHROME) };
-            p.round(r, px(theme::RADIUS), Some(fill), None);
+            let fill = if pressed { theme::pressed(theme::chrome()) } else { theme::hover(theme::chrome()) };
+            p.round(r, px(theme::radius()), Some(fill), None);
         }
-        let color = if enabled { theme::TEXT } else { theme::DISABLED };
+        let color = if enabled { theme::text() } else { theme::disabled() };
         if !TEXT.get() {
             p.picture(r, picture, 26, !enabled);
             continue;

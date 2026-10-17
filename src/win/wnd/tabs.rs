@@ -57,17 +57,17 @@ impl Window {
 }
 
 fn paint(p: &Painter, names: &[&str], state: &State) {
-    p.fill(p.rect, theme::CHROME);
+    p.fill(p.rect, theme::chrome());
     let bottom = p.rect.bottom;
     for (i, r) in areas(names).into_iter().enumerate() {
         let (picked, hot) = (i == state.picked, state.hover == Some(i));
-        p.text(r, names[i], Font::Body, if picked || hot { theme::TEXT } else { theme::DIM }, Align::Center);
+        p.text(r, names[i], Font::Body, if picked || hot { theme::text() } else { theme::dim() }, Align::Center);
         // a line in Mint's green under the chosen one (a grey one under the one the mouse is on)
         let line = |height: i32, color| p.fill(RECT { left: r.left, top: bottom - px(height), right: r.right, bottom }, color);
         if picked {
-            line(3, theme::ACCENT);
+            line(3, theme::accent());
         } else if hot {
-            line(2, theme::BORDER);
+            line(2, theme::border());
         }
     }
 }

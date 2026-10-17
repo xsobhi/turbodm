@@ -1,6 +1,8 @@
 //! Title bars of TurboDM's own, on all its windows, as GTK's on Linux Mint: the window's title in
 //! the middle, its buttons on the right (close in a green circle); dimmed while another window
-//! is active. (The main window also puts its search and menu in its bar: main/mod.rs.)
+//! is active. Or, in Windows' looks (Options → Look), as Windows': the title on the left, square
+//! buttons, close red under the mouse. (The main window also puts its search and menu in its bar:
+//! main/mod.rs.)
 
 use super::canvas::{self, Mouse};
 use super::moves::move_window;
@@ -11,9 +13,18 @@ use std::rc::Rc;
 use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-/// The bar's height; a window button's width (96-DPI pixels).
+/// The bar's height (96-DPI pixels).
 pub const HEIGHT: i32 = 46;
-const BUTTON: i32 = 40;
+
+/// Whether the look's buttons are Windows' square ones.
+fn square() -> bool {
+    theme::themes::current().buttons == theme::themes::Buttons::Square
+}
+
+/// A window button's width (96-DPI pixels).
+fn button() -> i32 {
+    if square() { 46 } else { 40 }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Button {
@@ -41,15 +52,16 @@ impl Caption {
         let (active, width) = (Rc::new(Cell::new(true)), Rc::new(Cell::new(0)));
         let (a, w) = (active.clone(), width.clone());
         let title = window.canvas(move |p| {
-            p.fill(p.rect, theme::CHROME);
-            let r = RECT { left: px(12), right: w.get() - px(12), ..p.rect }; // centred in the window
-            p.text(r, &text(hwnd), Font::Strong, if a.get() { theme::TEXT } else { theme::DIM }, Align::Center);
+            p.fill(p.rect, theme::chrome());
+            let r = RECT { left: px(if square() { 16 } else { 12 }), right: w.get() - px(12), ..p.rect }; // centred in the window
+            let align = if square() { Align::Left } else { Align::Center };
+            p.text(r, &text(hwnd), Font::Strong, if a.get() { theme::text() } else { theme::dim() }, align);
         });
         canvas::on_hit(title, |_, _| false); // all of it is the caption: drag, double-click
         let state: Rc<RefCell<State>> = Rc::default();
         let (s, a) = (state.clone(), active.clone());
         let buttons = window.canvas(move |p| paint(p, kinds, &s.borrow(), a.get(), hwnd));
-        let at = move |x: i32, y: i32| (y >= 0 && y < px(HEIGHT) && x >= 0).then(|| (x / px(BUTTON)) as usize)
+        let at = move |x: i32, y: i32| (y >= 0 && y < px(HEIGHT) && x >= 0).then(|| (x / px(button())) as usize)
             .filter(|&i| i < kinds.len());
         canvas::on_hit(buttons, move |x, y| at(x, y).is_some());
         canvas::on_mouse(buttons, move |event| {
@@ -92,7 +104,7 @@ impl Caption {
 
     /// How wide the buttons are (screen pixels).
     pub fn buttons_width(&self) -> i32 {
-        px(self.count * BUTTON + 8)
+        px(self.count * button() + if square() { 0 } else { 8 })
     }
 
     /// The title from the left to `title_right`, the buttons at the right end (screen pixels).
@@ -106,11 +118,11 @@ impl Caption {
 }
 
 fn paint(p: &Painter, kinds: &[Button], state: &State, active: bool, window: HWND) {
-    p.fill(p.rect, theme::CHROME);
+    p.fill(p.rect, theme::chrome());
     // SAFETY: plain query
     let zoomed = unsafe { IsZoomed(window) }.as_bool();
     for (i, kind) in kinds.iter().enumerate() {
-        let r = RECT { left: px(BUTTON) * i as i32, top: 0, right: px(BUTTON) * (i as i32 + 1), bottom: px(HEIGHT) };
+        let r = RECT { left: px(button()) * i as i32, top: 0, right: px(button()) * (i as i32 + 1), bottom: px(HEIGHT) };
         let (cx, cy) = ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
         let circle = |radius: i32| RECT { left: cx - radius, top: cy - radius, right: cx + radius, bottom: cy + radius };
         let (hot, down) = (state.hover == Some(i), state.down == Some(i));
@@ -120,20 +132,35 @@ fn paint(p: &Painter, kinds: &[Button], state: &State, active: bool, window: HWN
             Button::Maximize => '\u{E922}',
             Button::Close => '\u{E8BB}',
         };
-        if *kind == Button::Close {
+        if square() {
+            // Windows' own: the whole button lit under the mouse, close in red
+            let close = *kind == Button::Close;
+            let fill = match (close, hot, down) {
+                (true, true, true) => Some(theme::rgb(0xb0271a)),
+                (true, true, false) => Some(theme::rgb(0xc42b1c)),
+                (false, true, true) => Some(theme::pressed(theme::chrome())),
+                (false, true, false) => Some(theme::hover(theme::chrome())),
+                _ => None,
+            };
+            if let Some(fill) = fill {
+                p.fill(r, fill);
+            }
+            let color = if close && hot { theme::WHITE } else if active { theme::text() } else { theme::dim() };
+            p.icon(r, glyph, 10, color);
+        } else if *kind == Button::Close {
             // Mint's close button: a circle in the accent colour
             let fill = match (active, hot || down) {
-                (_, true) => theme::mix(theme::ACCENT, theme::WHITE, 0.15),
-                (true, false) => theme::ACCENT,
-                (false, false) => theme::mix(theme::ACCENT, theme::CHROME, 0.5),
+                (_, true) => theme::mix(theme::accent(), theme::WHITE, 0.15),
+                (true, false) => theme::accent(),
+                (false, false) => theme::mix(theme::accent(), theme::chrome(), 0.5),
             };
             p.round(circle(px(11)), px(11), Some(fill), None);
-            p.icon(circle(px(11)), glyph, 8, theme::WHITE);
+            p.icon(circle(px(11)), glyph, 8, theme::on_accent());
         } else {
             if hot {
-                p.round(circle(px(14)), px(14), Some(if down { theme::pressed(theme::CHROME) } else { theme::hover(theme::CHROME) }), None);
+                p.round(circle(px(14)), px(14), Some(if down { theme::pressed(theme::chrome()) } else { theme::hover(theme::chrome()) }), None);
             }
-            p.icon(circle(px(14)), glyph, 9, if active { theme::TEXT } else { theme::DIM });
+            p.icon(circle(px(14)), glyph, 9, if active { theme::text() } else { theme::dim() });
         }
     }
 }

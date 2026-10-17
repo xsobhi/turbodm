@@ -83,17 +83,17 @@ impl MenuBar {
 }
 
 fn paint(p: &Painter, s: &State) {
-    p.fill(p.rect, theme::CHROME);
+    p.fill(p.rect, theme::chrome());
     for (i, (name, (left, right))) in MENUS.iter().zip(spans()).enumerate() {
         let name = name.replace('&', "");
         let r = RECT { left, top: px(3), right, bottom: p.rect.bottom - px(3) };
         let (fill, color) = match (s.open.get(), s.hover.get()) {
-            (Some(open), _) if open == i => (Some(theme::ACCENT), theme::WHITE), // its menu is open
-            (None, Some(hover)) if hover == i => (Some(theme::mix(theme::CHROME, theme::BORDER, 0.55)), theme::TEXT),
-            _ => (None, theme::TEXT),
+            (Some(open), _) if open == i => (Some(theme::selected()), theme::on_selected(false)), // its menu is open
+            (None, Some(hover)) if hover == i => (Some(theme::mix(theme::chrome(), theme::border(), 0.55)), theme::text()),
+            _ => (None, theme::text()),
         };
         if fill.is_some() {
-            p.round(r, px(theme::RADIUS), fill, None);
+            p.round(r, px(theme::radius()), fill, None);
         }
         p.text(r, &name, Font::Body, color, Align::Center);
     }

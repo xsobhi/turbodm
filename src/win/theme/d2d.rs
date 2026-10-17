@@ -72,6 +72,14 @@ fn start() -> Option<Engine> {
     }
 }
 
+/// Text formats are made again (the look's font may have changed).
+pub fn forget_formats() {
+    with(|e| {
+        e.formats.borrow_mut().clear();
+        Some(())
+    });
+}
+
 /// The Ubuntu font, from TurboDM's own copy (DirectWrite has its own font list, not GDI's).
 fn ubuntu(factory: &IDWriteFactory) -> Option<IDWriteFontCollection> {
     // SAFETY: the font data is part of the program, so it outlives the collection

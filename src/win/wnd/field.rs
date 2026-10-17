@@ -114,10 +114,10 @@ pub fn paint_frames(p: &Painter, parent: HWND, focus: HWND) {
 
 /// A field's frame, as Mint-Y's: white, a thin border, Mint's green around it when focused.
 fn frame(p: &Painter, r: RECT, focused: bool) {
-    p.round(r, px(theme::RADIUS), Some(theme::VIEW), Some(if focused { theme::ACCENT } else { theme::ENTRY_BORDER }));
+    p.round(r, px(theme::radius()), Some(theme::view()), Some(if focused { theme::accent() } else { theme::entry_border() }));
     if focused {
         let inner = RECT { left: r.left + 1, top: r.top + 1, right: r.right - 1, bottom: r.bottom - 1 };
-        p.round(inner, px(theme::RADIUS) - 1, None, Some(theme::mix(theme::ACCENT, theme::VIEW, 0.6)));
+        p.round(inner, px(theme::radius()) - 1, None, Some(theme::mix(theme::accent(), theme::view(), 0.6)));
     }
 }
 

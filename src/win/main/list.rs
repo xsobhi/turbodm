@@ -38,9 +38,9 @@ impl List {
             let height = ImageList_Create(1, px(ROW), ILC_COLOR32, 0, 1);
             send(hwnd, LVM_SETIMAGELIST, LVSIL_SMALL as usize, height.0);
         }
-        send(hwnd, LVM_SETBKCOLOR, 0, theme::VIEW.0 as isize);
+        send(hwnd, LVM_SETBKCOLOR, 0, theme::view().0 as isize);
         send(hwnd, LVM_SETTEXTBKCOLOR, 0, CLR_NONE as isize);
-        send(hwnd, LVM_SETTEXTCOLOR, 0, theme::TEXT.0 as isize);
+        send(hwnd, LVM_SETTEXTCOLOR, 0, theme::text().0 as isize);
         scrollbar::slim(hwnd); // Mint-Y's slim scroll bars, not Windows'
         for (i, (title, width)) in COLUMNS.iter().enumerate() {
             let text = HSTRING::from(*title);

@@ -32,7 +32,7 @@ pub fn speed_limiter(window: &Window, app: &Rc<App>, snap: &Snapshot, x: i32, y:
     } else {
         "Applies to this download only, right away. The limit for all downloads together is in Preferences."
     });
-    window.set_text_color(note, theme::DIM);
+    window.set_text_color(note, theme::dim());
     if snap.torrent.is_some() {
         enable(enabled, false); // librqbit can't change one torrent's limit while it runs
     }
@@ -67,7 +67,7 @@ pub fn on_completion(window: &Window, app: &Rc<App>, id: &str, x: i32, y: i32) -
         store(&|t| t.power = Power::from_index(i as u32));
     });
     let note = window.note("Sleep and shut down wait 30 seconds first, so you can still cancel.");
-    window.set_text_color(note, theme::DIM);
+    window.set_text_color(note, theme::dim());
     place(dialog, x, y, 400, LINE + 6);
     place(open, x, y + 30, 400, LINE + 6);
     place(label, x, y + 78, 210, LINE);
