@@ -15,13 +15,16 @@ use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::HDC;
 use windows_numerics::Matrix3x2;
 
+/// A picture made for the target: which (its PNG's address), its size, and whether faded.
+pub type PictureKey = (usize, (i32, i32), bool);
+
 pub struct Engine {
     pub factory: IDWriteFactory,
     pub ubuntu: Option<IDWriteFontCollection>, // Mint's font, private to TurboDM
     pub target: ID2D1DCRenderTarget,
     pub formats: RefCell<HashMap<super::Font, IDWriteTextFormat>>,
     brushes: RefCell<HashMap<u32, ID2D1SolidColorBrush>>,
-    pub bitmaps: RefCell<HashMap<(usize, (i32, i32), bool), ID2D1Bitmap>>, // pictures, by size
+    pub bitmaps: RefCell<HashMap<PictureKey, ID2D1Bitmap>>, // pictures, by size
 }
 
 thread_local! {
