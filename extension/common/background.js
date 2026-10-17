@@ -176,6 +176,26 @@ api.downloads.onCreated.addListener(async (item) => {
   }
 });
 
+// The copy installed from the Chrome Web Store, whose rules don't allow downloading YouTube's
+// videos: no video button there (its manifest leaves YouTube out), no "Download video" on its
+// pages, and its videos not sent. (TurboDM itself still takes them, from Download video….)
+const STORE_COPY = ["enaaoegoakgmcdbhepcoflfmpeodipob"].includes(api.runtime.id);
+const YOUTUBE = /^https?:\/\/([^/]*\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be)(\/|$)/i;
+
+function storeLeavesOut(url) {
+  return STORE_COPY && YOUTUBE.test(url || "");
+}
+
+// (the store copy: "Download video with TurboDM" hidden on YouTube's pages)
+function showVideoMenuFor(url) {
+  if (STORE_COPY) api.contextMenus.update("tdm-video", { visible: !storeLeavesOut(url) }, () => void api.runtime.lastError);
+}
+
+if (STORE_COPY) {
+  api.tabs.onActivated.addListener(({ tabId }) => api.tabs.get(tabId).then((tab) => showVideoMenuFor(tab.url), () => {}));
+  api.tabs.onUpdated.addListener((_, change, tab) => change.url !== undefined && tab.active && showVideoMenuFor(change.url));
+}
+
 function createMenus() {
   api.contextMenus.removeAll(() => {
     api.contextMenus.create({ id: "tdm-link", title: "Download with TurboDM", contexts: ["link"] });
@@ -198,7 +218,7 @@ createMenus(); // Firefox recreates menus each time the background page loads
 api.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === "tdm-video") {
     const url = videoPage(info, tab);
-    if (url && /^https?:/i.test(url)) {
+    if (url && /^https?:/i.test(url) && !storeLeavesOut(url)) {
       handOffVideo({ url, referrer: info.pageUrl, storeId: tab && tab.cookieStoreId }).catch((err) =>
         console.warn("TurboDM is not reachable:", err),
       );
@@ -220,6 +240,10 @@ api.contextMenus.onClicked.addListener((info, tab) => {
 // "video-peek": a video playing, for a running TurboDM to look at early (it isn't started for it).
 // "video-qualities": what the video button's menu offers, as TurboDM says.
 api.runtime.onMessage.addListener((message, sender, reply) => {
+  if (message && ["video", "video-qualities", "video-peek"].includes(message.type) && storeLeavesOut(message.url)) {
+    reply({ ok: false, error: "Videos from YouTube can't be downloaded with this browser's store add-on" });
+    return false;
+  }
   if (message && message.type === "video-qualities") {
     const storeId = sender.tab && sender.tab.cookieStoreId;
     cookieHeader(message.url, storeId)

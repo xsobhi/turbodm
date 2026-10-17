@@ -19,6 +19,11 @@ Upload `turbodm-extension-<version>-for-stores.zip`. Each release's build attach
 *extension-for-stores*, and `tools/build-extension.sh` makes it in `dist/`. It's the Chrome
 extension without the `key` field, because the stores pick the extension's ID themselves.
 
+It also leaves YouTube out, because the Chrome Web Store doesn't allow extensions that download
+YouTube's videos: no video button on YouTube's pages or players, and no *Download video* there
+(`tools/store-manifest.py`, and the `STORE_COPY` check in `background.js` and `popup.js`). The copy
+loaded by hand and Firefox's keep YouTube, and TurboDM's own *Download video…* takes any page.
+
 What the store asks for:
 
 - **Single purpose:** Sends the downloads you start in the browser to the TurboDM download

@@ -52,7 +52,10 @@ $("open").addEventListener("click", async () => {
 // "Download video on this page", for web pages
 let page = null;
 api.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
-  if (tab && /^https?:/i.test(tab.url || "")) {
+  // (not on YouTube for the Chrome Web Store's copy: its rules don't allow it; background.js)
+  const storeCopy = ["enaaoegoakgmcdbhepcoflfmpeodipob"].includes(api.runtime.id);
+  const youtube = /^https?:\/\/([^/]*\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be)(\/|$)/i.test((tab && tab.url) || "");
+  if (tab && /^https?:/i.test(tab.url || "") && !(storeCopy && youtube)) {
     page = tab;
     $("video").hidden = false;
   }

@@ -26,10 +26,11 @@ elif command -v zip >/dev/null 2>&1; then
     (cd dist/firefox && zip -qr ../turbodm-firefox.xpi .) # unsigned: for about:debugging only
 fi
 # The stores give the extension an ID of their own: their copy is without the "key" that fixes
-# the ID of the one loaded by hand (upload it as docs/extension-stores.md says)
+# the ID of the one loaded by hand, and leaves YouTube out (upload it as docs/extension-stores.md
+# says)
 rm -rf dist/store dist/turbodm-extension-*-for-stores.zip
 cp -r dist/chrome dist/store
-sed -i '/"key":/d' dist/store/manifest.json
+python3 tools/store-manifest.py dist/store/manifest.json 2>/dev/null || python tools/store-manifest.py dist/store/manifest.json
 if command -v zip >/dev/null 2>&1; then
     (cd dist/store && zip -qr "../turbodm-extension-$version-for-stores.zip" .)
 fi
