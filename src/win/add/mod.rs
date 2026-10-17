@@ -6,6 +6,7 @@
 //! A torrent (magnet link, .torrent file) is only looked up meanwhile: what's in it and how big.
 
 mod early;
+mod exists;
 mod form;
 mod link;
 mod start;
@@ -30,16 +31,24 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
+/// For a download from the browser, the clipboard or the command line.
 pub fn open(app: &Rc<App>, req: AddRequest) {
-    open_form(app, req, false);
+    open_form(app, req, false, false);
+}
+
+/// "Add URL", from the main window.
+pub fn add_url(app: &Rc<App>) {
+    open_form(app, AddRequest::default(), false, true);
 }
 
 /// The dialog, for a file (or whatever the address turns out to be), or for a `video`.
-fn open_form(app: &Rc<App>, req: AddRequest, video: bool) {
+/// `from_main`: asked for in the main window, it's the main window's (over it, no taskbar button
+/// of its own); else a window of its own, with its own taskbar button, as the main window may be
+/// hidden, minimized or behind other programs when a download comes from the browser.
+fn open_form(app: &Rc<App>, req: AddRequest, video: bool, from_main: bool) {
     let settings = app.manager.settings();
-    // a window of its own (with its own taskbar button), not the main window's: that may be
-    // minimized or behind other programs when a download comes from the browser
-    let window = Window::dialog(if video { "Download video" } else { "Download file info" }, None, (620, 220), false);
+    let owner = (from_main && app.main.is_visible()).then(|| app.main.window.hwnd());
+    let window = Window::dialog(if video { "Download video" } else { "Download file info" }, owner, (620, 220), false);
     let guess = name_for(&req.url, req.filename.as_deref());
     let folder = req.directory.clone().unwrap_or_else(|| settings.folder_for(&guess));
     let form = Rc::new(Form {
@@ -153,6 +162,16 @@ fn submit(app: &Rc<App>, form: &Rc<Form>, start_now: bool) {
         return;
     }
     let (directory, filename) = form.target(app);
+    let Some(name) = filename else { return add_file(app, form, start_now, url, directory, None) };
+    let (a, f, dir) = (app.clone(), form.clone(), directory.clone());
+    exists::check(app, form, &directory, &name, move |name| {
+        add_file(&a, &f, start_now, url.clone(), dir.clone(), Some(name));
+    });
+}
+
+/// Add the file download (taking over the early one, if it's this link), to `directory` as
+/// `filename` (or the name the server gives).
+fn add_file(app: &Rc<App>, form: &Rc<Form>, start_now: bool, url: String, directory: PathBuf, filename: Option<String>) {
     let connections = app.manager.settings().connections;
     remember_folder(app, form, filename.as_deref().unwrap_or(&url), &directory);
     let id = match form.take_early(app, Some(&url)) {

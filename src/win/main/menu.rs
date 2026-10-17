@@ -6,7 +6,7 @@ use super::super::{add, batch, dialogs, progress, refresh, settings, shell, App}
 use super::menubar;
 use std::path::Path;
 use std::rc::Rc;
-use turbodm::engine::{AddRequest, Status};
+use turbodm::engine::Status;
 use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::UI::Input::KeyboardAndMouse::{VK_DELETE, VK_F5};
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -153,7 +153,7 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
         app.manager.update_settings(s);
     };
     match cmd {
-        Cmd::Add => add::open(app, AddRequest::default()),
+        Cmd::Add => add::add_url(app),
         Cmd::AddVideo => add::add_video(app, String::new()), // (a link on the clipboard is filled in)
         Cmd::AddTorrent => add::torrent::add_torrent_file(app),
         Cmd::Resume => selected().iter().for_each(|id| {

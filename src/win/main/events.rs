@@ -40,6 +40,13 @@ pub fn setup(app: &Rc<App>) {
             run_posted();
             Some(LRESULT(0))
         }
+        // back in front: were finished downloads' files moved or deleted meanwhile? ("File missing")
+        WM_ACTIVATE if wparam.0 & 0xffff != 0 => {
+            let app = super::super::app();
+            let manager = app.manager.clone();
+            app.rt.spawn_blocking(move || manager.check_files());
+            None
+        }
         WM_TIMER if wparam.0 == REFRESH_TIMER => {
             let app = super::super::app();
             refresh(&app);

@@ -32,6 +32,7 @@ pub struct Row {
     pub progress: f64,
     pub eta: f64,
     pub speed: u64,
+    pub missing: bool, // finished, but its file was moved or deleted outside TurboDM
 }
 
 impl Row {
@@ -46,6 +47,7 @@ impl Row {
             progress: s.progress.unwrap_or(0.0),
             eta: s.eta.unwrap_or(f64::MAX),
             speed: s.speed as u64,
+            missing: s.missing,
         }
     }
 

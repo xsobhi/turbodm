@@ -69,6 +69,7 @@ impl Manager {
         });
         manager.claim_torrents();
         rt.spawn(manager.clone().monitor());
+        rt.spawn(manager.clone().watch_files());
         manager.schedule();
         if manager.settings().seed {
             manager.share_finished(true);
@@ -196,6 +197,34 @@ impl Manager {
         let free = self.settings().max_parallel.saturating_sub(running);
         for task in tasks.iter().filter(|t| t.status() == Status::Queued).take(free) {
             self.start_task(task);
+        }
+    }
+
+    /// Which finished downloads' files are gone (moved or deleted in Explorer, a file manager…):
+    /// the list says "File missing" for them, and "Complete" again if they come back. A look at
+    /// each file's name on disk, so it's cheap; the UI also asks when its window comes to the front.
+    pub fn check_files(&self) {
+        for task in self.all() {
+            let path = {
+                let info = task.info.lock().unwrap();
+                if info.status != Status::Completed || info.filename.is_none() {
+                    continue;
+                }
+                info.path()
+            };
+            if task.pending.load(Ordering::Relaxed) || task.unlisted.load(Ordering::Relaxed) {
+                continue;
+            }
+            task.missing.store(!path.exists(), Ordering::Relaxed);
+        }
+    }
+
+    /// `check_files` every few seconds (off the async workers: a disk or network folder may be slow).
+    async fn watch_files(self: Arc<Self>) {
+        while !self.stopped.load(Ordering::Relaxed) {
+            let manager = self.clone();
+            let _ = tokio::task::spawn_blocking(move || manager.check_files()).await;
+            tokio::time::sleep(Duration::from_secs(5)).await;
         }
     }
 

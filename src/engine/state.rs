@@ -91,6 +91,8 @@ pub struct Snapshot {
     pub by_ytdlp: bool, // a video yt-dlp downloads itself: its segments are its parts, not connections
     /// A torrent's own numbers (peers, files…); None for other downloads.
     pub torrent: Option<TorrentView>,
+    /// Finished, but its file was moved or deleted outside TurboDM.
+    pub missing: bool,
 }
 
 pub fn snapshot(task: &Task) -> Snapshot {
@@ -149,5 +151,6 @@ pub fn snapshot(task: &Task) -> Snapshot {
         activity: task.video.activity(),
         by_ytdlp: info.video.as_ref().is_some_and(|v| v.by_ytdlp),
         torrent,
+        missing: info.status == Status::Completed && task.missing.load(std::sync::atomic::Ordering::Relaxed),
     }
 }

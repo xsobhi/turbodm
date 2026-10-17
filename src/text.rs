@@ -14,6 +14,7 @@ pub fn status_text(snap: &Snapshot) -> String {
         (Status::Downloading, _) => pct.unwrap_or_else(|| human_size(Some(snap.downloaded))),
         (Status::Paused, _) => pct.map_or("Paused".into(), |p| format!("Paused · {p}")),
         (Status::Error, _) => format!("Error: {}", snap.error.as_deref().unwrap_or("unknown")),
+        (Status::Completed, _) if snap.missing => "File missing".into(), // moved or deleted outside TurboDM
         (Status::Completed, _) if snap.torrent.as_ref().is_some_and(|t| t.seeding) => "Complete · sharing".into(),
         (Status::Connecting, _) if snap.torrent.is_some() => torrent_stage(snap).into(),
         (other, _) => other.label().into(),

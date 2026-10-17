@@ -1,6 +1,6 @@
 //! Small dialogs: Windows' message boxes, "Refresh download address", About.
 
-use super::wnd::{self, text, Rows, Window, FIELD};
+use super::wnd::{self, text, Rows, Window, FIELD, LINE};
 use super::App;
 use std::rc::Rc;
 use windows::core::HSTRING;
@@ -83,6 +83,38 @@ pub fn confirm_redownload(app: &Rc<App>, ids: Vec<String>) {
     if answer == IDYES {
         ids.iter().for_each(|id| app.manager.redownload(id));
     }
+}
+
+/// A finished download's file isn't there any more (moved or deleted outside TurboDM): download
+/// it again, or take it off the list.
+pub fn missing_file(app: &Rc<App>, id: &str) {
+    let Some(snap) = app.manager.get(id) else { return };
+    let window = Window::dialog("File missing", Some(app.main.window.hwnd()), (460, 150), false);
+    let heading = window.heading("The file isn't there any more");
+    let note = window.note(&format!("\u{201c}{}\u{201d} was moved or deleted outside TurboDM. It was in {}.",
+                                    snap.filename, snap.directory.display()));
+    let (a, w, i) = (app.clone(), window.clone(), id.to_string());
+    let again = window.default_button("Download again", move || {
+        a.manager.redownload(&i);
+        w.destroy();
+    });
+    let (a, w, i) = (app.clone(), window.clone(), id.to_string());
+    let remove = window.button("Remove from list", move || {
+        a.manager.remove(&i, false);
+        w.destroy();
+    });
+    let w = window.clone();
+    let cancel = window.button("Cancel", move || w.destroy());
+    let w = window.clone();
+    window.on_command(IDCANCEL.0 as u16, move |_| w.destroy());
+    let mut rows = Rows::new(16, 14, 0, 428);
+    rows.full(heading, 24);
+    rows.full(note, 3 * LINE);
+    rows.gap(4);
+    let bottom = rows.buttons(&[cancel, remove, again]);
+    wnd::set_client_height(window.hwnd(), bottom + 14);
+    wnd::center(window.hwnd());
+    window.show();
 }
 
 /// IDM's "Refresh download address": paste a fresh link for an expired one.

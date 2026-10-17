@@ -6,7 +6,7 @@ use windows::Win32::UI::Controls::BCM_GETIDEALSIZE;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
 use windows::core::BOOL;
 use windows::Win32::System::Threading::GetCurrentThreadId;
-use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 /// Standard heights (Fluent's): a text field, button or drop-down; a line of text.
@@ -77,7 +77,21 @@ pub fn center(hwnd: HWND) {
         }
         let mut rect = RECT::default();
         let _ = GetWindowRect(hwnd, &mut rect);
-        let (w, h, area) = (rect.right - rect.left, rect.bottom - rect.top, info.rcWork);
+        let (w, h, mut area) = (rect.right - rect.left, rect.bottom - rect.top, info.rcWork);
+        // a window that belongs to another (on screen) goes over the middle of it, on its screen
+        if let Ok(owner) = GetWindow(hwnd, GW_OWNER)
+            && IsWindowVisible(owner).as_bool() && !IsIconic(owner).as_bool() {
+            let mut on = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+            let mut over = RECT::default();
+            if GetWindowRect(owner, &mut over).is_ok()
+                && GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &mut on).as_bool() {
+                let x = (over.left + (over.right - over.left - w) / 2).clamp(on.rcWork.left, (on.rcWork.right - w).max(on.rcWork.left));
+                let y = (over.top + (over.bottom - over.top - h) / 2).clamp(on.rcWork.top, (on.rcWork.bottom - h).max(on.rcWork.top));
+                let _ = SetWindowPos(hwnd, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+                return;
+            }
+            area = on.rcWork;
+        }
         let x = area.left + ((area.right - area.left - w) / 2).max(0);
         let y = area.top + ((area.bottom - area.top - h) / 2).max(0);
         let _ = SetWindowPos(hwnd, None, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);

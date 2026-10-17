@@ -14,8 +14,9 @@ use turbodm::util::human_size;
 
 /// "Download video": the Add dialog for a web page's video (Tasks → Download video…; the
 /// browser's comes through `App::handle_video`). An empty `url`: the link on the clipboard.
+/// "Download video…", from the main window.
 pub fn add_video(app: &Rc<App>, url: String) {
-    helpers::with_helpers(app, move |app| super::open_form(app, AddRequest { url, ..Default::default() }, true));
+    helpers::with_helpers(app, move |app| super::open_form(app, AddRequest { url, ..Default::default() }, true, true));
 }
 
 impl App {
@@ -27,7 +28,7 @@ impl App {
         }
         helpers::with_helpers(self, move |app| {
             if !silent && app.manager.settings().show_add_dialog {
-                super::open_form(app, req, true);
+                super::open_form(app, req, true, false);
             } else {
                 // (the quality picked in the browser's menu, if it's from there; else the usual)
                 let video = Some(req.video.clone().unwrap_or_default());

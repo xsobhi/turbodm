@@ -218,14 +218,16 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
         app.handle_message(message);
     }
     main::setup(&app);
+    if !background {
+        app.show(); // first: the rest (tray icons, which wait for a busy taskbar…) comes after
+    }
     tray::start(&app);
     queue::start(&app);
-    update::start(&app);
+    update::start(&app); // (asks GitHub in the background, a few seconds later)
     helpers::start(&app);
     if background {
         browsers::mark_offered(&app); // the browser started us: its extension works
     } else {
-        app.show();
         browsers::offer(&app);
     }
     main::message_loop(&app);

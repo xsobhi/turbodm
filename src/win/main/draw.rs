@@ -118,6 +118,8 @@ fn status(p: &Painter, r: RECT, row: &Row, look: &Look) {
     p.round(bar, px(2), Some(look.track), None);
     let done = ((bar.right - bar.left) as f64 * row.progress.clamp(0.0, 1.0)).round() as i32;
     if done > 0 {
-        p.round(RECT { right: bar.left + done, ..bar }, px(2), Some(look.bar), None);
+        // (faint when the file is gone: "File missing")
+        let color = if row.missing { theme::mix(look.bar, look.track, 0.7) } else { look.bar };
+        p.round(RECT { right: bar.left + done, ..bar }, px(2), Some(color), None);
     }
 }

@@ -157,17 +157,32 @@ pub fn unique_path(path: &Path) -> PathBuf {
         return path.to_path_buf();
     }
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let (stem, ext) = match name.strip_suffix(".tar.gz").map(|s| (s, ".tar.gz")) {
-        Some(split) => (split.0.to_string(), split.1.to_string()),
-        None => match name.rfind('.').filter(|&i| i > 0) {
-            Some(i) => (name[..i].to_string(), name[i..].to_string()),
-            None => (name.clone(), String::new()),
-        },
-    };
+    let (stem, ext) = stem_and_extension(&name);
     (1..)
         .map(|n| path.with_file_name(format!("{stem} ({n}){ext}")))
         .find(|candidate| !taken(candidate))
         .expect("unbounded search")
+}
+
+/// "name.ext" as ("name", ".ext"); "name.tar.gz" as ("name", ".tar.gz").
+fn stem_and_extension(name: &str) -> (String, String) {
+    match name.strip_suffix(".tar.gz") {
+        Some(stem) => (stem.to_string(), ".tar.gz".to_string()),
+        None => match name.rfind('.').filter(|&i| i > 0) {
+            Some(i) => (name[..i].to_string(), name[i..].to_string()),
+            None => (name.to_string(), String::new()),
+        },
+    }
+}
+
+/// The name `unique_path` numbered `name` from ("a (1).zip": "a.zip"), when that one is taken
+/// in `dir` (so the number was added for it); else None.
+pub fn unnumbered(dir: &Path, name: &str) -> Option<String> {
+    let (stem, ext) = stem_and_extension(name);
+    let (base, number) = stem.strip_suffix(')')?.rsplit_once(" (")?;
+    number.parse::<u32>().ok()?;
+    let original = format!("{base}{ext}");
+    taken(&dir.join(&original)).then_some(original)
 }
 
 #[cfg(test)]
@@ -190,5 +205,22 @@ mod tests {
         assert_eq!(name_guess("magnet:?xt=urn:btih:abc"), "");
         assert_eq!(name_for("https://x.org/get?id=1", Some("Sintel.torrent")), "Sintel");
         assert_eq!(name_for("https://x.org/get?id=1", Some("report.pdf")), "report.pdf");
+    }
+
+    #[test]
+    fn numbers_names_and_takes_the_number_off() {
+        let dir = std::env::temp_dir().join(format!("turbodm-names-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.zip"), b"").unwrap();
+        std::fs::write(dir.join("b.tar.gz"), b"").unwrap();
+        assert_eq!(unique_path(&dir.join("a.zip")), dir.join("a (1).zip"));
+        assert_eq!(unique_path(&dir.join("b.tar.gz")), dir.join("b (1).tar.gz"));
+        assert_eq!(unnumbered(&dir, "a (1).zip").as_deref(), Some("a.zip"));
+        assert_eq!(unnumbered(&dir, "a (12).zip").as_deref(), Some("a.zip"));
+        assert_eq!(unnumbered(&dir, "b (1).tar.gz").as_deref(), Some("b.tar.gz"));
+        assert_eq!(unnumbered(&dir, "c (1).zip"), None); // no "c.zip": the number is the file's own
+        assert_eq!(unnumbered(&dir, "a (x).zip"), None);
+        assert_eq!(unnumbered(&dir, "a.zip"), None);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -38,8 +38,28 @@ pub fn open(path: &Path) {
 
 pub fn open_download(app: &Rc<App>, id: &str) {
     if let Some(s) = app.manager.get(id) {
+        if s.status == turbodm::engine::Status::Completed && !s.path.exists() {
+            return super::dialogs::missing_file(app, id); // moved or deleted outside TurboDM
+        }
         open(&s.path);
     }
+}
+
+/// Move a file to the Recycle Bin, where it can be got back from. False if it couldn't be (open
+/// in another program, say).
+pub fn recycle(path: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    let mut from: Vec<u16> = path.as_os_str().encode_wide().collect();
+    from.extend([0, 0]); // (a list of paths, ended by an empty one)
+    let mut operation = SHFILEOPSTRUCTW {
+        wFunc: FO_DELETE,
+        pFrom: PCWSTR(from.as_ptr()),
+        fFlags: (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT).0 as u16,
+        ..Default::default()
+    };
+    // SAFETY: `from` outlives the call; no window, no questions
+    let done = unsafe { SHFileOperationW(&mut operation) } == 0 && !operation.fAnyOperationsAborted.as_bool();
+    done && !path.exists()
 }
 
 /// Explorer with the download selected (or its folder, if the file is gone).

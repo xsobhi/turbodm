@@ -132,6 +132,9 @@ pub struct Task {
     pub video: video::Live,
     /// A torrent's live numbers, from its runner.
     pub torrent: Mutex<TorrentView>,
+    /// Finished, but its file isn't where it was saved any more: moved or deleted outside
+    /// TurboDM (`Manager::check_files` looks now and then).
+    pub missing: AtomicBool,
     samples: Mutex<VecDeque<(Instant, u64)>>,
     speed: Mutex<f64>,
 }
@@ -150,6 +153,7 @@ impl Task {
             grow: tokio::sync::Notify::new(),
             video: video::Live::default(),
             torrent: Mutex::new(TorrentView::default()),
+            missing: AtomicBool::new(false),
             samples: Mutex::new(VecDeque::new()),
             speed: Mutex::new(0.0),
         })

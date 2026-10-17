@@ -14,7 +14,7 @@ use turbodm::engine::torrent::is_torrent;
 use turbodm::engine::video::{is_video_site, is_web_page};
 use turbodm::engine::{AddRequest, Snapshot, Status};
 use turbodm::text::torrent_info;
-use turbodm::util::human_size;
+use turbodm::util::{human_size, unnumbered};
 use windows::Win32::Foundation::LRESULT;
 use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer, WM_TIMER};
 
@@ -154,8 +154,12 @@ fn torrent_found(app: &Rc<App>, form: &Rc<Form>, s: &Snapshot) -> String {
     torrent_info(s)
 }
 
-/// The server's name for the file, in its folder, unless the user chose where it goes.
+/// The server's name for the file, in its folder, unless the user chose where it goes. (The
+/// early download is "name (1).ext" when "name.ext" is there already: the window shows the
+/// server's name, and Start asks whether to replace that file or keep both: exists.rs.)
 fn show_found(app: &Rc<App>, form: &Rc<Form>, filename: &str, directory: Option<std::path::PathBuf>) {
+    let early = directory.is_some();
     let folder = directory.unwrap_or_else(|| app.manager.settings().folder_for(filename));
-    form.show(&folder, filename);
+    let name = early.then(|| unnumbered(&folder, filename)).flatten().unwrap_or_else(|| filename.to_string());
+    form.show(&folder, &name);
 }
