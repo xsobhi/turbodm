@@ -21,7 +21,7 @@ pub struct Engine {
     pub target: ID2D1DCRenderTarget,
     pub formats: RefCell<HashMap<super::Font, IDWriteTextFormat>>,
     brushes: RefCell<HashMap<u32, ID2D1SolidColorBrush>>,
-    pub bitmaps: RefCell<HashMap<(usize, i32, bool), ID2D1Bitmap>>, // pictures, by size
+    pub bitmaps: RefCell<HashMap<(usize, (i32, i32), bool), ID2D1Bitmap>>, // pictures, by size
 }
 
 thread_local! {

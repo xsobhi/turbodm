@@ -19,6 +19,7 @@ mod theme;
 mod tray;
 mod update;
 mod wnd;
+mod youtube;
 
 use std::cell::{OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};

@@ -1,5 +1,6 @@
 //! The 3D icons of the toolbar and the sidebar (tools/icons.py: TurboDM's tiles, with Fluent UI symbols,
-//! MIT: data/icons/symbols/LICENSE), part of TurboDM, drawn smoothly scaled.
+//! MIT: data/icons/symbols/LICENSE), part of TurboDM, drawn smoothly scaled; and the guides'
+//! screenshots.
 
 use super::d2d::{self, Engine};
 use super::fallback::gdiplus;
@@ -16,9 +17,8 @@ use windows::Win32::Graphics::GdiPlus::*;
 use windows::Win32::System::Com::IStream;
 use windows::Win32::UI::Shell::SHCreateMemStream;
 
-/// A PNG of TurboDM's (64 pixels square).
+/// A PNG of TurboDM's (the icons: 64 pixels square).
 pub type Picture = &'static [u8];
-const SOURCE: i32 = 64;
 
 macro_rules! picture {
     ($name:literal) => {
@@ -46,6 +46,17 @@ pub const COMPRESSED: Picture = picture!("compressed");
 pub const PROGRAMS: Picture = picture!("programs");
 pub const IMAGES: Picture = picture!("images");
 pub const OTHER: Picture = picture!("other");
+
+/// Screenshots for the guides (data/guide/), taken at twice the size they're shown at.
+pub const DEVELOPER_MODE: Picture = include_bytes!("../../../data/guide/developer-mode.png");
+pub const LOAD_UNPACKED: Picture = include_bytes!("../../../data/guide/load-unpacked.png");
+
+/// A screenshot's size as shown (in 96 DPI pixels, like the rest of a window's layout): half its
+/// own, read from the PNG's header.
+pub fn shot_size(png: Picture) -> (i32, i32) {
+    let number = |at: usize| png.get(at..at + 4).map_or(0, |b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as i32);
+    (number(16) / 2, number(20) / 2)
+}
 
 /// The picture, decoded once (with the stream it reads from, which must stay).
 fn bitmap(png: Picture) -> Option<*mut GpBitmap> {
@@ -100,7 +111,16 @@ impl Painter {
     pub fn picture(&self, r: RECT, png: Picture, size: i32, faded: bool) {
         let size = px(size);
         let (x, y) = (r.left + (r.right - r.left - size) / 2, r.top + (r.bottom - r.top - size) / 2);
-        let to = RECT { left: x, top: y, right: x + size, bottom: y + size };
+        self.draw_picture(RECT { left: x, top: y, right: x + size, bottom: y + size }, png, faded);
+    }
+
+    /// A screenshot filling `r` (see `shot_size`), smoothly scaled.
+    pub fn shot(&self, r: RECT, png: Picture) {
+        self.draw_picture(r, png, false);
+    }
+
+    fn draw_picture(&self, to: RECT, png: Picture, faded: bool) {
+        let size = (to.right - to.left, to.bottom - to.top);
         if self.pass() && d2d::with(|e| {
             let bitmap = scaled(e, png, size, faded)?;
             // SAFETY: drawing during the painter's pass, one pixel for one
@@ -139,17 +159,22 @@ unsafe fn draw_scaled(graphics: *mut GpGraphics, source: *mut GpBitmap, to: RECT
             GdipCreateImageAttributes(&mut attributes);
             GdipSetImageAttributesColorMatrix(attributes, ColorAdjustTypeBitmap, true, &grey, null_mut(), ColorMatrixFlagsDefault);
         }
+        let (mut width, mut height) = (0, 0);
+        GdipGetImageWidth(source.cast(), &mut width);
+        GdipGetImageHeight(source.cast(), &mut height);
         GdipDrawImageRectRectI(graphics, source.cast(), to.left, to.top, to.right - to.left, to.bottom - to.top,
-                               0, 0, SOURCE, SOURCE, UnitPixel, attributes, 0, null_mut());
+                               0, 0, width as i32, height as i32, UnitPixel, attributes, 0, null_mut());
         if !attributes.is_null() {
             GdipDisposeImageAttributes(attributes);
         }
     }
 }
 
-/// The picture at `size` pixels as a Direct2D bitmap: scaled smoothly (GDI+) once, then kept.
-fn scaled(e: &Engine, png: Picture, size: i32, faded: bool) -> Option<ID2D1Bitmap> {
+/// The picture at `size` (width, height) pixels as a Direct2D bitmap: scaled smoothly (GDI+)
+/// once, then kept.
+fn scaled(e: &Engine, png: Picture, size: (i32, i32), faded: bool) -> Option<ID2D1Bitmap> {
     let key = (png.as_ptr() as usize, size, faded);
+    let (width, height) = size;
     if let Some(bitmap) = e.bitmaps.borrow().get(&key) {
         return Some(bitmap.clone());
     }
@@ -157,21 +182,21 @@ fn scaled(e: &Engine, png: Picture, size: i32, faded: bool) -> Option<ID2D1Bitma
     // SAFETY: GDI+ and Direct2D objects made here; the pixels are copied before they're freed
     unsafe {
         let mut canvas = null_mut();
-        if GdipCreateBitmapFromScan0(size, size, 0, PARGB, None, &mut canvas) != Ok {
+        if GdipCreateBitmapFromScan0(width, height, 0, PARGB, None, &mut canvas) != Ok {
             return None;
         }
         let mut graphics = null_mut();
         if GdipGetImageGraphicsContext(canvas.cast(), &mut graphics) == Ok {
-            draw_scaled(graphics, source, RECT { left: 0, top: 0, right: size, bottom: size }, faded);
+            draw_scaled(graphics, source, RECT { left: 0, top: 0, right: width, bottom: height }, faded);
             GdipDeleteGraphics(graphics);
         }
         let mut pixels = BitmapData::default();
-        let area = Rect { X: 0, Y: 0, Width: size, Height: size };
+        let area = Rect { X: 0, Y: 0, Width: width, Height: height };
         let mut made = None;
         if GdipBitmapLockBits(canvas, &area, ImageLockModeRead.0 as u32, PARGB, &mut pixels) == Ok {
             let format = D2D1_PIXEL_FORMAT { format: DXGI_FORMAT_B8G8R8A8_UNORM, alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED };
             let properties = D2D1_BITMAP_PROPERTIES { pixelFormat: format, dpiX: 96.0, dpiY: 96.0 };
-            made = e.target.CreateBitmap(D2D_SIZE_U { width: size as u32, height: size as u32 }, Some(pixels.Scan0),
+            made = e.target.CreateBitmap(D2D_SIZE_U { width: width as u32, height: height as u32 }, Some(pixels.Scan0),
                                          pixels.Stride as u32, &properties).ok();
             GdipBitmapUnlockBits(canvas, &mut pixels);
         }

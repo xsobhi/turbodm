@@ -22,7 +22,7 @@ pub enum Cmd {
     ToggleCategories, ToggleToolbar, ToggleProgress, ToggleComplete,
     SortName, SortSize, SortStatus, SortSpeed, SortLeft, SortAdded,
     GitHub, Report, MenuTasks, MenuFile, MenuDownloads, MenuView, MenuHelp,
-    AddTorrent, AddVideo, CompleteWindow,
+    AddTorrent, AddVideo, CompleteWindow, YouTube,
 }
 
 pub const ALL: &[Cmd] = &[Cmd::Add, Cmd::Resume, Cmd::Pause, Cmd::ResumeAll, Cmd::PauseAll, Cmd::Remove,
@@ -34,7 +34,7 @@ pub const ALL: &[Cmd] = &[Cmd::Add, Cmd::Resume, Cmd::Pause, Cmd::ResumeAll, Cmd
     Cmd::ToggleCategories, Cmd::ToggleToolbar, Cmd::ToggleProgress, Cmd::ToggleComplete,
     Cmd::SortName, Cmd::SortSize, Cmd::SortStatus, Cmd::SortSpeed, Cmd::SortLeft, Cmd::SortAdded,
     Cmd::GitHub, Cmd::Report, Cmd::MenuTasks, Cmd::MenuFile, Cmd::MenuDownloads, Cmd::MenuView, Cmd::MenuHelp,
-    Cmd::AddTorrent, Cmd::AddVideo, Cmd::CompleteWindow];
+    Cmd::AddTorrent, Cmd::AddVideo, Cmd::CompleteWindow, Cmd::YouTube];
 
 /// The speed limiter's choices: (command, KiB/s, its name).
 const SPEEDS: [(Cmd, u64, &str); 7] = [(Cmd::Speed0, 0, "&No limit"), (Cmd::Speed256, 256, "256 KB/s"),
@@ -109,7 +109,8 @@ pub fn bar_menu(app: &Rc<App>, index: usize) -> Vec<popup::Item> {
                  Tick(Cmd::ToggleComplete, "Show download comp&lete window", s.show_complete_dialog)]
         }
         _ => vec![Do(Cmd::GitHub, "TurboDM on &GitHub", true), Do(Cmd::Report, "&Report a problem...", true), Line,
-                  Do(Cmd::Browsers, "Add to your &browser...", true), Do(Cmd::CheckUpdates, "Check for &updates...", true),
+                  Do(Cmd::Browsers, "Add to your &browser...", true), Do(Cmd::YouTube, "&YouTube in your browser...", true),
+                  Do(Cmd::CheckUpdates, "Check for &updates...", true),
                   Line, Do(Cmd::About, "&About TurboDM", true)],
     };
     build(&items)
@@ -187,6 +188,7 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
         }
         Cmd::Settings => settings::open(app),
         Cmd::Browsers => super::super::browsers::open(app),
+        Cmd::YouTube => super::super::youtube::open(app),
         Cmd::CheckUpdates => super::super::update::check(app, true),
         Cmd::About => dialogs::about(app),
         Cmd::Exit => app.quit(),

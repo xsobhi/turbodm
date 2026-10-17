@@ -32,7 +32,7 @@ pub fn place(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) {
 }
 
 /// A button wide enough for its text (at least the standard width), in 96-DPI pixels.
-fn button_width(button: HWND) -> i32 {
+pub fn button_width(button: HWND) -> i32 {
     let mut size = windows::Win32::Foundation::SIZE::default();
     send(button, BCM_GETIDEALSIZE, 0, &mut size as *mut _ as isize);
     (size.cx * 96 / px(96) + 24).max(BUTTON_WIDTH)

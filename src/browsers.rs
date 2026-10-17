@@ -1,6 +1,6 @@
 //! The browsers installed here, and the extension TurboDM ships for them.
 
-use crate::config::{chrome_extension_ids, CHROME_STORE_ID, EDGE_STORE_ID, FIREFOX_EXTENSION_ID};
+use crate::config::{chrome_extension_ids, CHROME_EXTENSION_ID, CHROME_STORE_ID, EDGE_STORE_ID, FIREFOX_EXTENSION_ID};
 use std::path::{Path, PathBuf};
 
 pub struct Browser {
@@ -65,21 +65,31 @@ impl Browser {
 
     /// Is TurboDM's extension in one of its profiles, and on?
     pub fn has_extension(&self) -> bool {
+        self.has_one_of(&chrome_extension_ids())
+    }
+
+    /// Chromium-based: is the full extension (added by hand: it has YouTube, which the stores'
+    /// copy leaves out) in one of its profiles, and on?
+    pub fn has_full_extension(&self) -> bool {
+        !self.is_firefox() && self.has_one_of(&[CHROME_EXTENSION_ID])
+    }
+
+    fn has_one_of(&self, ids: &[&str]) -> bool {
         let Ok(profiles) = std::fs::read_dir(&self.data) else { return false };
         let profiles: Vec<PathBuf> = profiles.flatten().map(|entry| entry.path()).filter(|p| p.is_dir()).collect();
         if self.is_firefox() {
             return profiles.iter().any(|p| p.join("extensions").join(format!("{FIREFOX_EXTENSION_ID}.xpi")).is_file());
         }
         profiles.iter().any(|profile| ["Secure Preferences", "Preferences"].iter().any(|file| {
-            std::fs::read_to_string(profile.join(file)).is_ok_and(|text| enabled_in(&text))
+            std::fs::read_to_string(profile.join(file)).is_ok_and(|text| enabled_in(&text, ids))
         }))
     }
 }
 
-/// Does a Chromium profile's preferences have TurboDM's extension, not turned off?
-fn enabled_in(preferences: &str) -> bool {
+/// Does a Chromium profile's preferences have one of these extensions, not turned off?
+fn enabled_in(preferences: &str, ids: &[&str]) -> bool {
     let Ok(prefs) = serde_json::from_str::<serde_json::Value>(preferences) else { return false };
-    chrome_extension_ids().iter().any(|id| {
+    ids.iter().any(|id| {
         let Some(extension) = prefs.pointer(&format!("/extensions/settings/{id}")) else { return false };
         // (why it's off: a number once, a list now; added from outside and not yet turned on, too)
         match extension.get("disable_reasons") {
@@ -131,18 +141,21 @@ pub fn firefox_extension(dir: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::CHROME_EXTENSION_ID;
 
     #[test]
     fn reads_whether_the_extension_is_on() {
         let prefs = |settings: &str| format!(r#"{{"extensions":{{"settings":{{{settings}}}}}}}"#);
         let id = CHROME_EXTENSION_ID;
-        assert!(enabled_in(&prefs(&format!(r#""{id}":{{"location":4}}"#))));
-        assert!(enabled_in(&prefs(&format!(r#""{id}":{{"disable_reasons":[]}}"#))));
-        assert!(!enabled_in(&prefs(&format!(r#""{id}":{{"disable_reasons":[8192]}}"#))));
-        assert!(!enabled_in(&prefs(&format!(r#""{id}":{{"disable_reasons":1}}"#))));
-        assert!(!enabled_in(&prefs(&format!(r#""{id}":{{"state":0}}"#))));
-        assert!(!enabled_in(&prefs(r#""ngpampappnmepgilojfohadhhmbhlaek":{}"#)));
-        assert!(!enabled_in("not json"));
+        assert!(enabled_in(&prefs(&format!(r#""{id}":{{"location":4}}"#)), &chrome_extension_ids()));
+        assert!(enabled_in(&prefs(&format!(r#""{id}":{{"disable_reasons":[]}}"#)), &chrome_extension_ids()));
+        assert!(!enabled_in(&prefs(&format!(r#""{id}":{{"disable_reasons":[8192]}}"#)), &chrome_extension_ids()));
+        assert!(!enabled_in(&prefs(&format!(r#""{id}":{{"disable_reasons":1}}"#)), &chrome_extension_ids()));
+        assert!(!enabled_in(&prefs(&format!(r#""{id}":{{"state":0}}"#)), &chrome_extension_ids()));
+        assert!(!enabled_in(&prefs(r#""ngpampappnmepgilojfohadhhmbhlaek":{}"#), &chrome_extension_ids()));
+        assert!(!enabled_in("not json", &chrome_extension_ids()));
+        // the full extension, told apart from the stores' copy
+        let store = crate::config::CHROME_STORE_ID.unwrap();
+        assert!(!enabled_in(&prefs(&format!(r#""{store}":{{"location":1}}"#)), &[CHROME_EXTENSION_ID]));
+        assert!(enabled_in(&prefs(&format!(r#""{store}":{{"location":1}}"#)), &chrome_extension_ids()));
     }
 }

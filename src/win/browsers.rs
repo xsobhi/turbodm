@@ -3,7 +3,7 @@
 //! asked straight away, as IDM does. Chrome, Edge and Brave add it from their store by themselves
 //! once it's listed there (register.rs), asking first; else the window says how to load it.
 
-use super::wnd::{self, place, set_text, set_visible, Rows, Window, FIELD, LINE};
+use super::wnd::{self, button_width, place, set_text, set_visible, Rows, Window, FIELD, LINE};
 use super::{shell, App};
 use std::path::Path;
 use std::rc::Rc;
@@ -39,7 +39,7 @@ pub fn mark_offered(app: &App) {
     }
 }
 
-pub fn open(_app: &Rc<App>) {
+pub fn open(app: &Rc<App>) {
     let dir = find::extension_dir();
     let browsers: Vec<_> = find::installed().into_iter().filter(|_| dir.is_some()).collect();
     let window = Window::dialog("Add TurboDM to your browser", None, (500, 300), false);
@@ -64,6 +64,12 @@ pub fn open(_app: &Rc<App>) {
     } else {
         "No browser was found. The extension is in the folder below."
     }));
+    // YouTube: the stores' copy leaves it out; the full extension, added by hand, has it
+    let youtube = (from_store && find::installed().iter().any(|b| !b.is_firefox())).then(|| {
+        let a = app.clone();
+        (window.note("YouTube videos: the extension Chrome, Edge and Brave add from their store leaves them out."),
+         window.button("Add YouTube\u{2026}", move || super::youtube::open(&a)))
+    });
     let mut rows = Rows::new(18, 16, 0, 464);
     rows.full(heading, 24);
     rows.full(intro, if from_store { 48 } else { 32 });
@@ -83,6 +89,13 @@ pub fn open(_app: &Rc<App>) {
     }
     if let Some(missing) = missing {
         rows.full(missing, 32);
+    }
+    if let Some((note, button)) = youtube {
+        let width = button_width(button);
+        rows.gap(4);
+        place(note, 18, rows.y + 2, 464 - width - 16, 2 * LINE);
+        place(button, 18 + 464 - width, rows.y + 4, width, FIELD);
+        rows.gap(2 * LINE + 10);
     }
     rows.gap(4);
     rows.full(guide, 7 * LINE);

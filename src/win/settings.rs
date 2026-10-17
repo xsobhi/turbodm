@@ -93,6 +93,8 @@ pub fn open(app: &Rc<App>) {
     let video_helpers = window.button(if helpers_ready { "Installed" } else { "Get them\u{2026}" },
                                       move || helpers::with_helpers(&a, |_| {}));
     enable(video_helpers, !helpers_ready);
+    let a = app.clone();
+    let youtube = window.button("Show how\u{2026}", move || super::youtube::open(&a));
 
     use Line::{Heading, Setting};
     let pages: [Vec<Line>; 3] = [
@@ -102,6 +104,7 @@ pub fn open(app: &Rc<App>) {
              Setting("Browser integration", add_browser, 200),
              Heading("Videos"),
              Setting("Helpers for videos (yt-dlp and FFmpeg)", video_helpers, 130),
+             Setting("YouTube in Chrome, Edge and Brave", youtube, 130),
              Heading("Windows and notices"),
              Setting("Open a progress window when a download starts", progress, 44),
              Setting("Show the Download complete window", complete, 44),
