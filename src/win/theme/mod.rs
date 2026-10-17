@@ -64,7 +64,8 @@ pub fn on_selected(dim: bool) -> COLORREF {
 
 /// Use the look `id` with the user's colours over it (Options → Look), from now on; returns the
 /// look's palette until now. Windows already open take it with `wnd::retheme`.
-pub fn apply(id: &str, own: themes::Own) -> themes::Palette {
+pub fn apply(id: &str, own: &turbodm::config::ThemeColors) -> themes::Palette {
+    let own = themes::Own { accent: own.accent, window: own.window, content: own.content, text: own.text };
     let before = themes::set(themes::resolve(id, own));
     d2d::forget_formats(); // (its font may be another)
     before.palette

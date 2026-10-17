@@ -17,6 +17,11 @@ pub fn custom_draw(list: HWND, rows: &[Row], lparam: LPARAM) -> LRESULT {
     let draw = unsafe { &mut *(lparam.0 as *mut NMLVCUSTOMDRAW) };
     let stage = draw.nmcd.dwDrawStage.0;
     if stage == CDDS_PREPAINT.0 {
+        // (the look may have changed: Options → Look)
+        if send(list, LVM_GETBKCOLOR, 0, 0) as u32 != theme::view().0 {
+            send(list, LVM_SETBKCOLOR, 0, theme::view().0 as isize);
+            send(list, LVM_SETTEXTCOLOR, 0, theme::text().0 as isize);
+        }
         return LRESULT((CDRF_NOTIFYITEMDRAW | CDRF_NOTIFYPOSTPAINT) as isize);
     }
     if stage == CDDS_POSTPAINT.0 {

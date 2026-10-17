@@ -1,4 +1,4 @@
-//! Options, as IDM's: tabs (General, Save to, Connection), each a few short groups with a
+//! Options, as IDM's: tabs (General, Save to, Connection, Look), each a few short groups with a
 //! heading, what each setting is on the left and its switch, number or folder on the right;
 //! OK and Cancel at the bottom, as in Windows' own dialogs.
 
@@ -6,7 +6,7 @@ use super::theme::{self, Font};
 use super::wnd::labels::Kind;
 use super::wnd::tabs::TABS;
 use super::wnd::{self, enable, is_checked, place, rect, set_text, set_visible, text, Window, FIELD, LINE};
-use super::{browsers, helpers, shell, App};
+use super::{browsers, helpers, looks, shell, App};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use turbodm::config::MAX_CONNECTIONS;
@@ -96,8 +96,11 @@ pub fn open(app: &Rc<App>) {
     let a = app.clone();
     let youtube = window.button("Show how\u{2026}", move || super::youtube::open(&a));
 
+    // Look: the theme, the user's own colours (looks.rs)
+    let look = Rc::new(looks::LookPage::new(&window, &s));
+
     use Line::{Heading, Setting};
-    let pages: [Vec<Line>; 3] = [
+    let pages: [Vec<Line>; 4] = [
         vec![Heading("Downloads from the browser"),
              Setting("Ask where to save them (Download file info)", confirm, 44),
              Setting("Start downloading while it's open", predownload, 44),
@@ -126,6 +129,14 @@ pub fn open(app: &Rc<App>) {
              Setting("Speed limit, KB/s (0 = no limit)", speed, 150),
              Heading("Torrents"),
              Setting("Keep sharing finished torrents", seed, 44)],
+        vec![Heading("Look"),
+             Setting("Theme", look.theme, 220),
+             Heading("Your own colours, over the theme's"),
+             Setting("Accent (what's chosen, main buttons)", look.colors[0], 96),
+             Setting("Window background", look.colors[1], 96),
+             Setting("Content background (the list, pages)", look.colors[2], 96),
+             Setting("Text", look.colors[3], 96),
+             Setting("", look.reset, 150)],
     ];
 
     // lay the pages out over each other, under the tabs
@@ -165,12 +176,13 @@ pub fn open(app: &Rc<App>) {
         }
     };
     show_page(0);
-    let tabs = window.tabs(&["General", "Save to", "Connection"], show_page);
+    let tabs = window.tabs(&["General", "Save to", "Connection", "Look"], show_page);
     place(tabs, 0, 0, WIDTH, TABS);
 
-    let (a, w) = (app.clone(), window.clone());
+    let (a, w, l) = (app.clone(), window.clone(), look.clone());
     let ok = window.default_button("OK", move || {
         let mut s = a.manager.settings();
+        (s.theme, s.theme_colors) = l.chosen();
         s.download_dir = folder.borrow().clone();
         if forget_all.get() {
             s.folders.clear();
@@ -187,10 +199,21 @@ pub fn open(app: &Rc<App>) {
         a.manager.update_settings(s.clamp());
         w.destroy();
     });
-    let w = window.clone();
-    let cancel = window.button("Cancel", move || w.destroy());
-    let w = window.clone();
-    window.on_command(IDCANCEL.0 as u16, move |_| w.destroy());
+    // Cancel, Escape, the close button: the look there was, back
+    let (w, l) = (window.clone(), look.clone());
+    let cancel = window.button("Cancel", move || {
+        l.revert();
+        w.destroy();
+    });
+    let (w, l) = (window.clone(), look.clone());
+    window.on_command(IDCANCEL.0 as u16, move |_| {
+        l.revert();
+        w.destroy();
+    });
+    window.on_close(move || {
+        look.revert();
+        true
+    });
     let y = page_bottom + 14;
     place(ok, WIDTH - PAD - 96, y, 96, FIELD + 2);
     place(cancel, WIDTH - PAD - 2 * 96 - 8, y, 96, FIELD + 2);

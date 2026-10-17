@@ -13,6 +13,7 @@ mod layout;
 pub mod look;
 pub mod moves;
 pub mod popup;
+mod retheme;
 pub mod scrollbar;
 pub mod tabs;
 
@@ -21,6 +22,7 @@ pub use layout::*;
 pub use field::{enable, set_visible};
 pub use moves::batch;
 pub use frame::let_edges_resize;
+pub use retheme::retheme;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -80,8 +82,9 @@ impl Window {
             let param = Rc::into_raw(win.clone());
             let created = CreateWindowExW(ex, CLASS, &HSTRING::from(title), style, CW_USEDEFAULT, CW_USEDEFAULT,
                                           width, height, owner, None, Some(instance()), Some(param.cast()));
-            if created.is_err() {
-                drop(Rc::from_raw(param));
+            match created {
+                Ok(hwnd) => retheme::dress(hwnd), // (the look's corners and border)
+                Err(_) => drop(Rc::from_raw(param)),
             }
         }
         win

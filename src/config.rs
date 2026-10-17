@@ -82,6 +82,16 @@ fn user_name() -> String {
     std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "user".into())
 }
 
+/// The user's own colours over the look (Options → Look), as 0xRRGGBB; none: the look's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ThemeColors {
+    pub accent: Option<u32>,
+    pub window: Option<u32>,  // around the content: toolbar, dialogs
+    pub content: Option<u32>, // the list, the pages
+    pub text: Option<u32>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -107,6 +117,8 @@ pub struct Settings {
     pub show_categories: bool,     // the main window's categories (View → Categories)
     pub show_toolbar: bool,        // and its toolbar (View → Toolbar)
     pub toolbar_text: bool,        // the toolbar's names under its icons (View → Toolbar text; off: smaller)
+    pub theme: String,             // the look (Options → Look; Windows): "mint-y", "windows-11"…
+    pub theme_colors: ThemeColors, // the user's own colours over it
     pub video_quality: String,     // the video quality picked last ("720p", "Audio"), offered first next time
     #[serde(default)]
     pub seed: bool,                // keep sharing finished torrents (off: stop once complete)
@@ -142,6 +154,8 @@ impl Default for Settings {
             show_categories: true,
             show_toolbar: true,
             toolbar_text: true,
+            theme: "mint-y".into(),
+            theme_colors: ThemeColors::default(),
             video_quality: String::new(),
             seed: false,
             video_format: String::new(),

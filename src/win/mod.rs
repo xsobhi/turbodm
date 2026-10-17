@@ -8,6 +8,7 @@ mod complete;
 mod dialogs;
 mod finish;
 mod helpers;
+mod looks;
 mod main;
 mod power;
 mod progress;
@@ -178,6 +179,8 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
         let _ = InitCommonControlsEx(&classes);
     }
     let (manager, events) = Manager::new(Settings::load(), config::downloads_file(), runtime.handle().clone());
+    let settings = manager.settings();
+    theme::apply(&settings.theme, &settings.theme_colors); // (before any window: they're made in it)
     let (outbox, inbox) = mpsc::channel();
     let _ = OUTBOX.set(Mutex::new(outbox));
     INBOX.with(|i| { let _ = i.set(inbox); });

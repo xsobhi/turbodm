@@ -42,6 +42,7 @@ impl List {
         send(hwnd, LVM_SETTEXTBKCOLOR, 0, CLR_NONE as isize);
         send(hwnd, LVM_SETTEXTCOLOR, 0, theme::text().0 as isize);
         scrollbar::slim(hwnd); // Mint-Y's slim scroll bars, not Windows'
+        super::header::own(hwnd); // its column header in the look's colours
         for (i, (title, width)) in COLUMNS.iter().enumerate() {
             let text = HSTRING::from(*title);
             let column = LVCOLUMNW { mask: LVCF_TEXT | LVCF_WIDTH | LVCF_FMT, fmt: LVCFMT_LEFT, cx: px(*width),

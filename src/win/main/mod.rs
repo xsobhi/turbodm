@@ -5,6 +5,7 @@
 mod cells;
 mod clipboard;
 mod draw;
+mod header;
 mod events;
 mod list;
 pub mod menu;

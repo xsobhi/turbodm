@@ -113,7 +113,7 @@ pub fn all() -> &'static [Theme] {
         vec![
             Theme { id: "mint-y", name: "Mint-Y", palette: MINT_Y, radius: 3, face: Ubuntu, buttons: Round, selection: Filled },
             look("mint-y-dark", "Mint-Y Dark", (0x353535, 0x2b2b2b, 0xdadada, 0x35a854), 3, Ubuntu, Round, Filled),
-            look("mint-x", "Mint-X", (0xd6d6d6, 0xffffff, 0x3c3c3c, 0x9ab87c), 2, Ubuntu, Round, Filled),
+            look("mint-x", "Mint-X", (0xd6d6d6, 0xffffff, 0x3c3c3c, 0x8aaf6a), 2, Ubuntu, Round, Filled),
             look("windows-11", "Windows 11", (0xf3f3f3, 0xffffff, 0x1b1b1b, 0x005fb8), 4, Segoe, Square, Subtle),
             look("windows-11-dark", "Windows 11 Dark", (0x202020, 0x2b2b2b, 0xffffff, 0x60cdff), 4, Segoe, Square, Subtle),
             look("windows-10", "Windows 10", (0xf0f0f0, 0xffffff, 0x000000, 0x0078d7), 0, Segoe, Square, Subtle),
@@ -132,7 +132,7 @@ pub fn all() -> &'static [Theme] {
             look("dracula", "Dracula", (0x21222c, 0x282a36, 0xf8f8f2, 0xbd93f9), 4, Segoe, Square, Filled),
             look("catppuccin-mocha", "Catppuccin Mocha", (0x181825, 0x1e1e2e, 0xcdd6f4, 0xcba6f7), 6, Segoe, Round, Filled),
             look("catppuccin-latte", "Catppuccin Latte", (0xe6e9ef, 0xeff1f5, 0x4c4f69, 0x8839ef), 6, Segoe, Round, Filled),
-            look("solarized-light", "Solarized Light", (0xeee8d5, 0xfdf6e3, 0x586e75, 0x268bd2), 3, Segoe, Square, Filled),
+            look("solarized-light", "Solarized Light", (0xeee8d5, 0xfdf6e3, 0x073642, 0x268bd2), 3, Segoe, Square, Filled),
             look("solarized-dark", "Solarized Dark", (0x073642, 0x002b36, 0x93a1a1, 0x268bd2), 3, Segoe, Square, Filled),
         ]
     })
@@ -213,9 +213,16 @@ pub fn is_dark(c: COLORREF) -> bool {
     luminance(c) < 0.2
 }
 
-/// Text on `c`: white, or near-black on light colours.
+/// Text on `c`: white, as most looks put on their accent colour, unless that's too light to read
+/// it on: then near-black.
 fn on(c: COLORREF) -> COLORREF {
-    if luminance(c) > 0.45 { rgb(0x111111) } else { WHITE }
+    if contrast(WHITE, c) >= 2.3 { WHITE } else { rgb(0x111111) }
+}
+
+/// How well one colour reads on another: 1 (not at all) to 21 (black on white).
+pub fn contrast(a: COLORREF, b: COLORREF) -> f64 {
+    let (x, y) = (luminance(a), luminance(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
 }
 
 #[cfg(test)]
@@ -229,13 +236,9 @@ mod tests {
         for theme in all() {
             let p = theme.palette;
             // text stands out from where it sits, and on the accent colour
-            let contrast = |a: COLORREF, b: COLORREF| {
-                let (x, y) = (luminance(a), luminance(b));
-                (x.max(y) + 0.05) / (x.min(y) + 0.05)
-            };
             assert!(contrast(p.text, p.view) >= 4.5, "{}: text on content", theme.id);
             assert!(contrast(p.text, p.chrome) >= 4.5, "{}: text on window", theme.id);
-            assert!(contrast(p.on_accent, p.accent) >= 2.5, "{}: text on accent", theme.id);
+            assert!(contrast(p.on_accent, p.accent) >= 2.3, "{}: text on accent", theme.id);
         }
         assert_eq!(resolve("no-such-look", Own::default()).id, "mint-y");
         let own = resolve("windows-11", Own { accent: Some(0xff0000), ..Own::default() });
