@@ -1,8 +1,10 @@
 //! What the downloads list shows for a download: its texts, Windows' icon for its file type,
 //! and dates in the user's own format.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::cell::RefCell;
+use std::path::PathBuf;
+use std::sync::{mpsc, Mutex, OnceLock};
 use turbodm::categories::extension;
 use turbodm::engine::{Snapshot, Status};
 use turbodm::text::{eta_text, rate_text, status_text};
@@ -63,7 +65,8 @@ impl Row {
     }
 }
 
-/// Windows' small icon list for file types (shared, owned by the system).
+/// Windows' small icon list for file types (shared, owned by the system; it's made the first
+/// time it's asked for, which the icons' helper thread does: see `file_icon`).
 pub fn system_icons() -> HIMAGELIST {
     let mut info = SHFILEINFOW::default();
     // SAFETY: asks for the system image list; nothing is created
@@ -77,20 +80,63 @@ pub fn system_icons() -> HIMAGELIST {
 /// Kinds of files with an icon of their own (programs and installers show theirs, like IDM).
 const OWN_ICONS: [&str; 4] = ["exe", "msi", "ico", "lnk"];
 
+thread_local! {
+    static ICONS: RefCell<HashMap<String, i32>> = RefCell::default(); // found, by file (a program) or type
+    static ASKED: RefCell<HashSet<String>> = RefCell::default(); // being looked up
+}
+
 /// The file's icon in Windows' list, as Explorer shows it: a program's own once it's downloaded,
-/// otherwise its type's.
+/// otherwise its type's. Looked up once, on a helper thread: reading a program's icon out of it
+/// can take a while (much longer just after Windows starts, while the antivirus reads the file
+/// too), and the window mustn't wait. Meanwhile -1: none (the list shows it as it comes).
 fn file_icon(s: &Snapshot) -> i32 {
-    thread_local! {
-        static CACHE: RefCell<HashMap<String, i32>> = RefCell::default();
-    }
     let ext = extension(&s.filename);
     let own = s.status == Status::Completed && OWN_ICONS.contains(&ext.as_str());
     let key = if own { s.path.display().to_string() } else { format!(".{ext}") };
-    if let Some(icon) = CACHE.with(|cache| cache.borrow().get(&key).copied()) {
+    if let Some(icon) = ICONS.with(|icons| icons.borrow().get(&key).copied()) {
         return icon;
     }
-    let by_type = if own && s.path.exists() { SHGFI_FLAGS(0) } else { SHGFI_USEFILEATTRIBUTES };
-    let ask = if by_type == SHGFI_USEFILEATTRIBUTES { format!(".{ext}") } else { key.clone() };
+    if ASKED.with(|asked| asked.borrow_mut().insert(key.clone())) {
+        let job = Lookup { key, ext, file: own.then(|| s.path.clone()) };
+        let _ = helper().lock().unwrap().send(job);
+    }
+    -1
+}
+
+/// An icon to look up: a program's own (`file`), or its type's (by `ext`).
+struct Lookup {
+    key: String,
+    ext: String,
+    file: Option<PathBuf>,
+}
+
+/// The icons' helper thread, which looks them up one after the other and hands each to the
+/// window's thread.
+fn helper() -> &'static Mutex<mpsc::Sender<Lookup>> {
+    static HELPER: OnceLock<Mutex<mpsc::Sender<Lookup>>> = OnceLock::new();
+    HELPER.get_or_init(|| {
+        let (jobs, inbox) = mpsc::channel::<Lookup>();
+        std::thread::spawn(move || {
+            // SAFETY: COM for this thread (the shell's icon lookups want it), until it ends
+            unsafe { let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_APARTMENTTHREADED); }
+            system_icons(); // (makes Windows' icon list, here rather than on the window's thread)
+            for job in inbox {
+                let icon = look_up(&job);
+                let key = job.key;
+                crate::win::post(move |_| {
+                    ICONS.with(|icons| icons.borrow_mut().insert(key.clone(), icon));
+                    ASKED.with(|asked| asked.borrow_mut().remove(&key));
+                });
+            }
+        });
+        Mutex::new(jobs)
+    })
+}
+
+fn look_up(job: &Lookup) -> i32 {
+    let file = job.file.as_ref().filter(|f| f.exists()).map(|f| f.display().to_string());
+    let by_type = if file.is_some() { SHGFI_FLAGS(0) } else { SHGFI_USEFILEATTRIBUTES };
+    let ask = file.unwrap_or_else(|| format!(".{}", job.ext));
     let mut info = SHFILEINFOW::default();
     // SAFETY: looks up an icon into our struct: from the file itself, or by its extension only
     // (the file needn't exist)
@@ -98,7 +144,6 @@ fn file_icon(s: &Snapshot) -> i32 {
         SHGetFileInfoW(&HSTRING::from(ask.as_str()), FILE_ATTRIBUTE_NORMAL, Some(&mut info),
                        std::mem::size_of::<SHFILEINFOW>() as u32, by_type | SHGFI_SYSICONINDEX | SHGFI_SMALLICON);
     }
-    CACHE.with(|cache| cache.borrow_mut().insert(key, info.iIcon));
     info.iIcon
 }
 

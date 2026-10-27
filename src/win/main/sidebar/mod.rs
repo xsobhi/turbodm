@@ -74,6 +74,7 @@ struct State {
     counts: Vec<usize>,
     disk: Option<(u64, u64)>, // free, total
     checked: Option<Instant>,
+    asking: bool, // (the disk asked, not answered yet)
     scroll: i32, // how far the rows are scrolled up (canvas pixels)
     drag: Option<(i32, i32)>, // the thumb held: where the mouse and the scroll were then
     bar_hot: bool, // the mouse over the scroll bar
@@ -145,12 +146,27 @@ impl Sidebar {
         }).collect();
         let mut state = self.state.borrow_mut();
         let due = state.checked.is_none_or(|t| t.elapsed() > Duration::from_secs(2));
-        let disk = if due { free_space(download_dir) } else { state.disk };
-        if due {
-            state.checked = Some(Instant::now());
+        if due && !state.asking {
+            // asked on a helper thread: a sleeping disk or a network folder may take a while to say
+            (state.checked, state.asking) = (Some(Instant::now()), true);
+            let dir = download_dir.to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                let disk = free_space(&dir);
+                crate::win::post(move |app| app.main.sidebar.set_disk(disk));
+            });
         }
-        if state.counts != counts || state.disk != disk {
-            (state.counts, state.disk) = (counts, disk);
+        if state.counts != counts {
+            state.counts = counts;
+            canvas::redraw(self.hwnd);
+        }
+    }
+
+    /// The download disk's free space, as the helper thread found it.
+    pub fn set_disk(&self, disk: Option<(u64, u64)>) {
+        let mut state = self.state.borrow_mut();
+        state.asking = false;
+        if state.disk != disk {
+            state.disk = disk;
             canvas::redraw(self.hwnd);
         }
     }

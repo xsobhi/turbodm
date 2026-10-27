@@ -112,7 +112,9 @@ fn icon(p: &Painter, r: RECT, row: &Row) -> i32 {
     // SAFETY: Windows' file-type icons, drawn into the list's DC
     unsafe {
         let _ = ImageList_GetIconSize(system_icons(), Some(&mut width), Some(&mut height));
-        let _ = ImageList_Draw(system_icons(), row.icon, p.gdi(), x, (r.top + r.bottom - height) / 2, ILD_TRANSPARENT);
+        if row.icon >= 0 {
+            let _ = ImageList_Draw(system_icons(), row.icon, p.gdi(), x, (r.top + r.bottom - height) / 2, ILD_TRANSPARENT);
+        }
     }
     x + width + px(8)
 }
