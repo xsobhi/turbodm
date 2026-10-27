@@ -29,6 +29,10 @@
         {
           "version": "1.5.5",
           "update_link": "https://xsobhi.github.io/turbodm/firefox/turbodm-1.5.5.xpi"
+        },
+        {
+          "version": "1.5.6",
+          "update_link": "https://xsobhi.github.io/turbodm/firefox/turbodm-1.5.6.xpi"
         }
       ]
     }
