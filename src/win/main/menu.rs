@@ -8,7 +8,7 @@ use std::path::Path;
 use std::rc::Rc;
 use turbodm::engine::Status;
 use windows::Win32::Foundation::{HWND, POINT};
-use windows::Win32::UI::Input::KeyboardAndMouse::{VK_DELETE, VK_F5};
+use windows::Win32::UI::Input::KeyboardAndMouse::{VK_DELETE, VK_F5, VK_SPACE};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -22,7 +22,7 @@ pub enum Cmd {
     ToggleCategories, ToggleToolbar, ToggleProgress, ToggleComplete,
     SortName, SortSize, SortStatus, SortSpeed, SortLeft, SortAdded,
     GitHub, Report, MenuTasks, MenuFile, MenuDownloads, MenuView, MenuHelp,
-    AddTorrent, AddVideo, CompleteWindow, YouTube, ToggleToolbarText,
+    AddTorrent, AddVideo, CompleteWindow, YouTube, ToggleToolbarText, PauseResume,
 }
 
 pub const ALL: &[Cmd] = &[Cmd::Add, Cmd::Resume, Cmd::Pause, Cmd::ResumeAll, Cmd::PauseAll, Cmd::Remove,
@@ -34,7 +34,7 @@ pub const ALL: &[Cmd] = &[Cmd::Add, Cmd::Resume, Cmd::Pause, Cmd::ResumeAll, Cmd
     Cmd::ToggleCategories, Cmd::ToggleToolbar, Cmd::ToggleProgress, Cmd::ToggleComplete,
     Cmd::SortName, Cmd::SortSize, Cmd::SortStatus, Cmd::SortSpeed, Cmd::SortLeft, Cmd::SortAdded,
     Cmd::GitHub, Cmd::Report, Cmd::MenuTasks, Cmd::MenuFile, Cmd::MenuDownloads, Cmd::MenuView, Cmd::MenuHelp,
-    Cmd::AddTorrent, Cmd::AddVideo, Cmd::CompleteWindow, Cmd::YouTube, Cmd::ToggleToolbarText];
+    Cmd::AddTorrent, Cmd::AddVideo, Cmd::CompleteWindow, Cmd::YouTube, Cmd::ToggleToolbarText, Cmd::PauseResume];
 
 /// The speed limiter's choices: (command, KiB/s, its name).
 const SPEEDS: [(Cmd, u64, &str); 7] = [(Cmd::Speed0, 0, "&No limit"), (Cmd::Speed256, 256, "256 KB/s"),
@@ -93,7 +93,8 @@ pub fn bar_menu(app: &Rc<App>, index: usize) -> Vec<popup::Item> {
                   Do(Cmd::CopyUrl, "&Copy address", any), Line,
                   Do(Cmd::Details, "&Properties (progress details)\tCtrl+I", any), Line,
                   Do(Cmd::Remove, "D&elete...\tDel", any), Do(Cmd::DeleteFile, "Delete with &file...", any)],
-        2 => vec![Do(Cmd::Resume, "&Resume\tCtrl+R", any), Do(Cmd::Pause, "&Pause\tCtrl+P", any), Line,
+        2 => vec![Do(Cmd::Resume, "&Resume\tCtrl+R", any), Do(Cmd::Pause, "&Pause\tCtrl+P", any),
+                  Do(Cmd::PauseResume, "Pause &or resume\tSpace", any), Line,
                   Do(Cmd::ResumeAll, "Resume a&ll\tF5", true), Do(Cmd::PauseAll, "Pa&use all", true),
                   Do(Cmd::ClearDone, "Delete all &completed (from the list)", true), Line,
                   Do(Cmd::Find, "&Find...\tCtrl+F", true),
@@ -138,6 +139,7 @@ pub fn shortcuts() -> HACCEL {
         key(ctrl, 0xBC, Cmd::Settings), // Ctrl+, (VK_OEM_COMMA)
         key(ctrl, b'F' as u16, Cmd::Find),
         key(FVIRTKEY, VK_DELETE.0, Cmd::Remove), key(FVIRTKEY, VK_F5.0, Cmd::ResumeAll),
+        key(FVIRTKEY, VK_SPACE.0, Cmd::PauseResume),
         key(alt, b'T' as u16, Cmd::MenuTasks), key(alt, b'F' as u16, Cmd::MenuFile), key(alt, b'D' as u16, Cmd::MenuDownloads),
         key(alt, b'V' as u16, Cmd::MenuView), key(alt, b'H' as u16, Cmd::MenuHelp)];
     // SAFETY: a table built from our array
@@ -164,6 +166,12 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
             }
         }),
         Cmd::Pause => selected().iter().for_each(|id| app.manager.pause(id)),
+        // Space: pause the selected downloads if any is under way (or waiting its turn), else resume them
+        Cmd::PauseResume => {
+            let busy = selected().iter().filter_map(|id| app.manager.get(id))
+                .any(|s| s.status.is_active() || s.status == Status::Queued);
+            run(app, if busy { Cmd::Pause } else { Cmd::Resume });
+        }
         Cmd::ResumeAll => app.manager.resume_all(),
         Cmd::PauseAll => app.manager.pause_all(),
         Cmd::Remove => dialogs::confirm_delete(app, selected(), false), // (asks, with "Also delete the files")

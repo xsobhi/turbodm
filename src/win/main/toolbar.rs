@@ -14,8 +14,8 @@ use windows::Win32::Foundation::{HWND, RECT};
 const BUTTONS: [Option<(Picture, Cmd, &str, &str)>; 12] = [
     Some((pic::ADD, Cmd::Add, "Add URL", "Add a download (Ctrl+N)")),
     None,
-    Some((pic::RESUME, Cmd::Resume, "Resume", "Resume selected (Ctrl+R)")),
-    Some((pic::PAUSE, Cmd::Pause, "Pause", "Pause selected (Ctrl+P)")),
+    Some((pic::RESUME, Cmd::Resume, "Resume", "Resume selected (Ctrl+R; Space pauses or resumes)")),
+    Some((pic::PAUSE, Cmd::Pause, "Pause", "Pause selected (Ctrl+P; Space pauses or resumes)")),
     Some((pic::RESUME_ALL, Cmd::ResumeAll, "Resume all", "Resume every unfinished download (F5)")),
     Some((pic::PAUSE_ALL, Cmd::PauseAll, "Pause all", "Pause every download")),
     None,
