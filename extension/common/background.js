@@ -5,7 +5,7 @@
 
 const api = globalThis.browser ?? globalThis.chrome;
 const HOST = "com.xsobhi.turbodm";
-const DEFAULTS = { enabled: true, minSizeKB: 0, skipHosts: "" };
+const DEFAULTS = { enabled: true, minSizeKB: 0, skipHosts: "", sortFolders: true };
 
 async function getSettings() {
   return { ...DEFAULTS, ...(await api.storage.local.get(DEFAULTS)) };
@@ -105,6 +105,27 @@ async function pageOf(item) {
   }
 }
 
+// The folders TurboDM sorts its downloads into (src/categories.rs). What the browser saves itself
+// (files a page makes, like WhatsApp Web's; or when TurboDM can't be reached) goes into the same
+// ones, inside the browser's download folder: Chrome, Edge and Brave only (popup: sortFolders).
+const CATEGORIES = {
+  Compressed: ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst", "lz", "iso", "img"],
+  Documents: ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "txt", "rtf", "epub", "csv",
+              "md", "djvu"],
+  Music: ["mp3", "flac", "wav", "aac", "ogg", "opus", "m4a", "wma", "alac", "aiff"],
+  Video: ["mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v", "ts", "mpg", "mpeg", "3gp"],
+  Programs: ["deb", "rpm", "appimage", "flatpakref", "snap", "exe", "msi", "sh", "run", "apk", "dmg", "pkg", "jar"],
+  Images: ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "tif", "tiff", "psd"],
+};
+
+// "Images/cat.png" for a file the browser keeps, or nothing (no such folder for it, or turned off)
+function sortedName(filename, settings) {
+  const name = basename(filename);
+  const ext = (name.match(/\.([^.]+)$/) || [])[1];
+  const folder = ext && Object.keys(CATEGORIES).find((c) => CATEGORIES[c].includes(ext.toLowerCase()));
+  return settings.sortFolders && folder ? { filename: `${folder}/${name}`, conflictAction: "uniquify" } : null;
+}
+
 function wanted(url, size, settings) {
   if (!settings.enabled || !/^https?:/i.test(url) || isSkippedHost(url, settings)) return false;
   return !(settings.minSizeKB > 0 && size > 0 && size < settings.minSizeKB * 1024);
@@ -125,19 +146,27 @@ const BEFORE_SAVE_AS = Boolean(api.downloads.onDeterminingFilename);
 if (BEFORE_SAVE_AS) {
   api.downloads.onDeterminingFilename.addListener((item, suggest) => {
     const url = item.finalUrl || item.url;
-    if (!/^https?:/i.test(url)) return; // blob:, data:: the browser's own business
     (async () => {
       let accepted = false;
+      const settings = await getSettings();
+      const rest = await resting(); // (the full extension decides, and sorts)
       try {
-        if (!(await resting()) && wanted(url, item.totalBytes || item.fileSize, await getSettings())) {
+        // (blob:, data:: made by the page, not a link TurboDM can download: the browser's to save)
+        if (/^https?:/i.test(url) && !rest && wanted(url, item.totalBytes || item.fileSize, settings)) {
           accepted = await handOff({ url, filename: basename(item.filename), referrer: await pageOf(item),
                                      fileSize: item.totalBytes || item.fileSize });
         }
       } catch (err) {
         console.warn("TurboDM is not reachable, keeping the browser download:", err);
       }
-      if (accepted) await discard(item.id);
-      else suggest(); // carry on as usual
+      if (accepted) {
+        await discard(item.id);
+        return;
+      }
+      // the browser keeps it: into the folder for its kind, as TurboDM would, or as it is
+      const sorted = rest ? null : sortedName(item.filename, settings);
+      if (sorted) suggest(sorted);
+      else suggest();
     })();
     return true; // answering asynchronously
   });

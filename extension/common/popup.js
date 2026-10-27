@@ -2,7 +2,7 @@
 
 const api = globalThis.browser ?? globalThis.chrome;
 const HOST = "com.xsobhi.turbodm";
-const DEFAULTS = { enabled: true, videoButton: true, minSizeKB: 0, skipHosts: "" };
+const DEFAULTS = { enabled: true, videoButton: true, minSizeKB: 0, skipHosts: "", sortFolders: true };
 const $ = (id) => document.getElementById(id);
 
 async function showStatus() {
@@ -23,6 +23,9 @@ async function load() {
   const settings = { ...DEFAULTS, ...(await api.storage.local.get(DEFAULTS)) };
   $("enabled").checked = settings.enabled;
   $("videoButton").checked = settings.videoButton;
+  $("sortFolders").checked = settings.sortFolders;
+  // (only Chrome, Edge and Brave let it choose where the browser saves a file)
+  $("sortRow").hidden = !(api.downloads && api.downloads.onDeterminingFilename);
   $("minSizeKB").value = settings.minSizeKB;
   $("skipHosts").value = settings.skipHosts;
 }
@@ -31,12 +34,13 @@ function save() {
   api.storage.local.set({
     enabled: $("enabled").checked,
     videoButton: $("videoButton").checked,
+    sortFolders: $("sortFolders").checked,
     minSizeKB: Math.max(0, parseInt($("minSizeKB").value, 10) || 0),
     skipHosts: $("skipHosts").value.trim(),
   });
 }
 
-for (const id of ["enabled", "videoButton", "minSizeKB", "skipHosts"]) {
+for (const id of ["enabled", "videoButton", "sortFolders", "minSizeKB", "skipHosts"]) {
   $(id).addEventListener("change", save);
 }
 
