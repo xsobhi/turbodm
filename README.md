@@ -1,4 +1,30 @@
+<div align="center">
+
+<img src="data/turbodm.svg" width="96" height="96" alt="TurboDM's icon">
+
 # TurboDM
+
+**Fast, IDM-style downloads on Linux and Windows: up to 32 connections, resume after reboots, your browser's cookies.**
+
+[![Latest release](https://img.shields.io/github/v/release/xsobhi/turbodm?label=release&color=35a854)](https://github.com/xsobhi/turbodm/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/xsobhi/turbodm/total?color=35a854)](https://github.com/xsobhi/turbodm/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-35a854)](LICENSE)
+[![Chrome Web Store users](https://img.shields.io/chrome-web-store/users/enaaoegoakgmcdbhepcoflfmpeodipob?label=Chrome%20Web%20Store%20users&color=35a854)](https://chromewebstore.google.com/detail/enaaoegoakgmcdbhepcoflfmpeodipob)
+[![Written in Rust](https://img.shields.io/badge/written%20in-Rust-b7410e?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![Platforms: Linux | Windows](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows-35a854)](#install)
+
+**[Download](https://github.com/xsobhi/turbodm/releases/latest)** &nbsp;·&nbsp;
+**[Install with apt](#with-apt-ubuntu-mint-debian)** &nbsp;·&nbsp;
+**[Add to Chrome](https://chromewebstore.google.com/detail/enaaoegoakgmcdbhepcoflfmpeodipob)**<br>
+<sub>The Chrome Web Store extension also works in Brave, Edge and Vivaldi (YouTube aside, see
+<a href="#browser-extension">Browser extension</a>); Firefox's signed add-on comes with TurboDM.</sub>
+
+<img src="docs/demo.gif" alt="TurboDM on Linux: a link is added, Start download is pressed, and 16 connections fill in the file">
+
+<sub>TurboDM 1.12.1 on Linux (GTK4, Linux Mint's Mint-Y theme): a real-time recording of a link being
+added and downloaded over 16 connections.</sub>
+
+</div>
 
 A fast, multi-connection download manager for Linux and Windows — in the spirit of Internet Download Manager —
 written in Rust with a native interface on each system (GTK4 on Linux, Win32 on Windows) that looks
@@ -21,7 +47,7 @@ work while you're logged in keep working.
 
 </details>
 
-*(Screenshots from Windows 10.)*
+*(Screenshots from Windows 10; the recording at the top is from Linux.)*
 
 ## Features
 
