@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 pub async fn run(task: Arc<Task>, shared: Arc<Shared>, cancel: CancellationToken) {
     let outcome = drive(&task, &shared, &cancel).await;
     task.video.stopped();
+    task.set_joining(None);
     let mut info = task.info.lock().unwrap();
     match outcome {
         Ok(true) => {}

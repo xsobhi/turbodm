@@ -21,6 +21,7 @@ pub async fn run(task: Arc<Task>, shared: Arc<Shared>, cancel: CancellationToken
         Ok(()) => Ok(false),
         Err(msg) => Err(msg),
     };
+    task.set_joining(None);
     let mut info = task.info.lock().unwrap();
     match outcome {
         Ok(true) => {
@@ -127,6 +128,15 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
     if !segments.all_finished() {
         return Err("Download stopped unexpectedly".into());
     }
+    // every part is in: put together into the finished file (the download window says so). Each
+    // connection wrote its part straight into place, so what's left is getting all of it onto
+    // the disk (Windows keeps what was written in memory a while: gigabytes, from a fast
+    // connection), closing the file and giving it its name
+    task.set_joining(Some(1.0));
+    let file = ctx.file.clone();
+    drop(ctx);
+    // (a disk that can't be asked, as some network ones, has it written all the same)
+    let _ = tokio::task::spawn_blocking(move || file.sync_all()).await;
     let mut info = task.info.lock().unwrap(); // its name/folder now, not when it started
     let path = info.path();
     let final_path = if path.exists() { unique_path(&path) } else { path.clone() };

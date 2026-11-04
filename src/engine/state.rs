@@ -87,7 +87,9 @@ pub struct Snapshot {
     pub completed: Option<u64>,
     pub content_type: Option<String>, // as the server said ("text/html": a web page)
     pub video: Option<String>, // a video from a web page: its quality ("720p MP4")
-    pub activity: Option<&'static str>, // what it's doing besides downloading ("Joining video and sound…")
+    pub activity: Option<&'static str>, // what it's doing besides downloading ("Putting the video and sound together…")
+    /// Its parts all in, being put together into its file: how far (0 to 1).
+    pub joining: Option<f64>,
     pub by_ytdlp: bool, // a video yt-dlp downloads itself: its segments are its parts, not connections
     /// A torrent's own numbers (peers, files…); None for other downloads.
     pub torrent: Option<TorrentView>,
@@ -149,6 +151,7 @@ pub fn snapshot(task: &Task) -> Snapshot {
         content_type: info.content_type.clone(),
         video: info.video.as_ref().map(|v| v.quality.clone()),
         activity: task.video.activity(),
+        joining: task.joining().filter(|_| info.status.is_active()),
         by_ytdlp: info.video.as_ref().is_some_and(|v| v.by_ytdlp),
         torrent,
         missing: info.status == Status::Completed && task.missing.load(std::sync::atomic::Ordering::Relaxed),

@@ -4,7 +4,7 @@
 use super::App;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use windows::core::{w, HSTRING, PCWSTR};
+use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER,
                                   COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE};
@@ -12,9 +12,19 @@ use windows::Win32::System::DataExchange::*;
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
 use windows::Win32::UI::Shell::*;
-use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+use windows::Win32::UI::WindowsAndMessaging::{AllowSetForegroundWindow, ASFW_ANY, SW_SHOWNORMAL};
 
 const CF_UNICODETEXT: u32 = 13;
+
+/// Let what's about to open (a program, Explorer) come to the front. Windows lets only the
+/// program in front bring a window forward: TurboDM is at the click, but not a moment later once
+/// its dialog has closed; what it opened then came up behind the other windows, or (the folder
+/// already open in Explorer, the player already running) only flashed on the taskbar. So it's
+/// called at the click, before the dialog goes.
+fn let_it_come_forward() {
+    // SAFETY: plain call
+    unsafe { let _ = AllowSetForegroundWindow(ASFW_ANY); }
+}
 
 /// Windows' shell calls return once the other program has started (it can take a second or
 /// more): they run on a thread of their own, so no window waits for them.
@@ -29,11 +39,28 @@ fn in_background(action: impl FnOnce() + Send + 'static) {
     });
 }
 
-/// Open with its default program, like a double-click in Explorer.
+/// Open with its default program, like a double-click in Explorer: the file's own default action
+/// (not always "open": a player's may be "play", and a file with no "open" didn't open at all),
+/// in its folder, and waited for to the end (SEE_MASK_NOASYNC). Without that, a program Windows
+/// starts through COM (Photos, Media Player, the Store's apps) was sometimes dropped as this
+/// short-lived thread ended, and nothing opened.
 pub fn open(path: &Path) {
-    let path = HSTRING::from(path.as_os_str());
-    // SAFETY: plain shell call
-    in_background(move || unsafe { ShellExecuteW(None, w!("open"), &path, PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL); });
+    let_it_come_forward();
+    let file = HSTRING::from(path.as_os_str());
+    let folder = path.parent().map(|p| HSTRING::from(p.as_os_str()));
+    in_background(move || {
+        let mut info = SHELLEXECUTEINFOW {
+            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_NOASYNC,
+            lpFile: PCWSTR(file.as_ptr()),
+            lpDirectory: folder.as_ref().map_or(PCWSTR::null(), |f| PCWSTR(f.as_ptr())),
+            nShow: SW_SHOWNORMAL.0,
+            ..Default::default()
+        };
+        // SAFETY: the strings outlive the call; a failure shows Windows' own message ("How do
+        // you want to open this file?")
+        unsafe { let _ = ShellExecuteExW(&mut info); }
+    });
 }
 
 pub fn open_download(app: &Rc<App>, id: &str) {
@@ -68,13 +95,23 @@ pub fn show_download(app: &Rc<App>, id: &str) {
     if !s.path.exists() {
         return open(&s.directory);
     }
-    let path = HSTRING::from(s.path.as_os_str());
-    // SAFETY: an item list for the path, freed after use
-    in_background(move || unsafe {
-        let item = ILCreateFromPathW(&path);
-        if !item.is_null() {
-            let _ = SHOpenFolderAndSelectItems(item, None, 0);
-            ILFree(Some(item));
+    let_it_come_forward();
+    let path = s.path;
+    in_background(move || {
+        // SAFETY: an item list for the path, freed after use
+        let shown = unsafe {
+            let item = ILCreateFromPathW(&HSTRING::from(path.as_os_str()));
+            !item.is_null() && {
+                let shown = SHOpenFolderAndSelectItems(item, None, 0).is_ok();
+                ILFree(Some(item));
+                shown
+            }
+        };
+        if !shown {
+            // it fails now and then with the file right there (Chrome falls back too): Explorer
+            // is asked directly, which selects it as well
+            use std::os::windows::process::CommandExt;
+            let _ = std::process::Command::new("explorer.exe").raw_arg(format!("/select,\"{}\"", path.display())).spawn();
         }
     });
 }
@@ -102,9 +139,22 @@ pub fn drag_files(owner: HWND, paths: &[PathBuf]) {
     }
 }
 
-/// Windows' "Open with" chooser.
+/// Windows' "Open with" chooser ("How do you want to open this file?"), as Explorer's Open with
+/// shows it; the program picked opens the file. (rundll32's OpenAs_RunDLL, used before, shows
+/// nothing on today's Windows 10 and 11.) It waits until a program is picked, on its own thread.
 pub fn open_with(path: &Path) {
-    let _ = std::process::Command::new("rundll32.exe").arg("shell32.dll,OpenAs_RunDLL").arg(path).spawn();
+    let_it_come_forward();
+    let file = HSTRING::from(path.as_os_str());
+    in_background(move || {
+        let info = OPENASINFO {
+            pcszFile: PCWSTR(file.as_ptr()),
+            pcszClass: PCWSTR::null(),
+            // offer "Always use this app", and open the file with the one picked
+            oaifInFlags: OPEN_AS_INFO_FLAGS(OAIF_ALLOW_REGISTRATION.0 | OAIF_REGISTER_EXT.0 | OAIF_EXEC.0),
+        };
+        // SAFETY: the string outlives the call
+        unsafe { let _ = SHOpenWithDialog(None, &info); }
+    });
 }
 
 /// Windows' folder picker, starting at `initial`.

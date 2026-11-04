@@ -10,7 +10,7 @@ use details::Details;
 use gtk::prelude::*;
 use std::rc::Rc;
 use turbodm::engine::{Manager, Status};
-use turbodm::text::{eta_text, rate_text, status_line, status_text};
+use turbodm::text::{eta_text, joining_text, rate_text, status_line, status_text};
 use turbodm::util::human_size;
 
 pub struct ProgressWindow {
@@ -143,14 +143,17 @@ impl ProgressWindow {
                 label.set_text(&value);
             }
         }
-        let title = match s.progress {
-            Some(p) => format!("{:.0}% {}", p * 100.0, s.filename),
-            None => s.filename.clone(),
+        // its parts all in and being put together: the same window, saying so, its bar how far
+        // that is; then it closes and "Download complete" opens
+        let title = match (s.joining, s.progress) {
+            (Some(_), _) => format!("{} \u{2013} {}", joining_text(&s).trim_end_matches('…'), s.filename),
+            (None, Some(p)) => format!("{:.0}% {}", p * 100.0, s.filename),
+            (None, None) => s.filename.clone(),
         };
         if self.window.title().as_deref() != Some(title.as_str()) {
             self.window.set_title(Some(&title));
         }
-        let fraction = s.progress.unwrap_or(0.0);
+        let fraction = s.joining.or(s.progress).unwrap_or(0.0);
         if self.overall.fraction() != fraction {
             self.overall.set_fraction(fraction);
         }
@@ -158,7 +161,7 @@ impl ProgressWindow {
         self.details.update(&s);
         let running = s.status.is_active() || s.status == Status::Queued;
         self.toggle.set_label(if running { "Pause" } else { "Resume" });
-        self.toggle.set_sensitive(s.status != Status::Completed);
+        self.toggle.set_sensitive(s.status != Status::Completed && s.joining.is_none()); // (nothing left to pause)
         true
     }
 }

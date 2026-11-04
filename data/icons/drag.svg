@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="64" height="64">
+  <!-- The "Download complete" dialog's drag square: the file, with big "move" arrows over its
+       corner, bold enough to read at 16 px (drawn for TurboDM; data/icons/drag.png is this at
+       64 px, made with resvg). -->
+  <defs>
+    <linearGradient id="arrows" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffa65e"/>
+      <stop offset="1" stop-color="#e35e16"/>
+    </linearGradient>
+  </defs>
+  <!-- the page, its corner folded -->
+  <path d="M3.8 1.5H10.5L14.5 5.5V16.2A1.3 1.3 0 0 1 13.2 17.5H3.8A1.3 1.3 0 0 1 2.5 16.2V2.8A1.3 1.3 0 0 1 3.8 1.5Z"
+        fill="#ffffff" stroke="#6b737d" stroke-width="1.4" stroke-linejoin="round"/>
+  <path d="M10.5 1.5V4.5A1 1 0 0 0 11.5 5.5H14.5" fill="#e3e7ec" stroke="#6b737d" stroke-width="1.4" stroke-linejoin="round"/>
+  <path d="M5 8.5h4.5M5 11.5h3" stroke="#a3abb5" stroke-width="1.4" stroke-linecap="round"/>
+  <!-- the four "move" arrows, on a white edge so they stand out from the page -->
+  <path d="M16 8.5L19 11.5H17.3V14.7H20.5V13L23.5 16L20.5 19V17.3H17.3V20.5H19L16 23.5L13 20.5H14.7V17.3H11.5V19L8.5 16L11.5 13V14.7H14.7V11.5H13Z"
+        fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M16 8.5L19 11.5H17.3V14.7H20.5V13L23.5 16L20.5 19V17.3H17.3V20.5H19L16 23.5L13 20.5H14.7V17.3H11.5V19L8.5 16L11.5 13V14.7H14.7V11.5H13Z"
+        fill="url(#arrows)" stroke="#b8480e" stroke-width="0.7" stroke-linejoin="round"/>
+</svg>
