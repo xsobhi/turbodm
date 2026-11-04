@@ -24,6 +24,7 @@ pub(super) async fn run(task: &Task, shared: &Shared, cancel: &CancellationToken
     let (mut failures, mut updated) = (0, false);
     loop {
         task.video.set_activity(None);
+        task.set_joining(None);
         let error = match run_once(task, shared, &exe, cancel).await {
             Ok(done) => return Ok(done),
             Err(_) if cancel.is_cancelled() => return Ok(None),
@@ -107,7 +108,11 @@ async fn run_once(task: &Task, shared: &Shared, exe: &Path, cancel: &Cancellatio
                             info.size = Some(total);
                         }
                     }
-                    Line::Merging => task.video.set_activity(Some("Joining video and sound…")),
+                    Line::Merging => {
+                        // (how far yt-dlp's FFmpeg is, it doesn't say)
+                        task.video.set_activity(Some("Putting the video and sound together…"));
+                        task.set_joining(Some(1.0));
+                    }
                     Line::File(path) => file = Some(path),
                     Line::Other => {}
                 },

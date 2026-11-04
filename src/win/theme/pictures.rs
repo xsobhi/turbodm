@@ -46,6 +46,8 @@ pub const COMPRESSED: Picture = picture!("compressed");
 pub const PROGRAMS: Picture = picture!("programs");
 pub const IMAGES: Picture = picture!("images");
 pub const OTHER: Picture = picture!("other");
+/// The "Download complete" dialog's drag square: a file with the "move" arrows (data/icons/drag.svg).
+pub const DRAG: Picture = picture!("drag");
 
 /// Screenshots for the guides (data/guide/), taken at twice the size they're shown at.
 pub const DEVELOPER_MODE: Picture = include_bytes!("../../../data/guide/developer-mode.png");

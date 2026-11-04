@@ -6,11 +6,21 @@ use crate::engine::torrent::{is_magnet, is_torrent};
 use crate::engine::{Snapshot, Status};
 use crate::util::{filename_from_url, human_eta, human_size, human_speed};
 
+/// What a download says while its parts, all in, are put together into its file: "Putting the
+/// parts together…" (a video's own words: "Putting the video and sound together…").
+pub fn joining_text(s: &Snapshot) -> &'static str {
+    s.activity.unwrap_or("Putting the parts together…")
+}
+
 /// A download's status column: progress while it runs, why it stopped otherwise.
 pub fn status_text(snap: &Snapshot) -> String {
+    if let Some(done) = snap.joining {
+        let doing = joining_text(snap);
+        return if done < 1.0 { format!("{doing} {:.0}%", done * 100.0) } else { doing.into() };
+    }
     let pct = snap.progress.map(|p| format!("{:.1}%", p * 100.0));
     match (snap.status, snap.activity) {
-        (status, Some(doing)) if status.is_active() => doing.into(), // a video: "Joining video and sound…"
+        (status, Some(doing)) if status.is_active() => doing.into(), // a video: "Looking for the video…"
         (Status::Downloading, _) => pct.unwrap_or_else(|| human_size(Some(snap.downloaded))),
         (Status::Paused, _) => pct.map_or("Paused".into(), |p| format!("Paused · {p}")),
         (Status::Error, _) => format!("Error: {}", snap.error.as_deref().unwrap_or("unknown")),
@@ -25,7 +35,8 @@ pub fn status_text(snap: &Snapshot) -> String {
 pub fn status_line(s: &Snapshot) -> String {
     match (s.status, &s.error, s.activity) {
         (Status::Error, Some(e), _) => format!("Error: {e}"),
-        (status, _, Some(doing)) if status.is_active() => doing.into(), // a video: "Joining video and sound…"
+        _ if s.joining.is_some() => joining_text(s).into(),
+        (status, _, Some(doing)) if status.is_active() => doing.into(), // a video: "Looking for the video…"
         (Status::Downloading, ..) if s.torrent.is_some() => "Receiving data from peers…".into(),
         (Status::Downloading, ..) => "Receiving data…".into(),
         (Status::Connecting, ..) if s.torrent.is_some() => torrent_stage(s).into(),
@@ -67,6 +78,9 @@ pub fn torrent_info(s: &Snapshot) -> String {
 /// The transfer rate. While downloading it always says something: "0 B/s" when nothing is
 /// arriving at the moment, instead of a blank that looks like the download is stuck.
 pub fn rate_text(s: &Snapshot) -> String {
+    if s.joining.is_some() {
+        return String::new(); // all in: nothing is arriving any more, nor should it
+    }
     match (s.status, human_speed(s.speed)) {
         (Status::Downloading, speed) if speed.is_empty() => "0 B/s".into(),
         (_, speed) => speed,
@@ -75,6 +89,9 @@ pub fn rate_text(s: &Snapshot) -> String {
 
 /// Time left; while downloading, "Unknown" until it can be worked out.
 pub fn eta_text(s: &Snapshot) -> String {
+    if s.joining.is_some() {
+        return String::new();
+    }
     match (s.status, human_eta(s.eta)) {
         (Status::Downloading, eta) if eta.is_empty() => "Unknown".into(),
         (_, eta) => eta,

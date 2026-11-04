@@ -135,6 +135,8 @@ pub struct Task {
     /// Finished, but its file isn't where it was saved any more: moved or deleted outside
     /// TurboDM (`Manager::check_files` looks now and then).
     pub missing: AtomicBool,
+    /// Its parts all in, being put together into its finished file (not saved): how far, 0 to 1.
+    joining: Mutex<Option<f64>>,
     samples: Mutex<VecDeque<(Instant, u64)>>,
     speed: Mutex<f64>,
 }
@@ -154,6 +156,7 @@ impl Task {
             video: video::Live::default(),
             torrent: Mutex::new(TorrentView::default()),
             missing: AtomicBool::new(false),
+            joining: Mutex::new(None),
             samples: Mutex::new(VecDeque::new()),
             speed: Mutex::new(0.0),
         })
@@ -165,6 +168,16 @@ impl Task {
 
     pub fn set_status(&self, status: Status) {
         self.info.lock().unwrap().status = status;
+    }
+
+    /// Its parts are being put together into its file, `done` of the way (0 to 1; 1 when how far
+    /// can't be told); None once they aren't.
+    pub fn set_joining(&self, done: Option<f64>) {
+        *self.joining.lock().unwrap() = done.map(|d| d.clamp(0.0, 1.0));
+    }
+
+    pub fn joining(&self) -> Option<f64> {
+        *self.joining.lock().unwrap()
     }
 
     pub fn is_torrent(&self) -> bool {

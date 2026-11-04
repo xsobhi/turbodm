@@ -100,7 +100,9 @@ work while you're logged in keep working.
   browser or the app): *Download status* with a live map of every connection's segment and a
   per-connection list, a *Speed limiter* for just that download, and *Options on completion* —
   open the file, or put the computer to sleep / shut it down (after a 30-second countdown you can
-  cancel). It ends with a **Download complete** dialog: *Open*, *Open with…*, *Open folder*.
+  cancel). Once every part is in, the same window says it's *putting the parts together* (a
+  video's video and sound, joined by FFmpeg, with how far it is), then a **Download complete**
+  dialog follows: *Open*, *Open with…*, *Open folder* and *Close*, the file to drag anywhere.
 - Optional **clipboard catching** of download links, **desktop notifications**, **tray icon**
   (on Linux panels with a tray; otherwise closing the window minimizes it while downloading).
 - Servers that reject a browser user-agent (anti-bot checks comparing it with the TLS fingerprint)

@@ -1,12 +1,13 @@
 //! "Download complete": what was downloaded and where it is, and what to do next. The file on
 //! white, as Explorer shows files (its big icon, its name, its size and kind); the choices in a
-//! grey bar at the bottom, as Windows' and GTK's dialogs have them, Open first among them. A small
-//! square at the bottom right, with the "move" pointer in it, drags the file out, as IDM's does:
-//! into a folder, a chat, anywhere files go.
+//! grey bar at the bottom, on two rows as IDM's: Open, Open with… and Open folder on the left
+//! with Close on the right; under them, on a row half as tall, "Don't show this dialog again", and
+//! at the right a small square (a file with the "move" arrows) that drags the file out: into a
+//! folder, a chat, anywhere files go.
 
-use super::theme::{self, Align, Font};
+use super::theme::{self, pictures, Align, Font};
 use super::wnd::canvas::{self, Mouse};
-use super::wnd::{self, is_checked, place, rect, Rows, Window};
+use super::wnd::{self, button_width, is_checked, place, rect, Window, FIELD};
 use super::{shell, App};
 use std::path::Path;
 use std::cell::Cell;
@@ -19,17 +20,19 @@ use windows::Win32::Graphics::Gdi::{DT_END_ELLIPSIS, DT_NOPREFIX, DT_PATH_ELLIPS
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
 use windows::Win32::UI::Controls::{IImageList, ImageList_Draw, HIMAGELIST, ILD_TRANSPARENT};
 use windows::Win32::UI::Shell::{SHGetFileInfoW, SHGetImageList, SHFILEINFOW, SHGFI_SYSICONINDEX, SHIL_EXTRALARGE};
-use windows::Win32::UI::WindowsAndMessaging::{DrawIconEx, LoadCursorW, DI_NORMAL, HICON, IDC_SIZEALL};
 use windows::Win32::UI::WindowsAndMessaging::IDCANCEL;
 
 /// Sizes, 96-DPI pixels: the window's width, its white part's height, the file's icon.
 const WIDTH: i32 = 560;
 const BODY: i32 = 186;
 const ICON: i32 = 48;
-const DRAG: (i32, i32) = (40, wnd::FIELD + 2); // the drag square, as tall as the buttons
+const ROW: i32 = (FIELD + 2) / 2; // the second row: half the buttons' height
+const DRAG: (i32, i32) = (24, ROW); // the drag square, small as IDM's
+const SIDE: i32 = 20; // the footer's margin, left and right
+const GAP: i32 = 8; // between buttons on a row
 
 pub fn open(app: &Rc<App>, snap: &Snapshot) {
-    let window = Window::dialog("Download complete", None, (WIDTH, BODY + 64), false);
+    let window = Window::dialog("Download complete", None, (WIDTH, BODY + 108), false);
     let big = icon_of(&snap.path, SHIL_EXTRALARGE);
     let (name, line) = (snap.filename.clone(), finished_line(snap));
     let header = window.canvas(move |p| {
@@ -42,7 +45,6 @@ pub fn open(app: &Rc<App>, snap: &Snapshot) {
         p.text(RECT { left, top: 0, right: p.rect.right, bottom: wnd::px(28) }, &name, Font::Title, theme::text(), Align::Left);
         p.text(RECT { left, top: wnd::px(28), right: p.rect.right, bottom: wnd::px(50) }, &line, Font::Body, theme::dim(), Align::Left);
     });
-    let drag = drag_box(&window, snap.path.clone());
     // where it is and where it came from, in a light card
     let rows = [("Saved to", snap.path.display().to_string()), ("From", snap.url.clone())];
     let card = window.canvas(move |p| {
@@ -57,14 +59,18 @@ pub fn open(app: &Rc<App>, snap: &Snapshot) {
             p.draw_text(r, value, Font::Body, theme::text(), cut | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
         }
     });
-    let again = window.checkbox("Don't show again", false, |_| {});
+    // (made in the order Tab goes through them.) What's opened is started first, while TurboDM is
+    // still in front so it can come to the front too, and the window goes at once after.
     let (path, w) = (snap.path.clone(), window.clone());
-    // (the window goes at once; the other program starts after)
-    let with = window.button("Open with…", move || { w.close(); shell::open_with(&path); });
+    let open = window.default_button("Open", move || { shell::open(&path); w.close(); });
+    let (path, w) = (snap.path.clone(), window.clone());
+    let with = window.button("Open with…", move || { shell::open_with(&path); w.close(); });
     let (a, id, w) = (app.clone(), snap.id.clone(), window.clone());
-    let folder = window.button("Open folder", move || { w.close(); shell::show_download(&a, &id); });
-    let (path, w) = (snap.path.clone(), window.clone());
-    let open = window.default_button("Open", move || { w.close(); shell::open(&path); });
+    let folder = window.button("Open folder", move || { shell::show_download(&a, &id); w.close(); });
+    let w = window.clone();
+    let close = window.button("Close", move || w.close());
+    let again = window.checkbox("Don't show this dialog again", false, |_| {});
+    let drag = drag_box(&window, snap.path.clone());
     let w = window.clone();
     window.on_command(IDCANCEL.0 as u16, move |_| w.close());
     let a = app.clone();
@@ -80,20 +86,29 @@ pub fn open(app: &Rc<App>, snap: &Snapshot) {
     place(header, 24, 24, WIDTH - 48, 52);
     place(card, 24, 96, WIDTH - 48, 70);
     window.set_surfaces(vec![(rect(0, 0, WIDTH, BODY), theme::view()), (rect(0, BODY, WIDTH, 1), theme::border())]);
-    // the buttons, and the drag square right of them, in the window's corner
-    place(drag, WIDTH - 20 - DRAG.0, BODY + 16, DRAG.0, DRAG.1);
+    // first row: Open, Open with…, Open folder from the left; Close against the right
+    let first = BODY + 16;
+    let mut x = SIDE;
+    for button in [open, with, folder] {
+        let width = button_width(button);
+        place(button, x, first, width, FIELD + 2);
+        x += width + GAP;
+    }
+    let width = button_width(close);
+    place(close, WIDTH - SIDE - width, first, width, FIELD + 2);
+    // second row, half as tall: the check box on the left, the drag square on the right
+    let second = first + FIELD + 2 + 12;
+    place(again, SIDE, second, 260, ROW);
+    place(drag, WIDTH - SIDE - DRAG.0, second, DRAG.0, DRAG.1);
     canvas::set_tips(drag, &[(RECT { left: 0, top: 0, right: wnd::px(DRAG.0), bottom: wnd::px(DRAG.1) },
                               "Drag the file to a folder, a chat\u{2026} anywhere files go".into())]);
-    let mut footer = Rows::new(20, BODY + 16, 0, WIDTH - 40 - DRAG.0 - 8);
-    place(again, 20, BODY + 18, 150, 28);
-    let bottom = footer.buttons(&[with, folder, open]);
-    wnd::set_client_height(window.hwnd(), bottom + 16);
+    wnd::set_client_height(window.hwnd(), second + DRAG.1 + 16);
     wnd::center(window.hwnd());
     window.show_in_front();
 }
 
-/// The drag square: Windows' own "move" pointer in it (what dragging looks like), as a button
-/// would look; pressed and moved, the file goes along with the mouse, to drop anywhere.
+/// The drag square: a small picture of a file with the "move" arrows over it (as IDM's has), as a
+/// button would look; pressed and moved, the file goes along with the mouse, to drop anywhere.
 fn drag_box(window: &Window, path: std::path::PathBuf) -> windows::Win32::Foundation::HWND {
     let hover = Rc::new(Cell::new(false));
     let h = hover.clone();
@@ -102,14 +117,7 @@ fn drag_box(window: &Window, path: std::path::PathBuf) -> windows::Win32::Founda
         let line = if h.get() { theme::accent() } else { theme::border() };
         let fill = if h.get() { theme::mix(theme::view(), theme::accent(), 0.12) } else { theme::view() };
         p.round(p.rect, wnd::px(theme::radius()), Some(fill), Some(line));
-        let size = wnd::px(26); // (the pointer's picture has room around its arrows)
-        // SAFETY: Windows' shared pointer, drawn into our canvas, centred
-        unsafe {
-            if let Ok(pointer) = LoadCursorW(None, IDC_SIZEALL) {
-                let _ = DrawIconEx(p.gdi(), (p.rect.right - size) / 2, (p.rect.bottom - size) / 2, HICON(pointer.0),
-                                   size, size, 0, None, DI_NORMAL);
-            }
-        }
+        p.picture(p.rect, pictures::DRAG, DRAG.1 - 2, false);
     });
     let owner = window.hwnd();
     canvas::on_mouse(hwnd, move |event| match event {

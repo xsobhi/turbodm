@@ -6,7 +6,7 @@ use super::super::App;
 use super::ProgressWindow;
 use std::rc::Rc;
 use turbodm::engine::{Manager, Status};
-use turbodm::text::{eta_text, peers_text, rate_text, status_line, status_text};
+use turbodm::text::{eta_text, joining_text, peers_text, rate_text, status_line, status_text};
 use turbodm::util::human_size;
 
 impl ProgressWindow {
@@ -39,16 +39,19 @@ impl ProgressWindow {
             (eta_text(&s), theme::text()),
             (resume, theme::text()),
         ]);
-        let title = match s.progress {
-            Some(p) => format!("{:.0}% {}", p * 100.0, s.filename),
-            None => s.filename.clone(),
+        // its parts all in and being put together: the same window, saying so, its bar how far
+        // that is; then it closes and "Download complete" opens (finish.rs)
+        let title = match (s.joining, s.progress) {
+            (Some(_), _) => format!("{} \u{2013} {}", joining_text(&s).trim_end_matches('…'), s.filename),
+            (None, Some(p)) => format!("{:.0}% {}", p * 100.0, s.filename),
+            (None, None) => s.filename.clone(),
         };
         self.window.set_title(&title);
-        self.bar.set(s.progress.unwrap_or(0.0), status_text(&s));
+        self.bar.set(s.joining.or(s.progress).unwrap_or(0.0), status_text(&s));
         self.details.update(&s);
         let running = s.status.is_active() || s.status == Status::Queued;
         set_text(self.toggle, if running { "Pause" } else { "Resume" });
-        enable(self.toggle, s.status != Status::Completed);
+        enable(self.toggle, s.status != Status::Completed && s.joining.is_none()); // (nothing left to pause)
         true
     }
 }

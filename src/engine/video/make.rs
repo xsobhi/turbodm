@@ -22,6 +22,7 @@ pub(super) async fn make(task: &Task, cancel: &CancellationToken) -> Result<Opti
     let target = dir.join(&name);
     let target = if target.exists() { unique_path(&target) } else { target };
     let output = job.output();
+    task.set_joining(Some(0.0)); // (the download window says the parts are being put together)
     let Some(ext) = output.ext() else {
         let part = parts.first().ok_or("Nothing was downloaded")?;
         std::fs::rename(part, &target).map_err(|e| format!("Cannot rename the file: {e}"))?;
@@ -38,7 +39,7 @@ pub(super) async fn make(task: &Task, cancel: &CancellationToken) -> Result<Opti
         task.video.set_activity(Some("Converting to MP3…"));
         command.args(["-vn", "-c:a", "libmp3lame", "-q:a", "2"]); // VBR, ~190 kbit/s
     } else {
-        task.video.set_activity(Some("Joining video and sound…"));
+        task.video.set_activity(Some("Putting the video and sound together…"));
         if parts.len() > 1 {
             command.args(["-map", "0:v:0", "-map", "1:a:0"]);
         }
@@ -58,14 +59,28 @@ pub(super) async fn make(task: &Task, cancel: &CancellationToken) -> Result<Opti
         }
         String::from_utf8_lossy(&text).into_owned()
     });
-    let status = tokio::select! {
-        status = running.child.wait() => status.map_err(|e| e.to_string())?,
-        _ = cancel.cancelled() => {
-            running.stop().await;
-            let _ = std::fs::remove_file(&temp);
-            return Ok(None);
+    // how far: the joined file grows to about the parts' size (copied, not re-encoded). An MP3 is
+    // made smaller than the sound it's made of, so how far it is isn't told: the bar stays full
+    let parts_size: u64 = parts.iter().filter_map(|p| std::fs::metadata(p).ok()).map(|m| m.len()).sum();
+    let measured = output != Output::Mp3 && parts_size > 0;
+    task.set_joining(Some(if measured { 0.0 } else { 1.0 }));
+    let mut look = tokio::time::interval(std::time::Duration::from_millis(250));
+    let status = loop {
+        tokio::select! {
+            status = running.child.wait() => break status.map_err(|e| e.to_string())?,
+            _ = cancel.cancelled() => {
+                running.stop().await;
+                let _ = std::fs::remove_file(&temp);
+                return Ok(None);
+            }
+            _ = look.tick(), if measured => {
+                let made = std::fs::metadata(&temp).map_or(0, |m| m.len());
+                // (not quite all until FFmpeg is done: it goes over the file again at the end)
+                task.set_joining(Some((made as f64 / parts_size as f64).min(0.99)));
+            }
         }
     };
+    task.set_joining(Some(1.0));
     task.video.set_activity(None);
     if !status.success() {
         let _ = std::fs::remove_file(&temp);
