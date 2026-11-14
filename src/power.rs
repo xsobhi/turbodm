@@ -1,6 +1,9 @@
 //! "When done": open the file, sleep or shut down (the UIs count down 30 seconds first).
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Power {
     #[default]
     Nothing = 0,

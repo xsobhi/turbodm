@@ -1,4 +1,5 @@
-//! "When done: sleep / shut down", with a 30-second countdown that can be cancelled.
+//! "When done: sleep / shut down" (a download's, or the scheduled queue's), with a 30-second
+//! countdown that can be cancelled.
 
 use super::wnd::{self, set_text, Rows, Window};
 use super::App;
@@ -8,13 +9,14 @@ use turbodm::power::{Power, COUNTDOWN_SECONDS};
 use windows::Win32::Foundation::LRESULT;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-pub fn countdown(app: &Rc<App>, power: Power, filename: &str) {
+/// `done` says what finished: "“a.zip” has finished downloading."
+pub fn countdown(app: &Rc<App>, power: Power, done: &str) {
     if power == Power::Nothing {
         return;
     }
     let (what, now) = if power == Power::Sleep { ("go to sleep", "Sleep now") } else { ("shut down", "Shut down now") };
     let others = app.manager.snapshot().iter().filter(|s| s.status.is_active()).count();
-    let mut detail = format!("\u{201c}{filename}\u{201d} has finished downloading.");
+    let mut detail = done.to_string();
     if others > 0 {
         detail.push_str(&format!(" {others} other download(s) will be paused and can be resumed later."));
     }

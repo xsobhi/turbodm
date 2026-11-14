@@ -36,7 +36,7 @@ fn completed(ctx: &Rc<Ctx>, snap: Snapshot) {
         if settings.show_complete_dialog && todo.power == Power::Nothing {
             complete_dialog(ctx, &snap);
         }
-        power::countdown(ctx, todo.power, &snap.filename);
+        power::countdown(ctx, todo.power, &format!("“{}” has finished downloading.", snap.filename));
         if settings.show_complete_dialog {
             return;
         }

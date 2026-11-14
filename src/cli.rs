@@ -29,6 +29,7 @@ pub fn get(args: &[String]) -> i32 {
         return 2;
     };
     settings.use_categories = false;
+    settings.schedule.start = false; // (the app's scheduler: not this one-off run's)
     let settings = settings.clamp();
     let connections = settings.connections;
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime");
@@ -95,6 +96,7 @@ pub fn video(args: &[String]) -> i32 {
         return 2;
     };
     settings.use_categories = false;
+    settings.schedule.start = false; // (the app's scheduler: not this one-off run's)
     let settings = settings.clamp();
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime");
     let client = turbodm::engine::http::build_client(Duration::from_secs(settings.timeout_secs));

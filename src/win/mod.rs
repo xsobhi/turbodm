@@ -14,6 +14,7 @@ mod power;
 mod progress;
 mod queue;
 mod refresh;
+mod scheduler;
 mod settings;
 mod shell;
 mod theme;
@@ -210,6 +211,12 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
     runtime.spawn(async move {
         while let Ok(snap) = events.recv().await {
             post(move |app| finish::on_status(app, snap));
+        }
+    });
+    let finished = manager.queue_finished(); // (Options → Scheduler: sleep or shut down then)
+    runtime.spawn(async move {
+        while let Ok(then) = finished.recv().await {
+            post(move |app| power::countdown(app, then, "The scheduled downloads have finished."));
         }
     });
     runtime.spawn(async move {

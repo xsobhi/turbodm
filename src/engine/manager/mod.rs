@@ -3,6 +3,7 @@
 mod confirm;
 mod control;
 mod names;
+mod scheduler;
 
 pub use confirm::Confirm;
 
@@ -12,6 +13,7 @@ use super::video::VideoJob;
 use super::torrent::{self, TorrentMeta};
 use super::{runner, Shared};
 use crate::config::Settings;
+use crate::power::Power;
 use crate::util::{filename_from_url, sanitize_filename};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -46,6 +48,7 @@ pub struct Manager {
     stopped: AtomicBool,
     next_id: AtomicU64,
     store: PathBuf,
+    finished: (async_channel::Sender<Power>, async_channel::Receiver<Power>), // a scheduled queue, done
 }
 
 impl Manager {
@@ -66,10 +69,12 @@ impl Manager {
             stopped: AtomicBool::new(false),
             next_id: AtomicU64::new(0),
             store,
+            finished: async_channel::unbounded(),
         });
         manager.claim_torrents();
         rt.spawn(manager.clone().monitor());
         rt.spawn(manager.clone().watch_files());
+        rt.spawn(manager.clone().scheduler());
         manager.schedule();
         if manager.settings().seed {
             manager.share_finished(true);

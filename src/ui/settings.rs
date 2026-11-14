@@ -1,5 +1,6 @@
-//! Preferences window; changes are applied and saved when it closes.
+//! Preferences window (General, Scheduler); changes are applied and saved when it closes.
 
+use super::scheduler::SchedulerPage;
 use super::Ctx;
 use gtk::prelude::*;
 use gtk::{gio, glib};
@@ -71,8 +72,12 @@ pub fn open(ctx: &Rc<Ctx>) {
         grid.attach(&gtk::Label::builder().label(*label).xalign(0.0).hexpand(true).build(), 0, y as i32, 1, 1);
         grid.attach(*widget, 1, y as i32, 1, 1);
     }
+    let scheduler = SchedulerPage::new(&s.schedule);
+    let pages = gtk::Notebook::new();
+    pages.append_page(&grid, Some(&gtk::Label::new(Some("General"))));
+    pages.append_page(&scheduler.body, Some(&gtk::Label::new(Some("Scheduler"))));
     let window = gtk::Window::builder().title("Preferences").modal(true)
-        .transient_for(&ctx.win.window).child(&grid).build();
+        .transient_for(&ctx.win.window).child(&pages).build();
 
     let (f, w) = (folder.clone(), window.clone());
     folder_btn.connect_clicked(move |btn| {
@@ -107,6 +112,7 @@ pub fn open(ctx: &Rc<Ctx>) {
         s.clipboard_monitor = clipboard.is_active();
         s.auto_resume = resume.is_active();
         s.check_updates = updates.is_active();
+        s.schedule = scheduler.chosen();
         c.manager.update_settings(s.clamp());
         glib::Propagation::Proceed
     });
