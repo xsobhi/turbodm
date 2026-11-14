@@ -43,7 +43,7 @@ fn add(hwnd: HWND) {
                                 GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR)
             .map(|h| HICON(h.0)).unwrap_or_default();
     }
-    copy(&mut icon.szTip, "TurboDM");
+    copy(&mut icon.szTip, turbodm::config::APP_NAME);
     // SAFETY: registers our icon with the notification area
     unsafe { let _ = Shell_NotifyIconW(NIM_ADD, &icon); }
 }

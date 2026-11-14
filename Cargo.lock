@@ -3664,6 +3664,7 @@ dependencies = [
  "gdk4-x11",
  "gtk4",
  "ksni",
+ "libc",
  "librqbit",
  "reqwest",
  "serde",

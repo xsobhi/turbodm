@@ -24,15 +24,36 @@ pub fn save(path: &Path, tasks: &[Arc<Task>]) -> std::io::Result<()> {
         .map(|task| Saved {
             id: task.id.clone(),
             info: task.info.lock().unwrap().clone(),
-            segments: task.segments.lock().unwrap().as_ref().map(|s| s.snapshot()),
+            segments: task.segments.lock().unwrap().as_ref().map(|s| s.saved()), // (flushed to the disk)
         })
         .collect();
     write_json_atomic(path, &saved)
 }
 
+/// The list as it was when TurboDM last started well, beside it: if the list is ever unreadable
+/// (a disk error, a crash in the middle of writing it on a disk that doesn't keep the order of
+/// writes), that one is used instead of starting with nothing and saving over it.
+fn backup_of(path: &Path) -> PathBuf {
+    path.with_extension("json.bak")
+}
+
+fn read(path: &Path) -> Option<Vec<Saved>> {
+    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+}
+
 pub fn load(path: &Path, auto_resume: bool, min_split: u64) -> Vec<Arc<Task>> {
-    let Ok(bytes) = std::fs::read(path) else { return vec![] };
-    let Ok(saved) = serde_json::from_slice::<Vec<Saved>>(&bytes) else { return vec![] };
+    let saved = match read(path) {
+        Some(saved) => {
+            let _ = std::fs::copy(path, backup_of(path));
+            saved
+        }
+        None if path.exists() => {
+            // keep the unreadable one for a look, and go on from the last good copy
+            let _ = std::fs::rename(path, path.with_extension("json.damaged"));
+            read(&backup_of(path)).unwrap_or_default()
+        }
+        None => return vec![],
+    };
     saved
         .into_iter()
         .map(|mut s| {

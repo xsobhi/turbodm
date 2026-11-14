@@ -53,8 +53,8 @@ pub fn show_pending(app: &Rc<App>) {
         body.push_str(&format!("\n\nWhat's new:\n{}", release.notes));
     }
     let lines = body.lines().map(|l| 1 + l.len() as i32 / 70).sum::<i32>().min(20);
-    let window = Window::dialog("TurboDM update", None, (480, 200), false);
-    let heading = window.heading(&format!("TurboDM {} is available", release.version));
+    let window = Window::dialog(&format!("{} update", turbodm::config::APP_NAME), None, (480, 200), false);
+    let heading = window.heading(&format!("{} {} is available", turbodm::config::APP_NAME, release.version));
     let text = window.note(&body.replace('\n', "\r\n"));
     let (a, w, version) = (app.clone(), window.clone(), release.version.clone());
     let skip = window.button("Skip this version", move || {

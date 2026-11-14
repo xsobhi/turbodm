@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+/// The name people see: window titles, the About box, the installer, the tray. "TurboDM" stays
+/// its short name (in sentences, menus, and every identifier: the program, its folders, the
+/// browsers' connector), so nothing already installed or connected changes.
+pub const APP_NAME: &str = "Turbo Download Manager";
 pub const APP_ID: &str = "io.github.xsobhi.TurboDM";
 pub const NATIVE_HOST: &str = "com.xsobhi.turbodm";
 pub const FIREFOX_EXTENSION_ID: &str = "turbodm@xsobhi.github.io";
@@ -206,7 +210,10 @@ pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> std::io::Resul
         std::fs::create_dir_all(dir)?;
     }
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(value)?)?;
+    let mut file = std::fs::File::create(&tmp)?;
+    std::io::Write::write_all(&mut file, &serde_json::to_vec_pretty(value)?)?;
+    file.sync_all()?; // on the disk before it takes the old one's place: never an empty file after a crash
+    drop(file);
     std::fs::rename(tmp, path)
 }
 

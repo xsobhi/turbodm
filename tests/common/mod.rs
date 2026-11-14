@@ -23,6 +23,9 @@ pub struct TestServer {
     pub url: String,
     pub requests: Arc<Mutex<Vec<Option<String>>>>, // Range header of every request
     pub delay_ms: Arc<AtomicU64>,                  // pause after each 64 KiB chunk
+    pub content: Arc<Mutex<Arc<Vec<u8>>>>,         // what it serves (changed: a new file, same address)
+    pub headers: Arc<Mutex<String>>,               // more header lines for every answer ("Name: value\r\n")
+    pub busy: Arc<AtomicU64>,                      // answer this many requests next with 503 and Retry-After: 1
 }
 
 pub fn start(rt: &Runtime, data: Arc<Vec<u8>>, opts: Options, delay_ms: u64) -> TestServer {
@@ -32,19 +35,31 @@ pub fn start(rt: &Runtime, data: Arc<Vec<u8>>, opts: Options, delay_ms: u64) -> 
         url: format!("http://127.0.0.1:{port}/files/test.bin"),
         requests: Arc::new(Mutex::new(vec![])),
         delay_ms: Arc::new(AtomicU64::new(delay_ms)),
+        content: Arc::new(Mutex::new(data)),
+        headers: Arc::new(Mutex::new(String::new())),
+        busy: Arc::new(AtomicU64::new(0)),
     };
     let (requests, delay) = (server.requests.clone(), server.delay_ms.clone());
+    let (content, extra, busy) = (server.content.clone(), server.headers.clone(), server.busy.clone());
     let live = Arc::new(AtomicU64::new(0));
     rt.spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
-            let (data, opts, requests, delay) = (data.clone(), opts.clone(), requests.clone(), delay.clone());
+            let (data, opts, requests, delay) = (content.lock().unwrap().clone(), opts.clone(), requests.clone(), delay.clone());
+            let extra = extra.lock().unwrap().clone();
+            // (one request at a time is accepted here: no other takes from `busy` meanwhile)
+            let refuse = busy.load(Ordering::SeqCst) > 0;
+            if refuse {
+                busy.fetch_sub(1, Ordering::SeqCst);
+            }
             let live = live.clone();
             tokio::spawn(async move {
                 let n = live.fetch_add(1, Ordering::SeqCst) + 1;
-                let _ = if opts.max_conns > 0 && n as usize > opts.max_conns {
+                let _ = if refuse {
+                    refuse_with(stream, "503 Service Unavailable\r\nRetry-After: 1").await
+                } else if opts.max_conns > 0 && n as usize > opts.max_conns {
                     too_many(stream).await
                 } else {
-                    serve(stream, data, opts, requests, delay).await
+                    serve(stream, data, opts, requests, delay, extra).await
                 };
                 live.fetch_sub(1, Ordering::SeqCst);
             });
@@ -54,7 +69,7 @@ pub fn start(rt: &Runtime, data: Arc<Vec<u8>>, opts: Options, delay_ms: u64) -> 
 }
 
 async fn serve(stream: TcpStream, data: Arc<Vec<u8>>, opts: Options,
-               requests: Arc<Mutex<Vec<Option<String>>>>, delay: Arc<AtomicU64>) -> std::io::Result<()> {
+               requests: Arc<Mutex<Vec<Option<String>>>>, delay: Arc<AtomicU64>, extra: String) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream);
     let mut range = None;
     loop {
@@ -86,6 +101,7 @@ async fn serve(stream: TcpStream, data: Arc<Vec<u8>>, opts: Options,
         head += &format!("Content-Length: {}\r\n", end - start);
     }
     head += "Content-Type: application/octet-stream\r\n";
+    head += &extra;
     head += "Content-Disposition: attachment; filename=\"test file.bin\"\r\nConnection: close\r\n\r\n";
     let mut stream = reader.into_inner();
     stream.write_all(head.as_bytes()).await?;
@@ -100,13 +116,19 @@ async fn serve(stream: TcpStream, data: Arc<Vec<u8>>, opts: Options,
 }
 
 async fn too_many(stream: TcpStream) -> std::io::Result<()> {
+    refuse_with(stream, "429 Too Many Requests").await
+}
+
+/// Read the request, answer `status` (and any header lines after it) with no body.
+async fn refuse_with(stream: TcpStream, status: &str) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
     while reader.read_line(&mut line).await? > 2 {
         line.clear();
     }
     let mut stream = reader.into_inner();
-    stream.write_all(b"HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await?;
+    let answer = format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    stream.write_all(answer.as_bytes()).await?;
     stream.shutdown().await
 }
 

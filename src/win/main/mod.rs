@@ -48,7 +48,7 @@ const STATUS: i32 = 30;
 
 impl MainWindow {
     pub fn new() -> Self {
-        let window = Window::new("TurboDM", WS_OVERLAPPEDWINDOW, WINDOW_EX_STYLE(0), None, (1180, 700));
+        let window = Window::new(turbodm::config::APP_NAME, WS_OVERLAPPEDWINDOW, WINDOW_EX_STYLE(0), None, (1180, 700));
         let caption = Caption::new(&window, &[Button::Minimize, Button::Maximize, Button::Close]);
         window.caption.set(caption.title);
         window.own_title_bar(caption::HEIGHT);

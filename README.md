@@ -2,7 +2,7 @@
 
 <img src="data/turbodm.svg" width="96" height="96" alt="TurboDM's icon">
 
-# TurboDM
+# Turbo Download Manager (TurboDM)
 
 **Fast, IDM-style downloads on Linux and Windows: up to 32 connections, resume after reboots, your browser's cookies.**
 
@@ -26,7 +26,7 @@ added and downloaded over 16 connections.</sub>
 
 </div>
 
-A fast, multi-connection download manager for Linux and Windows — in the spirit of Internet Download Manager —
+**Turbo Download Manager** (TurboDM for short) is a fast, multi-connection download manager for Linux and Windows — in the spirit of Internet Download Manager —
 written in Rust with a native interface on each system (GTK4 on Linux, Win32 on Windows) that looks
 the same on both: Linux Mint's clean Mint-Y style, in its green, plus a browser extension that hands
 downloads over from Firefox, Chrome, Brave and Chromium **with their cookies**, so links that only
@@ -54,13 +54,26 @@ work while you're logged in keep working.
 - **Up to 32 connections per download** with IDM-style **dynamic segmentation**: when a connection
   finishes its part it takes over half of the largest part still downloading, so every connection
   stays busy. Like IDM, it only does so while that half is still worth a new connection at the
-  current speed (a couple of seconds of work); near the end the busy connections just finish up.
+  current speed (a couple of seconds of work); near the end the busy connections just finish up —
+  unless one of them is so slow it would hold up the end: a free connection then takes over the
+  share of its rest that makes both finish together, and a connection that never got its first
+  byte (a hung connect or handshake) has its part taken over after 8 seconds.
 - **Detects per-server connection limits.** Many servers refuse more than a few connections per IP
   (`HTTP 429`/`503`, or silently dropping them). Extra connections then retire and the working ones
   take over their parts — the download never stalls or fails because of it. Default is 8
-  connections, like IDM.
-- **Pause / resume that survives restarts and reboots.** Progress is saved continuously; resuming
-  checks the server still has the same file (size / ETag) before continuing.
+  connections, like IDM. A server's `Retry-After` is respected, retries are spread out with a
+  little randomness, and a busy server or dropped connection on the very first request is retried
+  rather than failing the download.
+- **Pause / resume that survives restarts, crashes and power cuts.** Progress is saved
+  continuously, but only for data already flushed to the disk, so a resumed file never has holes.
+  Resuming checks the server still has the same file — its size, its strong ETag or Last-Modified,
+  and the bytes just before where it goes on, read again and compared — and starts over if not.
+  A size that changes in the middle of a download stops it instead of mixing two files.
+- **Checksums.** A file whose server gives its SHA-256/SHA-512 (`Repr-Digest`, `Digest`) is checked
+  when it's done; from the command line you can give one yourself (`--sha256 …`). A damaged file is
+  never kept under its name.
+- **Checks the disk first**: not enough free space, or a file over 4 GB for a FAT32 USB stick, is
+  said before downloading, not after an hour.
 - **Browser integration** (Firefox, Chrome, Brave, Chromium): catches downloads and passes the
   **exact cookies, referrer and user-agent** the browser used (private windows and containers
   included), adds *Download with TurboDM* to the right-click menu, and lets the browser keep the
@@ -107,8 +120,9 @@ work while you're logged in keep working.
   (on Linux panels with a tray; otherwise closing the window minimizes it while downloading).
 - Servers that reject a browser user-agent (anti-bot checks comparing it with the TLS fingerprint)
   are retried with TurboDM's own honest one.
-- **Command line**: `turbodm get URL -c 16 -d ~/Downloads`, and `turbodm video URL -q 720p -f WebM` (`-q MP3`, `--list`
-  shows the qualities).
+- **Command line**: `turbodm get URL -c 16 -d ~/Downloads` (also `-o NAME`, `--sha256 HASH`,
+  `--limit KiB/s`, `--referer`, `--cookie`, `--user-agent`), and `turbodm video URL -q 720p -f WebM`
+  (`-q MP3`, `--list` shows the qualities).
 
 ### One look on Linux and Windows
 

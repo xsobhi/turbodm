@@ -147,7 +147,8 @@ pub fn refresh_address(app: &Rc<App>, id: &str) {
 }
 
 pub fn about(app: &Rc<App>) {
-    let body = format!("TurboDM {}\n\nFast multi-connection download manager, with browser integration.\n\n\
+    let name = turbodm::config::APP_NAME;
+    let body = format!("{name} (TurboDM) {}\n\nFast multi-connection download manager, with browser integration.\n\n\
                         https://github.com/xsobhi/turbodm\nMIT license.", turbodm::config::VERSION);
-    message(app.main.window.hwnd(), "About TurboDM", &body, false);
+    message(app.main.window.hwnd(), &format!("About {name}"), &body, false);
 }

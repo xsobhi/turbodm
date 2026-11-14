@@ -173,7 +173,7 @@ fn about(ctx: &Rc<Ctx>) {
     gtk::AboutDialog::builder()
         .transient_for(&ctx.win.window)
         .modal(true)
-        .program_name("TurboDM")
+        .program_name(turbodm::config::APP_NAME)
         .logo_icon_name("turbodm")
         .version(turbodm::config::VERSION)
         .comments("Fast multi-connection download manager for Linux, with browser integration.")

@@ -3,6 +3,7 @@
 use super::disk::{Pending, BLOCK};
 use super::http::{self, FetchError, Headers};
 use super::limiter::RateLimiter;
+use super::retry;
 use super::segments::SegmentMap;
 use futures_util::StreamExt;
 use std::fs::File;
@@ -18,6 +19,7 @@ pub struct WorkerCtx {
     pub client: reqwest::Client,
     pub url: String,
     pub headers: Headers,
+    pub size: Option<u64>, // the whole file's, as probed: every range's answer must agree
     pub resumable: bool,
     pub chunk: u64, // the most to ask for in one request (YouTube's 10 MB); 0: a part at once
     pub retries: u32,
@@ -100,17 +102,24 @@ async fn fetch(ctx: &WorkerCtx, index: usize) -> Result<Flow, String> {
                 return Err(format!("HTTP {code} {reason} - the link may have expired \
                                     (use Refresh address)"));
             }
-            Err(FetchError::Http(429 | 503, _)) if ctx.try_retire() => return Ok(Flow::Retire),
+            Err(FetchError::Busy(..)) if ctx.try_retire() => return Ok(Flow::Retire),
             // refused again while the others get data: the server limits connections per IP. (Not
             // when nothing gets through: that's the network, and every connection waits it out.)
             Err(FetchError::Network(_)) if failures >= 1 && ctx.segments.others_flowing(index) && ctx.try_retire() => {
                 return Ok(Flow::Retire)
             }
             Err(err) => {
-                failures = backoff(ctx, failures, err.to_string()).await?;
+                // (the last connection: it waits as long as the server asked, if it did)
+                let asked = match &err { FetchError::Busy(_, _, wait) => *wait, _ => None };
+                failures = backoff(ctx, failures, err.to_string(), asked).await?;
                 continue;
             }
         };
+        if let (true, Some(total), Some(size)) = (ctx.resumable, http::range_total(&resp), ctx.size)
+            && total != size {
+            return Err(format!("The file on the server changed while downloading (it's {total} bytes now, \
+                                not {size}). Resume starts it over."));
+        }
         let before = ctx.segments.get(index).done;
         let streamed = stream(ctx, index, resp).await;
         debug!("seg {index} stream end: {}", match &streamed { Ok(done) => format!("complete={done}"), Err(StreamError::Network(m) | StreamError::Write(m)) => m.clone() });
@@ -123,9 +132,9 @@ async fn fetch(ctx: &WorkerCtx, index: usize) -> Result<Flow, String> {
             Ok(true) => failures = 0,
             Ok(false) if ctx.cancel.is_cancelled() => return Ok(Flow::Continue),
             Ok(false) if chunk_done => failures = 0,
-            Ok(false) => failures = backoff(ctx, failures, "connection closed early".into()).await?,
+            Ok(false) => failures = backoff(ctx, failures, "connection closed early".into(), None).await?,
             Err(StreamError::Write(msg)) => return Err(msg),
-            Err(StreamError::Network(msg)) => failures = backoff(ctx, failures, msg).await?,
+            Err(StreamError::Network(msg)) => failures = backoff(ctx, failures, msg, None).await?,
         }
     }
     Ok(Flow::Continue)
@@ -140,16 +149,12 @@ fn request_end(pos: u64, end: Option<u64>, chunk: u64) -> Option<u64> {
     }
 }
 
-async fn backoff(ctx: &WorkerCtx, failures: u32, reason: String) -> Result<u32, String> {
+async fn backoff(ctx: &WorkerCtx, failures: u32, reason: String, asked: Option<Duration>) -> Result<u32, String> {
     let failures = failures + 1;
     if failures > ctx.retries {
         return Err(format!("Gave up after {} retries: {reason}", ctx.retries));
     }
-    let delay = Duration::from_secs_f64((0.5 * 2f64.powi(failures as i32)).min(30.0));
-    tokio::select! {
-        _ = tokio::time::sleep(delay) => {}
-        _ = ctx.cancel.cancelled() => {}
-    }
+    retry::sleep(retry::delay(failures, asked), &ctx.cancel).await;
     Ok(failures)
 }
 

@@ -181,7 +181,7 @@ impl Live {
         self.making.store(true, Ordering::SeqCst);
     }
 
-    fn set_activity(&self, what: Option<&'static str>) {
+    pub(crate) fn set_activity(&self, what: Option<&'static str>) {
         *self.activity.lock().unwrap() = what;
     }
 

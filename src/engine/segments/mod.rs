@@ -6,6 +6,9 @@
 //! the rest of its part taken over instead of holding up the download. Connections added
 //! later (the add dialog's early download, confirmed) share out the rest at once.
 
+mod pace;
+
+use pace::Pace;
 use serde::{Deserialize, Serialize};
 use std::sync::{atomic::{AtomicU64, AtomicUsize, Ordering}, Mutex};
 use std::time::{Duration, Instant};
@@ -57,6 +60,11 @@ pub struct SegmentMap {
     min_split: Mutex<u64>,
     speed_floor: AtomicU64, // what one connection gets through in SPLIT_SECONDS now
     spreading: AtomicUsize, // connections just added: they split by size alone, not speed
+    /// The segments as of the last time the file was flushed to the disk: what's saved, so a
+    /// crash or power cut never resumes past data that only reached the system's cache.
+    durable: Mutex<Vec<Segment>>,
+    /// Each part's connection's timing, by the same index (locked after `segs`).
+    pace: Mutex<Vec<Pace>>,
 }
 
 /// Like IDM, a free connection takes over half a part only if that still takes this long.
@@ -85,9 +93,12 @@ impl SegmentMap {
     }
 
     pub fn from_segments(segs: Vec<Segment>, min_split: u64) -> Self {
-        let segs = segs.into_iter().map(|s| Segment { active: false, ahead: 0, heard: None, ..s }).collect();
-        SegmentMap { segs: Mutex::new(segs), min_split: Mutex::new(min_split), speed_floor: AtomicU64::new(0),
-                     spreading: AtomicUsize::new(0) }
+        let segs: Vec<_> = segs.into_iter().map(|s| Segment { active: false, ahead: 0, heard: None, ..s }).collect();
+        let mut durable = segs.clone();
+        durable.sort_by_key(|s| s.start);
+        SegmentMap { min_split: Mutex::new(min_split), speed_floor: AtomicU64::new(0),
+                     spreading: AtomicUsize::new(0), pace: Mutex::new(vec![Pace::default(); segs.len()]),
+                     durable: Mutex::new(durable), segs: Mutex::new(segs) }
     }
 
     /// `n` connections were added to those running (the add dialog's early single connection
@@ -106,30 +117,38 @@ impl SegmentMap {
         self.speed_floor.store((per_connection * SPLIT_SECONDS) as u64, Ordering::Relaxed);
     }
 
-    /// Work for a connection: an idle segment, all of a stuck one's rest, or half of the
-    /// biggest busy one.
+    /// Work for a connection: an idle segment, all of a stuck one's rest, half of the biggest
+    /// busy one, or near the end, a slow one's share.
     pub fn claim(&self) -> Option<usize> {
         let mut segs = self.segs.lock().unwrap();
+        let mut pace = self.pace.lock().unwrap();
         // (taken from, emptied, only while `segs` is locked: never below 0)
         let spreading = self.spreading.load(Ordering::Relaxed) > 0;
         let floor = if spreading { 0 } else { self.speed_floor.load(Ordering::Relaxed) };
         let min_split = (*self.min_split.lock().unwrap()).max(floor);
+        let now = Instant::now();
         if let Some(i) = segs.iter().position(|s| !s.active && !s.finished()) {
             (segs[i].active, segs[i].heard) = (true, None);
+            pace[i] = Pace::claimed(now);
             return Some(i);
         }
-        let now = Instant::now();
+        let stuck = |i: usize, s: &Segment| s.heard.is_some_and(|t| now.duration_since(t) > STALLED)
+            || pace[i].never_started(now);
         let busiest = |stalled: bool| segs.iter().enumerate()
-            .filter(|(_, s)| s.active && (!stalled || s.heard.is_some_and(|t| now.duration_since(t) > STALLED)))
+            .filter(|&(i, s)| s.active && (!stalled || stuck(i, s)))
             .filter_map(|(i, s)| s.unreceived().filter(|&r| r > 0).map(|r| (i, r)))
             .max_by_key(|&(_, r)| r);
+        let per_connection = self.speed_floor.load(Ordering::Relaxed) as f64 / SPLIT_SECONDS;
         let (best, keep) = match (busiest(true), busiest(false)) {
             (Some((i, _)), _) => (i, 0), // stuck (often near the end): take everything it hasn't got
             (None, Some((i, remaining))) if remaining >= 2 * min_split => (i, remaining / 2),
-            _ => {
-                self.spreading.store(0, Ordering::Relaxed); // (nothing left worth sharing)
-                return None;
-            }
+            _ => match pace::slow_split(&segs, &pace, per_connection, now) {
+                Some(slow) => slow,
+                None => {
+                    self.spreading.store(0, Ordering::Relaxed); // (nothing left worth sharing)
+                    return None;
+                }
+            },
         };
         if spreading {
             self.spreading.fetch_sub(1, Ordering::Relaxed);
@@ -138,6 +157,7 @@ impl SegmentMap {
         let end = segs[best].end;
         segs[best].end = Some(middle);
         segs.push(Segment { active: true, ..Segment::new(middle, end) });
+        pace.push(Pace::claimed(now));
         Some(segs.len() - 1)
     }
 
@@ -153,6 +173,7 @@ impl SegmentMap {
         let mut segs = self.segs.lock().unwrap();
         segs[i].active = false;
         segs[i].ahead = 0; // written, or dropped with a failed write
+        self.pace.lock().unwrap()[i] = Pace::default();
     }
 
     pub fn get(&self, i: usize) -> Segment {
@@ -162,11 +183,14 @@ impl SegmentMap {
     /// `n` bytes arrived for segment i: how many of them belong to it (a split may have
     /// shortened it), and their offset in the file.
     pub fn receive(&self, i: usize, n: usize) -> (usize, u64) {
-        let seg = &mut self.segs.lock().unwrap()[i];
+        let mut segs = self.segs.lock().unwrap();
+        let seg = &mut segs[i];
+        let now = Instant::now();
+        self.pace.lock().unwrap()[i].received(seg.got(), now);
         let allowed = seg.unreceived().map_or(n as u64, |r| r.min(n as u64));
         let offset = seg.pos() + seg.ahead;
         seg.ahead += allowed;
-        seg.heard = Some(Instant::now());
+        seg.heard = Some(now);
         (allowed as usize, offset)
     }
 
@@ -207,11 +231,21 @@ impl SegmentMap {
         self.segs.lock().unwrap().iter().filter(|s| s.active).count()
     }
 
-    /// Sorted copy of all segments (for drawing and saving).
+    /// Sorted copy of all segments (for drawing).
     pub fn snapshot(&self) -> Vec<Segment> {
         let mut v = self.segs.lock().unwrap().clone();
         v.sort_by_key(|s| s.start);
         v
+    }
+
+    /// `segs` (a `snapshot` taken before the file was flushed) are on the disk for sure.
+    pub fn mark_durable(&self, segs: Vec<Segment>) {
+        *self.durable.lock().unwrap() = segs;
+    }
+
+    /// What to save: the segments as of the last flush to the disk.
+    pub fn saved(&self) -> Vec<Segment> {
+        self.durable.lock().unwrap().clone()
     }
 }
 

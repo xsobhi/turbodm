@@ -1,5 +1,6 @@
 //! HTTP layer: one shared client, probing a URL, and byte-range requests.
 
+use super::check::{self, Checksum, Validators};
 use crate::config::own_user_agent;
 use crate::util::{add_extension, filename_from_disposition, filename_from_url};
 use reqwest::header::{self, HeaderMap, HeaderValue};
@@ -18,6 +19,8 @@ pub struct Headers {
 pub enum FetchError {
     RangeNotSupported,
     Http(u16, String),
+    /// 429 Too Many Requests or 503 Service Unavailable, and how long it asked to be left alone.
+    Busy(u16, String, Option<Duration>),
     Network(String),
 }
 
@@ -25,7 +28,7 @@ impl std::fmt::Display for FetchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FetchError::RangeNotSupported => write!(f, "the server doesn't support resuming"),
-            FetchError::Http(code, reason) => write!(f, "HTTP {code} {reason}"),
+            FetchError::Http(code, reason) | FetchError::Busy(code, reason, _) => write!(f, "HTTP {code} {reason}"),
             FetchError::Network(msg) => write!(f, "network error: {msg}"),
         }
     }
@@ -51,6 +54,10 @@ pub struct ProbeInfo {
     pub filename: String,
     pub content_type: String,
     pub etag: Option<String>,
+    /// What tells whether the file is still the same one later (the strong ETag, Last-Modified).
+    pub validators: Validators,
+    /// The checksum the server gives for the whole file (Repr-Digest / Digest), if any.
+    pub checksum: Option<Checksum>,
     pub user_agent: Option<String>, // set when we fell back to our own user-agent
 }
 
@@ -112,6 +119,10 @@ pub async fn open(client: &Client, url: &str, h: &Headers, range: Option<(u64, O
     }
     if !status.is_success() {
         let reason = status.canonical_reason().unwrap_or("").to_string();
+        if matches!(status.as_u16(), 429 | 503) {
+            let wait = resp.headers().get(header::RETRY_AFTER).and_then(|v| v.to_str().ok()).and_then(check::retry_after);
+            return Err(FetchError::Busy(status.as_u16(), reason, wait));
+        }
         return Err(FetchError::Http(status.as_u16(), reason));
     }
     if let Some((start, _)) = range {
@@ -122,6 +133,11 @@ pub async fn open(client: &Client, url: &str, h: &Headers, range: Option<(u64, O
         }
     }
     Ok(resp)
+}
+
+/// The whole file's size, as a range's answer gives it (`Content-Range: bytes 0-99/1234`).
+pub fn range_total(resp: &Response) -> Option<u64> {
+    content_range(resp).and_then(|(_, total)| total)
 }
 
 /// Learn size, resume support, final URL and file name by asking for byte 0 only.
@@ -157,9 +173,15 @@ async fn probe_once(client: &Client, url: &str, h: &Headers) -> Result<ProbeInfo
     let name = text(header::CONTENT_DISPOSITION)
         .and_then(|d| filename_from_disposition(&d))
         .unwrap_or_else(|| filename_from_url(&final_url));
+    let validators = Validators::from_headers(text(header::ETAG).as_deref(),
+        text(header::LAST_MODIFIED).as_deref(), text(header::DATE).as_deref());
+    let checksum = Checksum::from_headers(text(header::HeaderName::from_static("repr-digest")).as_deref(),
+                                          text(header::HeaderName::from_static("digest")).as_deref());
     Ok(ProbeInfo {
         filename: add_extension(name, &content_type),
         etag: text(header::ETAG),
+        validators,
+        checksum,
         final_url,
         size,
         resumable,

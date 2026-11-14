@@ -25,7 +25,7 @@ impl ksni::Tray for Tray {
         "turbodm".into()
     }
     fn title(&self) -> String {
-        "TurboDM".into()
+        turbodm::config::APP_NAME.into()
     }
     fn icon_name(&self) -> String {
         "turbodm".into()

@@ -36,7 +36,7 @@ Start-Process $Exe
 Remove-Item Env:\TURBODM_PRETEND_VERSION, Env:\TURBODM_TEST_RELEASE -ErrorAction SilentlyContinue
 $shell = New-Object -ComObject WScript.Shell
 $deadline = (Get-Date).AddSeconds(30)
-while (-not $shell.AppActivate("TurboDM update")) {
+while (-not $shell.AppActivate("Turbo Download Manager update")) {
     if ((Get-Date) -gt $deadline) { Shot "update-0-no-dialog.png"; throw "no update dialog" }
     Start-Sleep 1
 }

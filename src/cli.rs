@@ -1,33 +1,52 @@
-//! Headless mode: `turbodm get URL [-c CONNECTIONS] [-d DIR]` (a link, a magnet link or a
-//! .torrent file), and `turbodm video URL` for a video on a web page.
+//! Headless mode: `turbodm get URL [-c CONNECTIONS] [-d DIR] [-o NAME] [--sha256 HASH] …` (a
+//! link, a magnet link or a .torrent file), and `turbodm video URL` for a video on a web page.
 
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use turbodm::config::Settings;
+use turbodm::engine::check::Checksum;
 use turbodm::engine::http::Headers;
 use turbodm::engine::video::{self, tools, Container, VideoJob};
 use turbodm::engine::{AddRequest, Manager, Snapshot, Status};
 use turbodm::util::{human_eta, human_size, human_speed};
 
+const GET_USAGE: &str = "usage: turbodm get URL|MAGNET|FILE.torrent [-c CONNECTIONS] [-d DIR] [-o NAME]\n\
+    \x20      [--sha256 HASH | --sha512 HASH] [--limit KiB/s] [--referer URL] [--cookie COOKIES] [--user-agent UA]";
+
 pub fn get(args: &[String]) -> i32 {
     let mut settings = Settings::load();
-    let mut url = None;
+    let mut req = AddRequest { start: true, ..Default::default() };
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
+        let mut value = || iter.next().cloned();
         match arg.as_str() {
-            "-c" | "--connections" => {
-                settings.connections = iter.next().and_then(|n| n.parse().ok()).unwrap_or(32)
+            "-c" | "--connections" => settings.connections = value().and_then(|n| n.parse().ok()).unwrap_or(32),
+            "-d" | "--dir" => settings.download_dir = value().map(PathBuf::from).unwrap_or_default(),
+            "-o" | "--output" => req.filename = value(),
+            "--limit" => settings.speed_limit_kib = value().and_then(|n| n.parse().ok()).unwrap_or(0),
+            "--referer" | "--referrer" => req.referrer = value(),
+            "--cookie" => req.cookies = value(),
+            "-U" | "--user-agent" => req.user_agent = value(),
+            flag @ ("--sha256" | "--sha512" | "--checksum") => {
+                let text = value().unwrap_or_default();
+                let named = if flag == "--checksum" { text.clone() } else { format!("{}:{text}", &flag[2..]) };
+                match Checksum::parse(&named) {
+                    Some(sum) => req.checksum = Some(sum),
+                    None => {
+                        eprintln!("{flag}: not a {} checksum: {text}", if flag == "--checksum" { "SHA-256 or SHA-512" } else { &flag[2..] });
+                        return 2;
+                    }
+                }
             }
-            "-d" | "--dir" => settings.download_dir = iter.next().map(PathBuf::from).unwrap_or_default(),
-            other if !other.starts_with('-') => url = Some(other.to_string()),
+            other if !other.starts_with('-') => req.url = other.to_string(),
             other => eprintln!("ignoring unknown option {other}"),
         }
     }
-    let Some(url) = url else {
-        eprintln!("usage: turbodm get URL|MAGNET|FILE.torrent [-c CONNECTIONS] [-d DIR]");
+    if req.url.is_empty() {
+        eprintln!("{GET_USAGE}");
         return 2;
-    };
+    }
     settings.use_categories = false;
     let settings = settings.clamp();
     let connections = settings.connections;
@@ -35,7 +54,7 @@ pub fn get(args: &[String]) -> i32 {
     // its own list (and torrent session) for this run only
     let home = std::env::temp_dir().join(format!("turbodm-cli-{}", std::process::id()));
     let (manager, _events) = Manager::new(settings, home.join("downloads.json"), rt.handle().clone());
-    let id = manager.add(AddRequest { url, start: true, ..Default::default() });
+    let id = manager.add(req);
     let started = Instant::now();
     let snap = follow(&manager, &id);
     let _ = std::fs::remove_dir_all(home);

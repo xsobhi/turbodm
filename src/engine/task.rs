@@ -1,5 +1,6 @@
 //! A download: persistent info, live segment map, speed meter and pause control.
 
+use super::check::{Checksum, Validators};
 use super::http::Headers;
 use super::limiter::RateLimiter;
 use super::segments::SegmentMap;
@@ -67,6 +68,15 @@ pub struct TaskInfo {
     /// A torrent's own details; None for other downloads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub torrent: Option<TorrentMeta>,
+    /// What tells, on resuming, whether the server's file is still this one.
+    #[serde(default)]
+    pub validators: Validators,
+    /// The checksum the user gave: the finished file must have it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<Checksum>,
+    /// The one the server gave (Repr-Digest / Digest), checked when the user gave none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_checksum: Option<Checksum>,
 }
 
 pub fn unix_now() -> u64 {
@@ -96,6 +106,9 @@ impl TaskInfo {
             content_type: None,
             video: None,
             torrent: None,
+            validators: Validators::default(),
+            checksum: None,
+            server_checksum: None,
         }
     }
 
@@ -139,6 +152,8 @@ pub struct Task {
     joining: Mutex<Option<f64>>,
     samples: Mutex<VecDeque<(Instant, u64)>>,
     speed: Mutex<f64>,
+    /// The speed averaged over ~5 s (time left goes by it: steadier than the 2-second speed).
+    steady: Mutex<f64>,
 }
 
 impl Task {
@@ -159,6 +174,7 @@ impl Task {
             joining: Mutex::new(None),
             samples: Mutex::new(VecDeque::new()),
             speed: Mutex::new(0.0),
+            steady: Mutex::new(0.0),
         })
     }
 
@@ -227,6 +243,10 @@ impl Task {
         let downloading = self.status() == Status::Downloading;
         let speed = if downloading && elapsed > 0.0 { (total - b0.min(total)) as f64 / elapsed } else { 0.0 };
         *self.speed.lock().unwrap() = speed;
+        let mut steady = self.steady.lock().unwrap();
+        // an exponential average over ~5 s of ticks (from the first speed seen, not from 0)
+        *steady = if !downloading { 0.0 } else if *steady == 0.0 { speed } else { *steady + (speed - *steady) * 0.02 };
+        drop(steady);
         if let Some(map) = self.segments.lock().unwrap().as_ref() {
             map.set_speed(speed / map.active_count().max(1) as f64);
         }
@@ -237,7 +257,7 @@ impl Task {
 
     pub fn eta(&self) -> Option<f64> {
         let size = self.info.lock().unwrap().size?;
-        let speed = self.speed();
+        let speed = *self.steady.lock().unwrap();
         (speed > 0.0).then(|| size.saturating_sub(self.downloaded()) as f64 / speed)
     }
 

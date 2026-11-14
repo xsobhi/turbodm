@@ -1,10 +1,10 @@
 //! Running one download: probe, preallocate, start the connections, finish.
 
-use super::http;
+use super::check::Validators;
 use super::segments::SegmentMap;
 use super::task::{unix_now, Status, Task};
 use super::worker::WorkerCtx;
-use super::{pool, Shared};
+use super::{pool, resume, retry, space, Shared};
 use crate::util::{part_path, sanitize_filename, unique_path};
 use std::fs::{File, OpenOptions};
 use std::path::Path;
@@ -41,21 +41,33 @@ async fn prepare(task: &Task, shared: &Shared, cancel: &CancellationToken) -> Re
         let info = task.info.lock().unwrap();
         (info.url.clone(), info.headers())
     };
-    let client = shared.client();
-    let probe = tokio::select! {
-        r = http::probe(&client, &url, &headers) => r.map_err(|e| e.to_string())?,
-        _ = cancel.cancelled() => return Ok(()),
+    let (client, settings) = (shared.client(), shared.settings());
+    let Some(probe) = retry::probe(&client, &url, &headers, settings.retries, cancel).await.map_err(|e| e.to_string())? else {
+        return Ok(()); // paused meanwhile
     };
-    let settings = shared.settings();
     let min_split = settings.min_split_kib * 1024;
+    // going on with what's on the disk: the bytes just before where it goes on must still match
+    let saved = task.segments.lock().unwrap().as_ref().map(|map| map.saved());
+    let unchanged = match &saved {
+        Some(segs) if probe.resumable => {
+            let (part, mut h) = (part_path(&task.info.lock().unwrap().path()), headers.clone());
+            h.user_agent = probe.user_agent.clone().or(h.user_agent);
+            resume::same_bytes(&client, &probe.final_url, &h, &part, segs).await
+        }
+        _ => true,
+    };
     let mut info = task.info.lock().unwrap();
     let mut segments = task.segments.lock().unwrap();
     info.download_url = probe.final_url.clone();
     if probe.user_agent.is_some() {
         info.user_agent = probe.user_agent.clone();
     }
-    let same_file = probe.size == info.size
-        && (info.etag.is_none() || probe.etag.is_none() || probe.etag == info.etag);
+    // (saved by an older TurboDM: only its ETag, maybe a weak one)
+    let before = match &info.validators {
+        v if *v == Validators::default() => Validators::from_headers(info.etag.as_deref(), None, None),
+        v => v.clone(),
+    };
+    let same_file = probe.size == info.size && !before.changed(&probe.validators) && unchanged;
     let part = part_path(&info.path());
     if segments.is_some() && !(probe.resumable && same_file && part.exists()) {
         *segments = None; // can't continue this file: start from scratch
@@ -71,6 +83,8 @@ async fn prepare(task: &Task, shared: &Shared, cancel: &CancellationToken) -> Re
     }
     info.size = probe.size;
     info.etag = probe.etag;
+    info.validators = probe.validators;
+    info.server_checksum = probe.checksum;
     info.content_type = Some(probe.content_type).filter(|t| !t.is_empty());
     info.resumable = probe.resumable && probe.size.is_some();
     let parts = if info.resumable { info.connections } else { 1 };
@@ -98,6 +112,12 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
     let (info, file) = {
         // locked while opening: the add dialog may move the file to another name or folder
         let info = task.info.lock().unwrap();
+        let segments = task.segments.lock().unwrap().clone().expect("prepared");
+        // (its file is sparse: the disk fills as the data arrives, so only what's left counts)
+        let left = info.size.map_or(0, |size| size.saturating_sub(segments.total_done()));
+        if let Some(why) = space::shortage(&info.directory, left, info.size) {
+            return Err(why);
+        }
         std::fs::create_dir_all(&info.directory).map_err(|e| format!("Cannot create folder: {e}"))?;
         let file = open_part(&part_path(&info.path()), info.size)?;
         (info.clone(), file)
@@ -111,6 +131,7 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
         client: shared.client(),
         url: info.download_url.clone(),
         headers: info.headers(),
+        size: info.size,
         resumable: info.resumable,
         chunk: 0,
         retries: settings.retries,
@@ -137,6 +158,7 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
     drop(ctx);
     // (a disk that can't be asked, as some network ones, has it written all the same)
     let _ = tokio::task::spawn_blocking(move || file.sync_all()).await;
+    verify(task, &segments).await?;
     let mut info = task.info.lock().unwrap(); // its name/folder now, not when it started
     let path = info.path();
     let final_path = if path.exists() { unique_path(&path) } else { path.clone() };
@@ -150,4 +172,25 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
     info.status = Status::Completed;
     info.completed = Some(unix_now());
     Ok(true)
+}
+
+/// The finished file against its checksum (the user's, else the server's), if it has one. A
+/// damaged file is thrown away, so Resume downloads it again.
+async fn verify(task: &Arc<Task>, segments: &SegmentMap) -> Result<(), String> {
+    let (sum, part, size) = {
+        let info = task.info.lock().unwrap();
+        let Some(sum) = info.checksum.clone().or_else(|| info.server_checksum.clone()) else { return Ok(()) };
+        (sum, part_path(&info.path()), info.size.unwrap_or_else(|| segments.total_done()))
+    };
+    task.video.set_activity(Some("Checking the file…"));
+    task.set_joining(Some(0.0));
+    let t = task.clone();
+    let checked = tokio::task::spawn_blocking(move || sum.verify(&part, size, |done| t.set_joining(Some(done))))
+        .await.unwrap_or_else(|e| Err(format!("Cannot check the file: {e}")));
+    task.video.set_activity(None);
+    if let Err(why) = &checked && why.contains("damaged") {
+        *task.segments.lock().unwrap() = None;
+        let _ = std::fs::remove_file(part_path(&task.info.lock().unwrap().path()));
+    }
+    checked
 }

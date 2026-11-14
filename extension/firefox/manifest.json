@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
-  "name": "TurboDM Integration",
+  "name": "Turbo Download Manager Integration",
   "version": "1.5.6",
-  "description": "Send browser downloads and videos to TurboDM, a fast download manager, with cookies and referrer so protected links work.",
+  "description": "Send browser downloads and videos to Turbo Download Manager (TurboDM), with cookies and referrer so protected links work.",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -54,6 +54,6 @@
       "48": "icons/icon-48.png",
       "128": "icons/icon-128.png"
     },
-    "default_title": "TurboDM"
+    "default_title": "Turbo Download Manager"
   }
 }

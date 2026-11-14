@@ -5,7 +5,8 @@
 //!   turbodm --background        start hidden in the tray (used by the browser)
 //!   turbodm --native-host       browser native-messaging host
 //!   turbodm --register          (re)connect the browser extension; --unregister undoes it
-//!   turbodm get URL [-c N] [-d DIR]   download in the terminal, no window
+//!   turbodm get URL [-c N] [-d DIR]   download in the terminal, no window; also [-o NAME]
+//!       [--sha256 HASH|--sha512 HASH] [--limit KiB/s] [--referer URL] [--cookie C] [--user-agent UA]
 //!   turbodm video URL [-q 720p|MP3] [-f MP4|WebM|MKV] [--list]   a video from a web page, the same way
 
 #![cfg_attr(windows, windows_subsystem = "windows")] // no console window behind the app
@@ -83,7 +84,7 @@ fn main() {
                 0
             }
             Some("--help" | "-h") => {
-                println!("{}", include_str!("main.rs").lines().skip(2).take(8)
+                println!("{}", include_str!("main.rs").lines().skip(2).take(9)
                     .map(|l| l.trim_start_matches("//!")).collect::<Vec<_>>().join("\n"));
                 0
             }

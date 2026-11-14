@@ -64,7 +64,7 @@ pub fn show_pending(ctx: &Rc<Ctx>) {
     if updated_by_apt() {
         text.push_str("\n\nIt will arrive with your system updates.");
     }
-    let heading = gtk::Label::builder().label(format!("TurboDM {} is available", release.version))
+    let heading = gtk::Label::builder().label(format!("{} {} is available", turbodm::config::APP_NAME, release.version))
         .xalign(0.0).css_classes(["title-3"]).build();
     let body = gtk::Label::builder().label(&text).xalign(0.0).wrap(true).max_width_chars(60).build();
     let status = gtk::Label::builder().xalign(0.0).css_classes(["dim-label"]).build();
@@ -81,7 +81,7 @@ pub fn show_pending(ctx: &Rc<Ctx>) {
     for w in [heading.upcast_ref::<gtk::Widget>(), body.upcast_ref(), status.upcast_ref(), buttons.upcast_ref()] {
         content.append(w);
     }
-    let window = gtk::Window::builder().title("TurboDM update").default_width(460).child(&content).build();
+    let window = gtk::Window::builder().title(format!("{} update", turbodm::config::APP_NAME)).default_width(460).child(&content).build();
     window.set_default_widget(Some(&go));
 
     let w = window.clone();

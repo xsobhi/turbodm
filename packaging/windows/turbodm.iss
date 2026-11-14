@@ -13,15 +13,15 @@
 
 [Setup]
 AppId={{6B0C7A52-3E0B-4B7E-9C1D-7A4D2F1B9E21}
-AppName=TurboDM
+AppName=Turbo Download Manager
 AppVersion={#Version}
-AppVerName=TurboDM {#Version}
+AppVerName=Turbo Download Manager {#Version}
 AppPublisher=xsobhi
 AppPublisherURL=https://github.com/xsobhi/turbodm
 AppSupportURL=https://github.com/xsobhi/turbodm/issues
 AppUpdatesURL=https://github.com/xsobhi/turbodm/releases
 VersionInfoVersion={#Version}
-VersionInfoDescription=TurboDM Setup
+VersionInfoDescription=Turbo Download Manager Setup
 DefaultDirName={autopf}\TurboDM
 PrivilegesRequired=admin
 DisableWelcomePage=no
@@ -35,7 +35,7 @@ WizardSmallImageFile={#Art("wizard-small")}
 WizardImageAlphaFormat=defined
 SetupIconFile=..\..\data\turbodm.ico
 UninstallDisplayIcon={app}\bin\turbodm.exe
-UninstallDisplayName=TurboDM
+UninstallDisplayName=Turbo Download Manager
 OutputDir=..\..\dist\windows
 OutputBaseFilename=TurboDM-{#Version}-windows-{#Arch}-setup
 Compression=lzma2/max
@@ -48,9 +48,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 #endif
 
 [Messages]
-WelcomeLabel1=Welcome to TurboDM
-WelcomeLabel2=TurboDM {#Version} will be installed on this computer.%n%nDownload files over many connections at once, pause and resume them any time, and catch downloads straight from your browser.
-FinishedHeadingLabel=TurboDM is ready
+WelcomeLabel1=Welcome to Turbo Download Manager
+WelcomeLabel2=Turbo Download Manager (TurboDM) {#Version} will be installed on this computer.%n%nDownload files over many connections at once, pause and resume them any time, and catch downloads straight from your browser.
+FinishedHeadingLabel=Turbo Download Manager is ready
 FinishedLabel=TurboDM is installed. When it opens, it helps you add its extension to your browser, to catch your downloads.
 ClickFinish=
 
@@ -60,13 +60,16 @@ Type: filesandordirs; Name: "{app}\lib"
 Type: filesandordirs; Name: "{app}\share"
 Type: files; Name: "{app}\bin\*.dll"
 Type: files; Name: "{app}\bin\gdbus.exe"
+; the shortcuts were called "TurboDM" before the name became "Turbo Download Manager"
+Type: files; Name: "{autoprograms}\TurboDM.lnk"
+Type: files; Name: "{autodesktop}\TurboDM.lnk"
 
 [Files]
 Source: "..\..\dist\windows\TurboDM\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
-Name: "{autoprograms}\TurboDM"; Filename: "{app}\bin\turbodm.exe"
-Name: "{autodesktop}\TurboDM"; Filename: "{app}\bin\turbodm.exe"
+Name: "{autoprograms}\Turbo Download Manager"; Filename: "{app}\bin\turbodm.exe"
+Name: "{autodesktop}\Turbo Download Manager"; Filename: "{app}\bin\turbodm.exe"
 
 [Run]
 ; connect the browser extension for every user of this PC
@@ -74,7 +77,7 @@ Filename: "{app}\bin\turbodm.exe"; Parameters: "--register-system"; Flags: runhi
 ; torrents: peers may reach TurboDM without Windows Firewall asking (as torrent programs do)
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""TurboDM"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""TurboDM"" dir=in action=allow program=""{app}\bin\turbodm.exe"" enable=yes"; Flags: runhidden
-Filename: "{app}\bin\turbodm.exe"; Description: "Open TurboDM"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\bin\turbodm.exe"; Description: "Open Turbo Download Manager"; Flags: nowait postinstall skipifsilent runasoriginaluser
 ; updating from inside TurboDM runs this installer with /SILENT: open the new version afterwards
 Filename: "{app}\bin\turbodm.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 

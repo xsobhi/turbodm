@@ -11,6 +11,10 @@ use std::time::Duration;
 
 /// How often a connection that bowed out is tried again.
 const REGROW: Duration = Duration::from_secs(30);
+/// How often what was written is flushed to the disk, and the progress saved with it counted:
+/// after a crash or a power cut the download goes on from there, never from data that was
+/// only in the system's cache (and so, lost: a file with holes that looks finished).
+const CHECKPOINT: Duration = Duration::from_secs(5);
 
 /// Run `count` connections over `ctx` (more if `task.grow` asks for them). A lasting error stops
 /// them all (`ctx.cancel`) and is returned once they have.
@@ -24,6 +28,9 @@ pub(super) async fn run(task: &Task, ctx: &Arc<WorkerCtx>, count: usize) -> Resu
     let (mut spawned, mut want) = (0, count);
     let mut regrow = tokio::time::interval(REGROW);
     regrow.reset(); // the first try after a full period
+    let mut flush = tokio::time::interval(CHECKPOINT);
+    flush.reset();
+    let mut flushing = None; // (one flush at a time, beside the connections, never holding them up)
     loop {
         while spawned < want {
             workers.spawn(connection_loop(ctx.clone()));
@@ -56,7 +63,23 @@ pub(super) async fn run(task: &Task, ctx: &Arc<WorkerCtx>, count: usize) -> Resu
                     workers.spawn(connection_loop(ctx.clone()));
                 }
             }
+            _ = flush.tick(), if flushing.as_ref().is_none_or(|f: &tokio::task::JoinHandle<()>| f.is_finished()) => {
+                flushing = Some(tokio::spawn(checkpoint(ctx.clone())));
+            }
         }
     }
+    if let Some(f) = flushing {
+        let _ = f.await;
+    }
+    checkpoint(ctx.clone()).await; // paused or done: everything it got, kept
     failed.map_or(Ok(()), Err)
+}
+
+/// Flush what the connections wrote to the disk, then count it as saved.
+async fn checkpoint(ctx: Arc<WorkerCtx>) {
+    let segments = ctx.segments.snapshot(); // (all of it written before the flush starts)
+    let file = ctx.file.clone();
+    // a disk that can't be asked (some network ones) has it written all the same, in time
+    let _ = tokio::task::spawn_blocking(move || file.sync_data()).await;
+    ctx.segments.mark_durable(segments);
 }

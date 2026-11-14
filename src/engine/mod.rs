@@ -1,11 +1,15 @@
 //! Download engine: segmented multi-connection HTTP downloads on tokio, and torrents.
 
+pub mod check;
 pub mod http;
 pub mod limiter;
 pub mod manager;
 mod runner;
 mod disk;
 mod pool;
+mod resume;
+mod retry;
+mod space;
 pub mod segments;
 pub mod state;
 pub mod task;

@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=TurboDM
+Name=Turbo Download Manager
 GenericName=Download Manager
 Comment=Fast multi-connection download manager
 Exec=turbodm %U
 Icon=turbodm
 Terminal=false
 Categories=Network;FileTransfer;
-Keywords=download;manager;accelerator;idm;
+Keywords=download;manager;accelerator;idm;turbodm;
 StartupNotify=true
 StartupWMClass=turbodm

@@ -72,7 +72,7 @@ impl MainWindow {
         content.append(&toolbar::rule());
         content.append(&status);
         let window = gtk::ApplicationWindow::builder()
-            .application(app).title("TurboDM").default_width(1180).default_height(700)
+            .application(app).title(turbodm::config::APP_NAME).default_width(1180).default_height(700)
             .icon_name("turbodm").child(&content).build();
         window.set_titlebar(toolbar::header_bar(&search).as_ref());
         MainWindow { window, store, view, selection, status, search, sidebar, filter, pages, empty }

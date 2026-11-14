@@ -31,7 +31,7 @@ pub fn countdown(ctx: &Rc<Ctx>, power: Power, filename: &str) {
     body.append(&title);
     body.append(&body_text);
     body.append(&buttons);
-    let window = gtk::Window::builder().title("TurboDM").child(&body).build();
+    let window = gtk::Window::builder().title(turbodm::config::APP_NAME).child(&body).build();
 
     let left = Rc::new(Cell::new(SECONDS));
     let label = move |t: &gtk::Label, n: u32| t.set_text(&format!("The computer will {what} in {n} seconds"));

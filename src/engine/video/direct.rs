@@ -7,7 +7,7 @@
 use super::fresh::refresh;
 use super::names::{part_file, stem};
 use super::Source;
-use crate::engine::http::{self, FetchError, Headers};
+use crate::engine::http::{FetchError, Headers};
 use crate::engine::runner::open_part;
 use crate::engine::segments::SegmentMap;
 use crate::engine::task::{Status, Task, TaskInfo};
@@ -119,12 +119,9 @@ async fn part(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken, ind
     }
     let (client, settings) = (shared.client(), shared.settings());
     let mut headers = headers_of(&source);
-    let probe = tokio::select! {
-        r = http::probe(&client, &source.url, &headers) => r,
-        _ = cancel.cancelled() => return Ok(false),
-    };
-    let probe = match probe {
-        Ok(probe) => probe,
+    let probe = match super::super::retry::probe(&client, &source.url, &headers, settings.retries, cancel).await {
+        Ok(Some(probe)) => probe,
+        Ok(None) => return Ok(false), // paused
         Err(FetchError::Http(code @ (403 | 404 | 410), reason)) => return Err(PartError::Expired(format!("HTTP {code} {reason}"))),
         Err(err) => return Err(PartError::Failed(err.to_string())),
     };
@@ -164,6 +161,7 @@ async fn part(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken, ind
         client,
         url: probe.final_url,
         headers,
+        size,
         resumable,
         chunk: source.chunk,
         retries: settings.retries,

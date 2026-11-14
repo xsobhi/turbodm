@@ -8,6 +8,7 @@ pub use confirm::Confirm;
 
 use super::state::{self, Snapshot};
 use super::task::{Status, Task, TaskInfo};
+use super::check::Checksum;
 use super::video::VideoJob;
 use super::torrent::{self, TorrentMeta};
 use super::{runner, Shared};
@@ -34,6 +35,8 @@ pub struct AddRequest {
     /// A video on the page at `url`, downloaded by yt-dlp (an empty format: the usual quality,
     /// picked once the page is looked at).
     pub video: Option<VideoJob>,
+    /// The checksum the finished file must have (`turbodm get URL --sha256 …`).
+    pub checksum: Option<Checksum>,
 }
 
 pub struct Manager {
@@ -126,6 +129,7 @@ impl Manager {
             info.category_base = Some(s.download_dir.clone()); // pick the folder once the name is known
         }
         (info.referrer, info.cookies, info.user_agent) = (req.referrer, req.cookies, req.user_agent);
+        info.checksum = req.checksum;
         if let Some(job) = req.video {
             job.attach(&mut info);
         }
@@ -255,7 +259,8 @@ impl Manager {
             }
             let busy = self.all().iter().any(|t| t.status().is_active());
             if (self.dirty.load(Ordering::Relaxed) || busy) && last_save.elapsed().as_secs_f64() > 2.0 {
-                self.save();
+                let manager = self.clone(); // (written and flushed off the async workers)
+                let _ = tokio::task::spawn_blocking(move || manager.save()).await;
                 last_save = Instant::now();
             }
         }
