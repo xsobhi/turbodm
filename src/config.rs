@@ -1,6 +1,7 @@
 //! User settings (JSON in ~/.config/turbodm) and standard file locations.
 
 use crate::categories::{category_for, target_dir};
+use crate::schedule::Schedule;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -131,6 +132,7 @@ pub struct Settings {
     #[serde(default)]
     pub video_helpers_declined: bool, // "Not now" to getting yt-dlp and FFmpeg: not asked at start again
     pub delete_files_too: bool, // Delete's "Also delete the files", as last answered
+    pub schedule: Schedule,     // Options → Scheduler: start (and stop) the queue at set times
 }
 
 impl Default for Settings {
@@ -165,6 +167,7 @@ impl Default for Settings {
             video_format: String::new(),
             video_helpers_declined: false,
             delete_files_too: false,
+            schedule: Schedule::default(),
         }
     }
 }
@@ -185,6 +188,7 @@ impl Settings {
         self.retries = self.retries.min(100);
         self.timeout_secs = self.timeout_secs.clamp(5, 300);
         self.min_split_kib = self.min_split_kib.clamp(64, 65536);
+        self.schedule = self.schedule.clamp();
         self
     }
 

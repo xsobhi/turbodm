@@ -38,7 +38,7 @@ fn completed(app: &Rc<App>, snap: Snapshot) {
         if settings.show_complete_dialog && todo.power == Power::Nothing {
             super::complete::open(app, &snap);
         }
-        power::countdown(app, todo.power, &snap.filename);
+        power::countdown(app, todo.power, &format!("\u{201c}{}\u{201d} has finished downloading.", snap.filename));
         if settings.show_complete_dialog {
             return;
         }

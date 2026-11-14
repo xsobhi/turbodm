@@ -1,11 +1,12 @@
-//! Options, as IDM's: tabs (General, Save to, Connection, Look), each a few short groups with a
-//! heading, what each setting is on the left and its switch, number or folder on the right;
-//! OK and Cancel at the bottom, as in Windows' own dialogs.
+//! Options, as IDM's: tabs (General, Save to, Connection, Scheduler, Look), each a few short
+//! groups with a heading, what each setting is on the left and its switch, number or folder on
+//! the right; OK and Cancel at the bottom, as in Windows' own dialogs.
 
 use super::theme::{self, Font};
 use super::wnd::labels::Kind;
 use super::wnd::tabs::TABS;
 use super::wnd::{self, enable, is_checked, place, rect, set_text, set_visible, text, Window, FIELD, LINE};
+use super::scheduler::SchedulerPage;
 use super::{browsers, helpers, looks, shell, App};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -21,10 +22,13 @@ const ROW: i32 = 38;
 const CONTROL_X: i32 = PAD + NAMES + 16;
 const CONTROL: i32 = WIDTH - PAD - CONTROL_X; // the controls' column
 
-/// A page's line: a group's heading, or a setting (its name and its control, `width` wide).
-enum Line {
+/// A page's line: a group's heading, a setting (its name and its control, `width` wide), a
+/// name with nothing beside it, or controls side by side across the page.
+pub enum Line {
     Heading(&'static str),
     Setting(&'static str, HWND, i32),
+    Name(&'static str),
+    Row(Vec<HWND>),
 }
 
 pub fn open(app: &Rc<App>) {
@@ -98,9 +102,10 @@ pub fn open(app: &Rc<App>) {
 
     // Look: the theme, the user's own colours (looks.rs)
     let look = Rc::new(looks::LookPage::new(&window, &s));
+    let scheduler = SchedulerPage::new(&window, &s.schedule);
 
-    use Line::{Heading, Setting};
-    let pages: [Vec<Line>; 4] = [
+    use Line::{Heading, Name, Row, Setting};
+    let pages: [Vec<Line>; 5] = [
         vec![Heading("Downloads from the browser"),
              Setting("Ask where to save them (Download file info)", confirm, 44),
              Setting("Start downloading while it's open", predownload, 44),
@@ -129,6 +134,7 @@ pub fn open(app: &Rc<App>) {
              Setting("Speed limit, KB/s (0 = no limit)", speed, 150),
              Heading("Torrents"),
              Setting("Keep sharing finished torrents", seed, 44)],
+        scheduler.lines(),
         vec![Heading("Look"),
              Setting("Theme", look.theme, 220),
              Heading("Your own colours, over the theme's"),
@@ -161,6 +167,20 @@ pub fn open(app: &Rc<App>) {
                     controls.extend([label, *control]);
                     y += ROW;
                 }
+                Name(name) => {
+                    let label = window.label(name);
+                    place(label, PAD + 12, y + (FIELD - LINE) / 2, WIDTH - 2 * PAD - 12, LINE);
+                    controls.push(label);
+                    y += LINE + 8;
+                }
+                Row(row) => {
+                    let each = (WIDTH - 2 * PAD - 12) / row.len() as i32;
+                    for (i, control) in row.iter().enumerate() {
+                        place(*control, PAD + 12 + i as i32 * each, y, each - 8, LINE + 4);
+                    }
+                    controls.extend(row);
+                    y += ROW - 6;
+                }
             }
         }
         bottom = bottom.max(y);
@@ -176,7 +196,7 @@ pub fn open(app: &Rc<App>) {
         }
     };
     show_page(0);
-    let tabs = window.tabs(&["General", "Save to", "Connection", "Look"], show_page);
+    let tabs = window.tabs(&["General", "Save to", "Connection", "Scheduler", "Look"], show_page);
     place(tabs, 0, 0, WIDTH, TABS);
 
     let (a, w, l) = (app.clone(), window.clone(), look.clone());
@@ -196,6 +216,7 @@ pub fn open(app: &Rc<App>) {
             (is_checked(progress), is_checked(complete), is_checked(notify));
         (s.clipboard_monitor, s.auto_resume, s.check_updates) = (is_checked(clipboard), is_checked(resume), is_checked(updates));
         s.seed = is_checked(seed);
+        s.schedule = scheduler.chosen();
         a.manager.update_settings(s.clamp());
         w.destroy();
     });

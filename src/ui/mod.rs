@@ -11,6 +11,7 @@ mod launch;
 mod list;
 mod power;
 mod progress;
+mod scheduler;
 mod settings;
 mod sidebar;
 mod style;
@@ -200,12 +201,19 @@ fn listen_ipc(ctx: &Rc<Ctx>, rx: async_channel::Receiver<Message>) {
     });
 }
 
-/// Downloads finishing or failing: complete dialog, completion options, notifications.
+/// Downloads finishing or failing: complete dialog, completion options, notifications; and the
+/// scheduled queue done (Options → Scheduler: sleep or shut down then).
 fn listen_events(ctx: &Rc<Ctx>, rx: async_channel::Receiver<Snapshot>) {
-    let ctx = ctx.clone();
+    let c = ctx.clone();
     glib::spawn_future_local(async move {
         while let Ok(snap) = rx.recv().await {
-            finish::on_status(&ctx, snap);
+            finish::on_status(&c, snap);
+        }
+    });
+    let (c, finished) = (ctx.clone(), ctx.manager.queue_finished());
+    glib::spawn_future_local(async move {
+        while let Ok(then) = finished.recv().await {
+            power::countdown(&c, then, "The scheduled downloads have finished.");
         }
     });
 }

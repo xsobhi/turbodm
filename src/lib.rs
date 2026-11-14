@@ -7,6 +7,7 @@ pub mod engine;
 pub mod ipc;
 pub mod power;
 pub mod register;
+pub mod schedule;
 pub mod text;
 pub mod update;
 pub mod util;

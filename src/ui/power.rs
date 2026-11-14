@@ -1,4 +1,5 @@
-//! "When done: sleep / shut down", with a 30-second countdown that can be cancelled.
+//! "When done: sleep / shut down" (a download's, or the scheduled queue's), with a 30-second
+//! countdown that can be cancelled.
 
 use super::Ctx;
 use gtk::glib;
@@ -9,13 +10,14 @@ pub use turbodm::power::{Power, COUNTDOWN_SECONDS};
 
 const SECONDS: u32 = COUNTDOWN_SECONDS;
 
-pub fn countdown(ctx: &Rc<Ctx>, power: Power, filename: &str) {
+/// `done` says what finished: "“a.zip” has finished downloading."
+pub fn countdown(ctx: &Rc<Ctx>, power: Power, done: &str) {
     if power == Power::Nothing {
         return;
     }
     let (what, now) = if power == Power::Sleep { ("go to sleep", "Sleep now") } else { ("shut down", "Shut down now") };
     let others = ctx.manager.snapshot().iter().filter(|s| s.status.is_active()).count();
-    let mut detail = format!("“{filename}” has finished downloading.");
+    let mut detail = done.to_string();
     if others > 0 {
         detail.push_str(&format!(" {others} other download(s) will be paused and can be resumed later."));
     }

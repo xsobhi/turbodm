@@ -103,6 +103,9 @@ work while you're logged in keep working.
   them like any file (checked against their releases' checksums) and keeps them up to date; Linux
   uses yours (`sudo apt install yt-dlp ffmpeg`).
 - **Queue** with a limit on simultaneous downloads, and a **global speed limit**.
+- **Scheduler**, like IDM's (Options → Scheduler; Preferences on Linux): start the queue at a set time on the days you
+  tick, or once on a date; optionally stop it at another time (past midnight is fine), and sleep
+  or shut down once its downloads are done (after a 30-second countdown you can cancel).
 - **Categories**: Video, Music, Documents, Compressed, Programs and Images go to their own sub-folders.
 - **Main window with a sidebar**: downloads by state (all, downloading, unfinished, completed) and
   by category, with counts and the free space on the download disk; a toolbar for resume/pause
