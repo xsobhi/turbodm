@@ -93,16 +93,12 @@ function videoPage(info, tab) {
   return info.linkUrl || info.frameUrl || info.pageUrl || (tab && tab.url);
 }
 
-// Where a download came from: the browser's referrer, or else the page in front (the one the
-// user clicked the link on), for TurboDM's "Refresh download address" to open later.
-async function pageOf(item) {
-  if (item.referrer) return item.referrer;
-  try {
-    const [tab] = await api.tabs.query({ active: true, lastFocusedWindow: true });
-    return tab && /^https?:/i.test(tab.url || "") ? tab.url : null;
-  } catch {
-    return null;
-  }
+// Where a download came from, as the browser itself said it (its Referer): nothing when it sent
+// none. A page can ask for no referrer (referrerpolicy="no-referrer", like a Yandex Disk link in a
+// hidden frame), and such servers refuse (403) any address TurboDM would make up from the tab in
+// front. (Without it, "Refresh download address" opens the link's site instead of the page.)
+function pageOf(item) {
+  return item.referrer || null;
 }
 
 // The folders TurboDM sorts its downloads into (src/categories.rs). What the browser saves itself
@@ -171,7 +167,7 @@ if (BEFORE_SAVE_AS) {
       // (blob:, data:: made by the page, not a link TurboDM can download: the browser's to save)
       if (/^https?:/i.test(url) && !rest && !back && wanted(url, item.totalBytes || item.fileSize, settings)
           && (await reachable())) {
-        const referrer = await pageOf(item);
+        const referrer = pageOf(item);
         const cookies = await cookieHeader(url); // (read before the browser lets go of the link)
         await discard(item.id);
         try {
@@ -214,7 +210,7 @@ api.downloads.onCreated.addListener(async (item) => {
       filename: basename(item.filename),
       // the folder picked in the browser's "Save As" dialog (or its own download folder)
       directory: dirname(item.filename),
-      referrer: await pageOf(item),
+      referrer: pageOf(item),
       fileSize: item.totalBytes || item.fileSize,
       storeId: item.cookieStoreId,
     });
