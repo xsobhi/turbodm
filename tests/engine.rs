@@ -59,6 +59,9 @@ fn server_without_ranges_uses_one_connection() {
     let snap = wait_for(&manager, &id, finished);
     assert_file(&snap, &data);
     assert!(!snap.resumable);
+    // the probe's answer was the whole file: downloaded from it, not asked for again (a server
+    // that makes the file when asked would make it twice)
+    assert_eq!(server.requests.lock().unwrap().len(), 1, "asked again");
 }
 
 #[test]
@@ -140,4 +143,41 @@ fn refreshed_address_goes_on_from_where_it_was() {
         .map(|r| r[6..].split('-').next().unwrap().parse().unwrap())
         .collect();
     assert!(!starts.is_empty() && starts.iter().all(|&s| s > 0), "restarted from zero: {starts:?}");
+}
+
+#[test]
+fn whole_file_answered_with_200_to_its_range() {
+    // a small file (one part) asks for all of it as a range; many servers then answer 200 with
+    // the file rather than 206: that is the file, not a server that stopped allowing resume
+    let env = Env::new("whole200");
+    let data = random_bytes(900 << 10);
+    let server = start(&env.rt, data.clone(), Options { ranges: true, no_length: false, max_conns: 0 }, 0);
+    server.whole_as_200.store(true, std::sync::atomic::Ordering::SeqCst);
+    let manager = env.manager(8);
+    let id = add(&manager, &server.url);
+    assert_file(&wait_for(&manager, &id, finished), &data);
+}
+
+#[test]
+fn refused_at_first_is_asked_again() {
+    // the browser's own request still open when TurboDM's first one arrives: a host allowing one
+    // connection per link refuses it (403), and lets it in a moment later
+    let env = Env::new("refused");
+    let data = random_bytes(2 << 20);
+    let server = start(&env.rt, data.clone(), Options { ranges: true, no_length: false, max_conns: 0 }, 0);
+    server.forbidden.store(1, std::sync::atomic::Ordering::SeqCst);
+    let manager = env.manager(4);
+    let id = add(&manager, &server.url);
+    assert_file(&wait_for(&manager, &id, finished), &data);
+}
+
+#[test]
+fn connection_limit_with_403_retires_extra_connections() {
+    let env = Env::new("limit403");
+    let data = random_bytes(24 << 20);
+    let server = start(&env.rt, data.clone(), Options { ranges: true, no_length: false, max_conns: 0 }, 1);
+    server.forbid_above.store(2, std::sync::atomic::Ordering::SeqCst);
+    let manager = env.manager(8);
+    let id = add(&manager, &server.url);
+    assert_file(&wait_for(&manager, &id, finished), &data);
 }

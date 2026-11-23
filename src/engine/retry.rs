@@ -31,6 +31,9 @@ pub fn transient(err: &FetchError) -> bool {
     }
 }
 
+/// How long to wait before asking again after the first, then the second refusal (`probe`).
+const REFUSED_TRIES: [Duration; 2] = [Duration::from_millis(1500), Duration::from_secs(3)];
+
 /// Sleep, or less if cancelled. False: cancelled.
 pub async fn sleep(wait: Duration, cancel: &CancellationToken) -> bool {
     tokio::select! {
@@ -42,16 +45,33 @@ pub async fn sleep(wait: Duration, cancel: &CancellationToken) -> bool {
 /// `http::probe`, tried again (up to `retries` times) while the failure is a passing one: a
 /// download shouldn't fail outright because its very first request met a dropped connection or a
 /// moment of 503. Ok(None): cancelled meanwhile.
+///
+/// A refusal (401/403) is asked again too, twice, a moment later: a download the browser hands
+/// over arrives while the browser's own request for it is still open (it's cancelled only once
+/// TurboDM has the link), and file hosts that allow one connection per link refuse a second.
 pub async fn probe(client: &reqwest::Client, url: &str, headers: &Headers, retries: u32,
                    cancel: &CancellationToken) -> Result<Option<ProbeInfo>, FetchError> {
-    let mut failures = 0;
+    Ok(probe_keeping(client, url, headers, retries, cancel).await?.map(|(info, _)| info))
+}
+
+/// `probe`, with the server's answer when it sent the whole file (`http::probe_keeping`).
+pub async fn probe_keeping(client: &reqwest::Client, url: &str, headers: &Headers, retries: u32,
+                           cancel: &CancellationToken)
+                           -> Result<Option<(ProbeInfo, Option<reqwest::Response>)>, FetchError> {
+    let (mut failures, mut refused) = (0, 0);
     loop {
         let result = tokio::select! {
-            r = http::probe(client, url, headers) => r,
+            r = http::probe_keeping(client, url, headers) => r,
             _ = cancel.cancelled() => return Ok(None),
         };
         match result {
             Ok(info) => return Ok(Some(info)),
+            Err(FetchError::Http(401 | 403, _)) if refused < REFUSED_TRIES.len() => {
+                if !sleep(REFUSED_TRIES[refused], cancel).await {
+                    return Ok(None);
+                }
+                refused += 1;
+            }
             Err(err) if transient(&err) && failures < retries => {
                 let asked = match &err { FetchError::Busy(_, _, wait) => *wait, _ => None };
                 if !sleep(delay(failures, asked), cancel).await {

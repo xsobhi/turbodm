@@ -17,8 +17,8 @@ pub async fn run(task: Arc<Task>, shared: Arc<Shared>, cancel: CancellationToken
         return super::video::run(task, shared, cancel).await; // a web page's video (its parts)
     }
     let outcome = match prepare(&task, &shared, &cancel).await {
-        Ok(()) if !cancel.is_cancelled() => download(&task, &shared, &cancel).await,
-        Ok(()) => Ok(false),
+        Ok(first) if !cancel.is_cancelled() => download(&task, &shared, &cancel, first).await,
+        Ok(_) => Ok(false),
         Err(msg) => Err(msg),
     };
     task.set_joining(None);
@@ -36,14 +36,17 @@ pub async fn run(task: Arc<Task>, shared: Arc<Shared>, cancel: CancellationToken
     }
 }
 
-async fn prepare(task: &Task, shared: &Shared, cancel: &CancellationToken) -> Result<(), String> {
+/// Ok: the probe's answer when it was the whole file, for the download to go on with.
+async fn prepare(task: &Task, shared: &Shared, cancel: &CancellationToken)
+                 -> Result<Option<reqwest::Response>, String> {
     let (url, headers) = {
         let info = task.info.lock().unwrap();
         (info.url.clone(), info.headers())
     };
     let (client, settings) = (shared.client(), shared.settings());
-    let Some(probe) = retry::probe(&client, &url, &headers, settings.retries, cancel).await.map_err(|e| e.to_string())? else {
-        return Ok(()); // paused meanwhile
+    let Some((probe, first)) = retry::probe_keeping(&client, &url, &headers, settings.retries, cancel).await
+        .map_err(|e| e.to_string())? else {
+        return Ok(None); // paused meanwhile
     };
     let min_split = settings.min_split_kib * 1024;
     // going on with what's on the disk: the bytes just before where it goes on must still match
@@ -90,7 +93,7 @@ async fn prepare(task: &Task, shared: &Shared, cancel: &CancellationToken) -> Re
     let parts = if info.resumable { info.connections } else { 1 };
     let map = segments.get_or_insert_with(|| Arc::new(SegmentMap::create(info.size, parts, min_split)));
     map.set_min_split(min_split);
-    Ok(())
+    Ok(first.filter(|_| !info.resumable))
 }
 
 /// Open (or create) a download's unfinished file, `size` long; new ones are sparse, so far
@@ -108,7 +111,8 @@ pub(super) fn open_part(part: &Path, size: Option<u64>) -> Result<File, String> 
     Ok(file)
 }
 
-async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken) -> Result<bool, String> {
+async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken, first: Option<reqwest::Response>)
+                  -> Result<bool, String> {
     let (info, file) = {
         // locked while opening: the add dialog may move the file to another name or folder
         let info = task.info.lock().unwrap();
@@ -138,6 +142,7 @@ async fn download(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken)
         limiters: [shared.limiter.clone(), task.limiter.clone()],
         cancel: cancel.clone(),
         live: std::sync::atomic::AtomicUsize::new(count),
+        first: std::sync::Mutex::new(first),
     });
     task.set_status(Status::Downloading);
     if let Err(msg) = pool::run(task, &ctx, count).await {

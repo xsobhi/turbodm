@@ -5,7 +5,7 @@
 pub mod harness;
 pub mod video;
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -26,6 +26,9 @@ pub struct TestServer {
     pub content: Arc<Mutex<Arc<Vec<u8>>>>,         // what it serves (changed: a new file, same address)
     pub headers: Arc<Mutex<String>>,               // more header lines for every answer ("Name: value\r\n")
     pub busy: Arc<AtomicU64>,                      // answer this many requests next with 503 and Retry-After: 1
+    pub forbidden: Arc<AtomicU64>,                 // answer this many requests next with 403
+    pub forbid_above: Arc<AtomicU64>,              // 403 above this many parallel requests (0 = no limit)
+    pub whole_as_200: Arc<AtomicBool>,             // a range for all of the file: 200 and the file, no 206
 }
 
 pub fn start(rt: &Runtime, data: Arc<Vec<u8>>, opts: Options, delay_ms: u64) -> TestServer {
@@ -38,9 +41,13 @@ pub fn start(rt: &Runtime, data: Arc<Vec<u8>>, opts: Options, delay_ms: u64) -> 
         content: Arc::new(Mutex::new(data)),
         headers: Arc::new(Mutex::new(String::new())),
         busy: Arc::new(AtomicU64::new(0)),
+        forbidden: Arc::new(AtomicU64::new(0)),
+        forbid_above: Arc::new(AtomicU64::new(0)),
+        whole_as_200: Arc::new(AtomicBool::new(false)),
     };
     let (requests, delay) = (server.requests.clone(), server.delay_ms.clone());
     let (content, extra, busy) = (server.content.clone(), server.headers.clone(), server.busy.clone());
+    let (forbidden, forbid_above, whole) = (server.forbidden.clone(), server.forbid_above.clone(), server.whole_as_200.clone());
     let live = Arc::new(AtomicU64::new(0));
     rt.spawn(async move {
         while let Ok((stream, _)) = listener.accept().await {
@@ -51,15 +58,22 @@ pub fn start(rt: &Runtime, data: Arc<Vec<u8>>, opts: Options, delay_ms: u64) -> 
             if refuse {
                 busy.fetch_sub(1, Ordering::SeqCst);
             }
+            let forbid = !refuse && forbidden.load(Ordering::SeqCst) > 0;
+            if forbid {
+                forbidden.fetch_sub(1, Ordering::SeqCst);
+            }
+            let (limit, whole) = (forbid_above.load(Ordering::SeqCst), whole.load(Ordering::SeqCst));
             let live = live.clone();
             tokio::spawn(async move {
                 let n = live.fetch_add(1, Ordering::SeqCst) + 1;
                 let _ = if refuse {
                     refuse_with(stream, "503 Service Unavailable\r\nRetry-After: 1").await
+                } else if forbid || (limit > 0 && n > limit) {
+                    refuse_with(stream, "403 Forbidden").await
                 } else if opts.max_conns > 0 && n as usize > opts.max_conns {
                     too_many(stream).await
                 } else {
-                    serve(stream, data, opts, requests, delay, extra).await
+                    serve(stream, data, opts, whole, requests, delay, extra).await
                 };
                 live.fetch_sub(1, Ordering::SeqCst);
             });
@@ -68,7 +82,7 @@ pub fn start(rt: &Runtime, data: Arc<Vec<u8>>, opts: Options, delay_ms: u64) -> 
     server
 }
 
-async fn serve(stream: TcpStream, data: Arc<Vec<u8>>, opts: Options,
+async fn serve(stream: TcpStream, data: Arc<Vec<u8>>, opts: Options, whole_as_200: bool,
                requests: Arc<Mutex<Vec<Option<String>>>>, delay: Arc<AtomicU64>, extra: String) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream);
     let mut range = None;
@@ -89,8 +103,13 @@ async fn serve(stream: TcpStream, data: Arc<Vec<u8>>, opts: Options,
             let (a, b) = spec.split_once('-').unwrap();
             let start: u64 = a.parse().unwrap();
             let end = if b.is_empty() { len - 1 } else { b.parse::<u64>().unwrap().min(len - 1) };
-            head = format!("HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {start}-{end}/{len}\r\n");
-            (start, end + 1)
+            if whole_as_200 && start == 0 && end == len - 1 {
+                head = "HTTP/1.1 200 OK\r\n".to_string();
+                (0, len)
+            } else {
+                head = format!("HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {start}-{end}/{len}\r\n");
+                (start, end + 1)
+            }
         }
         _ => {
             head = "HTTP/1.1 200 OK\r\n".to_string();

@@ -168,6 +168,7 @@ async fn part(task: &Arc<Task>, shared: &Shared, cancel: &CancellationToken, ind
         limiters: [shared.limiter.clone(), task.limiter.clone()],
         cancel: cancel.child_token(), // a part's failure stops its connections, not the download
         live: AtomicUsize::new(count),
+        first: std::sync::Mutex::new(None),
     });
     task.set_status(Status::Downloading);
     let result = pool::run(task, &ctx, count).await;

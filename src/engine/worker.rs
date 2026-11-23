@@ -26,6 +26,9 @@ pub struct WorkerCtx {
     pub limiters: [Arc<RateLimiter>; 2], // all downloads, this download
     pub cancel: CancellationToken,
     pub live: AtomicUsize, // connections still running
+    /// The probe's answer, when it was the whole file (no ranges): the one connection starts
+    /// with it rather than asking again.
+    pub first: std::sync::Mutex<Option<reqwest::Response>>,
 }
 
 impl WorkerCtx {
@@ -88,15 +91,25 @@ async fn fetch(ctx: &WorkerCtx, index: usize) -> Result<Flow, String> {
         }
         let seg = ctx.segments.get(index);
         let range = ctx.resumable.then(|| (seg.pos(), request_end(seg.pos(), seg.end, ctx.chunk)));
-        let opened = tokio::select! {
-            r = http::open(&ctx.client, &ctx.url, &ctx.headers, range) => r,
-            _ = ctx.cancel.cancelled() => return Ok(Flow::Continue),
+        let first = if range.is_none() && seg.done == 0 { ctx.first.lock().unwrap().take() } else { None };
+        let opened = match first {
+            Some(resp) => Ok(resp),
+            None => tokio::select! {
+                r = http::open(&ctx.client, &ctx.url, &ctx.headers, range) => r,
+                _ = ctx.cancel.cancelled() => return Ok(Flow::Continue),
+            },
         };
         debug!("seg {index} @{:?} open -> {}", range, match &opened { Ok(r) => r.status().to_string(), Err(e) => e.to_string() });
         let resp = match opened {
             Ok(resp) => resp,
             Err(FetchError::RangeNotSupported) => {
                 return Err("The server no longer allows resuming; restart the download".into())
+            }
+            // one connection too many for a host that limits them per link (IDM drops it too):
+            // the others carry on, and take over its part
+            // (the last one never retires: a link that has really expired still says so)
+            Err(FetchError::Http(403, _)) if ctx.try_retire() => {
+                return Ok(Flow::Retire)
             }
             Err(FetchError::Http(code @ (400 | 401 | 403 | 404 | 405 | 410 | 451), reason)) => {
                 return Err(format!("HTTP {code} {reason} - the link may have expired \
@@ -115,7 +128,12 @@ async fn fetch(ctx: &WorkerCtx, index: usize) -> Result<Flow, String> {
                 continue;
             }
         };
-        if let (true, Some(total), Some(size)) = (ctx.resumable, http::range_total(&resp), ctx.size)
+        // (a range from byte 0 may come back as the whole file: then its length tells)
+        let total = match resp.status() {
+            reqwest::StatusCode::OK => resp.content_length(),
+            _ => http::range_total(&resp),
+        };
+        if let (true, Some(total), Some(size)) = (ctx.resumable, total, ctx.size)
             && total != size {
             return Err(format!("The file on the server changed while downloading (it's {total} bytes now, \
                                 not {size}). Resume starts it over."));

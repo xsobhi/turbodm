@@ -109,7 +109,9 @@ fn content_range(resp: &Response) -> Option<(u64, Option<u64>)> {
 }
 
 /// GET, optionally for bytes [start, end). A range request must come back as a
-/// matching 206 Partial Content, otherwise it's RangeNotSupported.
+/// matching 206 Partial Content, otherwise it's RangeNotSupported; except one from the very
+/// start answered with the whole file (200): many servers do that when the range asked for is
+/// all of a small file, and what arrives is then exactly what was asked for, from byte 0 on.
 pub async fn open(client: &Client, url: &str, h: &Headers, range: Option<(u64, Option<u64>)>)
     -> Result<Response, FetchError> {
     let resp = client.get(url).headers(header_map(h, range)).send().await?;
@@ -126,8 +128,8 @@ pub async fn open(client: &Client, url: &str, h: &Headers, range: Option<(u64, O
         return Err(FetchError::Http(status.as_u16(), reason));
     }
     if let Some((start, _)) = range {
-        let ok = status == StatusCode::PARTIAL_CONTENT
-            && content_range(&resp).is_some_and(|(s, _)| s == start);
+        let ok = (start == 0 && status == StatusCode::OK)
+            || (status == StatusCode::PARTIAL_CONTENT && content_range(&resp).is_some_and(|(s, _)| s == start));
         if !ok {
             return Err(FetchError::RangeNotSupported);
         }
@@ -144,18 +146,28 @@ pub fn range_total(resp: &Response) -> Option<u64> {
 /// If a server rejects the browser's user-agent (anti-bot checks compare it with the
 /// TLS fingerprint), retry once with TurboDM's own honest user-agent.
 pub async fn probe(client: &Client, url: &str, h: &Headers) -> Result<ProbeInfo, FetchError> {
+    probe_keeping(client, url, h).await.map(|(info, _)| info)
+}
+
+/// `probe`, and when the server sends the whole file rather than a range (so there's only one
+/// connection anyway), its answer still unread: the download goes on with it instead of asking
+/// again. A server that makes the file only when asked (a zip put together, a file converted)
+/// would otherwise make it all over again, and the wait would start over.
+pub async fn probe_keeping(client: &Client, url: &str, h: &Headers)
+                           -> Result<(ProbeInfo, Option<Response>), FetchError> {
     match probe_once(client, url, h).await {
         Err(FetchError::Network(_) | FetchError::Http(403 | 406, _)) if h.user_agent.is_some() => {
             let own = Headers { user_agent: None, ..h.clone() };
-            let mut info = probe_once(client, url, &own).await?;
+            let (mut info, resp) = probe_once(client, url, &own).await?;
             info.user_agent = Some(own_user_agent());
-            Ok(info)
+            Ok((info, resp))
         }
         other => other,
     }
 }
 
-async fn probe_once(client: &Client, url: &str, h: &Headers) -> Result<ProbeInfo, FetchError> {
+async fn probe_once(client: &Client, url: &str, h: &Headers) -> Result<(ProbeInfo, Option<Response>), FetchError> {
+    // (a 200 to it is the whole file: no ranges, and its size from Content-Length)
     let resp = match open(client, url, h, Some((0, Some(1)))).await {
         Ok(resp) => resp,
         Err(FetchError::RangeNotSupported) => open(client, url, h, None).await?,
@@ -177,7 +189,7 @@ async fn probe_once(client: &Client, url: &str, h: &Headers) -> Result<ProbeInfo
         text(header::LAST_MODIFIED).as_deref(), text(header::DATE).as_deref());
     let checksum = Checksum::from_headers(text(header::HeaderName::from_static("repr-digest")).as_deref(),
                                           text(header::HeaderName::from_static("digest")).as_deref());
-    Ok(ProbeInfo {
+    let info = ProbeInfo {
         filename: add_extension(name, &content_type),
         etag: text(header::ETAG),
         validators,
@@ -187,5 +199,6 @@ async fn probe_once(client: &Client, url: &str, h: &Headers) -> Result<ProbeInfo
         resumable,
         content_type,
         user_agent: None,
-    })
+    };
+    Ok((info, (!resumable).then_some(resp)))
 }

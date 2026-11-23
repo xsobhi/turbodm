@@ -140,8 +140,25 @@ async function discard(id) {
   }
 }
 
+// TurboDM's native host answers (it's installed): then it will take what it's sent. A status
+// check only: it doesn't start the app.
+async function reachable() {
+  try {
+    const reply = await sendNative({ type: "ping" });
+    return Boolean(reply && reply.ok);
+  } catch {
+    return false;
+  }
+}
+
+// Downloads given back to the browser after TurboDM couldn't take them: not caught again.
+const givenBack = new Set();
+
 // Chrome, Edge, Brave: decide while the browser is still choosing the file name, before it
 // shows its "Save as" window; if TurboDM takes the download, that window never appears.
+// By then the browser is already fetching the file. Its request is cancelled *before* TurboDM
+// gets the link: file hosts that allow one connection per link (Yandex Disk's, many others)
+// refuse TurboDM's while the browser's is still open, and some links work only once.
 const BEFORE_SAVE_AS = Boolean(api.downloads.onDeterminingFilename);
 if (BEFORE_SAVE_AS) {
   api.downloads.onDeterminingFilename.addListener((item, suggest) => {
@@ -150,17 +167,23 @@ if (BEFORE_SAVE_AS) {
       let accepted = false;
       const settings = await getSettings();
       const rest = await resting(); // (the full extension decides, and sorts)
-      try {
-        // (blob:, data:: made by the page, not a link TurboDM can download: the browser's to save)
-        if (/^https?:/i.test(url) && !rest && wanted(url, item.totalBytes || item.fileSize, settings)) {
-          accepted = await handOff({ url, filename: basename(item.filename), referrer: await pageOf(item),
-                                     fileSize: item.totalBytes || item.fileSize });
-        }
-      } catch (err) {
-        console.warn("TurboDM is not reachable, keeping the browser download:", err);
-      }
-      if (accepted) {
+      const back = givenBack.delete(item.url);
+      // (blob:, data:: made by the page, not a link TurboDM can download: the browser's to save)
+      if (/^https?:/i.test(url) && !rest && !back && wanted(url, item.totalBytes || item.fileSize, settings)
+          && (await reachable())) {
+        const referrer = await pageOf(item);
+        const cookies = await cookieHeader(url); // (read before the browser lets go of the link)
         await discard(item.id);
+        try {
+          accepted = await handOff({ url, filename: basename(item.filename), referrer, cookies,
+                                     fileSize: item.totalBytes || item.fileSize });
+        } catch (err) {
+          console.warn("TurboDM is not reachable, giving the download back to the browser:", err);
+        }
+        if (!accepted) {
+          givenBack.add(item.url);
+          api.downloads.download({ url: item.url }).catch(() => givenBack.delete(item.url));
+        }
         return;
       }
       // the browser keeps it: into the folder for its kind, as TurboDM would, or as it is
