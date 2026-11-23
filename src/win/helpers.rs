@@ -49,7 +49,7 @@ pub fn with_helpers(app: &Rc<App>, then: impl FnOnce(&Rc<App>) + 'static) {
 /// and keep them up to date.
 pub fn start(app: &Rc<App>) {
     let settings = app.manager.settings();
-    if !ready() && !settings.video_helpers_declined && !app.background && settings.browsers_offered {
+    if !ready() && !settings.video_helpers_declined && !app.background && !app.tray && settings.browsers_offered {
         ask(app, false);
     }
     let client = app.manager.shared.client();

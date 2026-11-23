@@ -198,7 +198,7 @@ pub fn run(app: &Rc<App>, cmd: Cmd) {
         Cmd::Settings => settings::open(app),
         Cmd::Browsers => super::super::browsers::open(app),
         Cmd::YouTube => super::super::youtube::open(app),
-        Cmd::CheckUpdates => super::super::update::check(app, true),
+        Cmd::CheckUpdates => super::super::update::check(app, true, false),
         Cmd::About => dialogs::about(app),
         Cmd::Exit => app.quit(),
         Cmd::Show => app.show(),

@@ -203,6 +203,10 @@ mod platform {
     }
 
     pub fn unregister_system() -> std::io::Result<()> {
+        // (the uninstaller: "Start with Windows" goes too - src/win/autostart.rs)
+        if let Ok(run) = RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_WRITE) {
+            let _ = run.delete_value("TurboDM");
+        }
         remove(&system()?);
         Ok(())
     }

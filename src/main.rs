@@ -3,6 +3,7 @@
 //!   turbodm                     open the window (or show the running one)
 //!   turbodm URL...              add downloads, magnet links, .torrent files (to the running TurboDM)
 //!   turbodm --background        start hidden in the tray (used by the browser)
+//!   turbodm --tray              start hidden in the tray and stay there (Windows sign-in)
 //!   turbodm --native-host       browser native-messaging host
 //!   turbodm --register          (re)connect the browser extension; --unregister undoes it
 //!   turbodm get URL [-c N] [-d DIR]   download in the terminal, no window; also [-o NAME]
@@ -84,12 +85,13 @@ fn main() {
                 0
             }
             Some("--help" | "-h") => {
-                println!("{}", include_str!("main.rs").lines().skip(2).take(9)
+                println!("{}", include_str!("main.rs").lines().skip(2).take(10)
                     .map(|l| l.trim_start_matches("//!")).collect::<Vec<_>>().join("\n"));
                 0
             }
             _ => {
                 let background = args.iter().any(|a| a == "--background");
+                let tray = args.iter().any(|a| a == "--tray");
                 let messages = args
                     .iter()
                     .filter_map(|a| download_arg(a))
@@ -104,7 +106,7 @@ fn main() {
                         silent: false,
                     })
                     .collect();
-                ui::run(messages, background)
+                ui::run(messages, background, tray)
             }
         }
     };

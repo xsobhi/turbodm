@@ -2,6 +2,7 @@
 //! Windows draws in the style of the version it runs on, like IDM. Linux has GTK (src/ui).
 
 mod add;
+mod autostart;
 mod batch;
 mod browsers;
 mod complete;
@@ -49,6 +50,7 @@ pub struct App {
     pub update: RefCell<Option<turbodm::update::Release>>, // found while hidden: shown on show()
     pub when_done: RefCell<HashMap<String, WhenDone>>, // unlisted downloads (an update, the video helpers)
     pub background: bool, // started by the browser: quit when idle and nothing is shown
+    pub tray: bool,       // started at sign-in (`--tray`): hidden in the notification area, stays
 }
 
 thread_local! {
@@ -152,14 +154,14 @@ impl App {
 }
 
 /// Start the interface. `messages` go to the already-running TurboDM if there is one.
-pub fn run(messages: Vec<Message>, background: bool) -> i32 {
+pub fn run(messages: Vec<Message>, background: bool, tray: bool) -> i32 {
     let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all()
         .build().expect("runtime");
     let _enter = runtime.enter();
     let listener = match ipc::server::bind(&config::socket_path()) {
         Ok(listener) => listener,
         Err(_) => {
-            let messages = if messages.is_empty() && !background { vec![Message::Show] } else { messages };
+            let messages = if messages.is_empty() && !background && !tray { vec![Message::Show] } else { messages };
             for message in &messages {
                 let _ = ipc::client::send(message);
             }
@@ -181,6 +183,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
     }
     let (manager, events) = Manager::new(Settings::load(), config::downloads_file(), runtime.handle().clone());
     let settings = manager.settings();
+    autostart::sync(settings.start_with_system);
     theme::apply(&settings.theme, &settings.theme_colors); // (before any window: they're made in it)
     let (outbox, inbox) = mpsc::channel();
     let _ = OUTBOX.set(Mutex::new(outbox));
@@ -197,6 +200,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
         update: RefCell::default(),
         when_done: RefCell::default(),
         background,
+        tray,
     });
     MAIN_WINDOW.store(app.main.window.hwnd().0 as isize, Ordering::SeqCst);
     APP.with(|a| { let _ = a.set(app.clone()); });
@@ -228,7 +232,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
         app.handle_message(message);
     }
     main::setup(&app);
-    if !background {
+    if !background && !tray {
         app.show(); // first: the rest (tray icons, which wait for a busy taskbar…) comes after
     }
     tray::start(&app);
@@ -237,7 +241,7 @@ pub fn run(messages: Vec<Message>, background: bool) -> i32 {
     helpers::start(&app);
     if background {
         browsers::mark_offered(&app); // the browser started us: its extension works
-    } else {
+    } else if !tray {
         browsers::offer(&app);
     }
     main::message_loop(&app);

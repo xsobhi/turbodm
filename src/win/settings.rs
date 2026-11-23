@@ -88,6 +88,7 @@ pub fn open(app: &Rc<App>) {
     let (confirm, predownload) = (switch(s.show_add_dialog), switch(s.predownload));
     let (progress, complete, notify) = (switch(s.show_progress_window), switch(s.show_complete_dialog), switch(s.notify_complete));
     let (clipboard, resume, updates) = (switch(s.clipboard_monitor), switch(s.auto_resume), switch(s.check_updates));
+    let startup = switch(s.start_with_system);
     let seed = switch(s.seed);
     let a = app.clone();
     let add_browser = window.button("Add to your browser\u{2026}", move || browsers::open(&a));
@@ -120,7 +121,8 @@ pub fn open(app: &Rc<App>) {
              Heading("At start, and meanwhile"),
              Setting("Resume unfinished downloads at start", resume, 44),
              Setting("Catch download links copied to the clipboard", clipboard, 44),
-             Setting("Check for updates", updates, 44)],
+             Setting("Check for updates", updates, 44),
+             Setting("Start with Windows, in the notification area", startup, 44)],
         vec![Heading("Where downloads go"),
              Setting("Download folder", folder_button, CONTROL),
              Setting("Sort into category folders (Video, Music\u{2026})", categories, 44),
@@ -215,6 +217,8 @@ pub fn open(app: &Rc<App>) {
         (s.show_progress_window, s.show_complete_dialog, s.notify_complete) =
             (is_checked(progress), is_checked(complete), is_checked(notify));
         (s.clipboard_monitor, s.auto_resume, s.check_updates) = (is_checked(clipboard), is_checked(resume), is_checked(updates));
+        s.start_with_system = is_checked(startup);
+        super::autostart::sync(s.start_with_system);
         s.seed = is_checked(seed);
         s.schedule = scheduler.chosen();
         a.manager.update_settings(s.clamp());

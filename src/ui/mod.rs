@@ -75,7 +75,7 @@ impl Ctx {
 }
 
 /// Start the GUI. `messages` are handed to the already-running instance if there is one.
-pub fn run(messages: Vec<Message>, background: bool) -> i32 {
+pub fn run(messages: Vec<Message>, background: bool, _tray: bool) -> i32 { // (`--tray`: Windows only)
     #[cfg(windows)]
     // SAFETY: no other threads yet. Windows draws the title bars, as for its own apps.
     unsafe { std::env::set_var("GTK_CSD", "0") };

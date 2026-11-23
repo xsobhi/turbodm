@@ -13,15 +13,17 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 pub fn start(app: &Rc<App>) {
     app.rt.spawn(async {
         tokio::time::sleep(Duration::from_secs(3)).await;
+        post(|app| check(app, false, true)); // at start: shown even if TurboDM is in the tray (sign-in)
         loop {
-            post(|app| check(app, false));
             tokio::time::sleep(Duration::from_secs(24 * 3600)).await;
+            post(|app| check(app, false, false));
         }
     });
 }
 
-/// Ask GitHub. `manual`: from the menu, so also say when there's nothing new.
-pub fn check(app: &Rc<App>, manual: bool) {
+/// Ask GitHub. `manual`: from the menu, so also say when there's nothing new. `at_start`: a new
+/// version found then is shown at once, like IDM, even while TurboDM waits in the notification area.
+pub fn check(app: &Rc<App>, manual: bool, at_start: bool) {
     let settings = app.manager.settings();
     if !manual && !settings.check_updates {
         return;
@@ -32,7 +34,7 @@ pub fn check(app: &Rc<App>, manual: bool) {
         post(move |app| match found {
             Ok(Some(release)) if manual || release.version != app.manager.settings().skipped_update => {
                 *app.update.borrow_mut() = Some(release);
-                if manual || app.main.is_visible() {
+                if manual || at_start || app.main.is_visible() {
                     show_pending(app);
                 }
             }

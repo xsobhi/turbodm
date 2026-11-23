@@ -116,6 +116,7 @@ pub struct Settings {
     pub clipboard_monitor: bool,
     pub auto_resume: bool,         // resume unfinished downloads at start
     pub check_updates: bool,       // ask GitHub for a newer release, at start and daily
+    pub start_with_system: bool,   // Windows: in the notification area from sign-in, no window (`--tray`)
     pub skipped_update: String,    // "Skip this version" in the update dialog
     pub folders: BTreeMap<String, PathBuf>, // category → folder ("Always save … here", like IDM)
     pub browsers_offered: bool,    // the "add the extension to your browser" guide was shown
@@ -154,6 +155,7 @@ impl Default for Settings {
             clipboard_monitor: false,
             auto_resume: false,
             check_updates: true,
+            start_with_system: true,
             skipped_update: String::new(),
             folders: BTreeMap::new(),
             browsers_offered: false,
