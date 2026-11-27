@@ -223,6 +223,7 @@ jobs:
   apt:
     name: apt repository
     needs: release
+    if: ${{ !cancelled() && needs.release.result == 'success' }}  # (runs when Windows was skipped too)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
