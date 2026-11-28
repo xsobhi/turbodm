@@ -83,8 +83,11 @@ pub async fn connection_loop(ctx: Arc<WorkerCtx>) -> Result<(), String> {
     Ok(())
 }
 
+/// How long the last connection waits to ask again after a refusal (403) mid-download.
+const LAST_REFUSED_TRIES: [Duration; 2] = [Duration::from_millis(1500), Duration::from_secs(3)];
+
 async fn fetch(ctx: &WorkerCtx, index: usize) -> Result<Flow, String> {
-    let mut failures = 0;
+    let (mut failures, mut refused) = (0, 0);
     while !ctx.segments.get(index).finished() && !ctx.cancel.is_cancelled() {
         if !ctx.resumable && ctx.segments.get(index).done > 0 {
             ctx.segments.restart(index); // a plain stream can't continue: start over
@@ -110,6 +113,17 @@ async fn fetch(ctx: &WorkerCtx, index: usize) -> Result<Flow, String> {
             // (the last one never retires: a link that has really expired still says so)
             Err(FetchError::Http(403, _)) if ctx.try_retire() => {
                 return Ok(Flow::Retire)
+            }
+            // the last connection refused, after the server gave this download data: the others
+            // may have only just closed, and the server still counts them a moment. Asked again
+            // (1.5 s, then 3 s) before it's taken for an expired link
+            Err(FetchError::Http(403, _)) if refused < LAST_REFUSED_TRIES.len() && ctx.segments.total_done() > 0 => {
+                debug!("seg {index}: refused (403) as the last connection, asking again");
+                if !retry::sleep(LAST_REFUSED_TRIES[refused], &ctx.cancel).await {
+                    return Ok(Flow::Continue);
+                }
+                refused += 1;
+                continue;
             }
             Err(FetchError::Http(code @ (400 | 401 | 403 | 404 | 405 | 410 | 451), reason)) => {
                 return Err(format!("HTTP {code} {reason} - the link may have expired \
