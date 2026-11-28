@@ -1,16 +1,31 @@
-//! GTK4 user interface: app lifetime, single instance, IPC messages, notifications.
+//! The Linux interface (GTK 4), made to look and work as the Windows one (src/win): app
+//! lifetime, single instance, IPC messages, notifications.
 
 mod actions;
 mod add_dialog;
+mod autostart;
+mod batch;
 mod browsers;
 mod center;
 mod clipboard;
+mod dialogs;
 mod finish;
+mod frame;
 mod item;
 mod launch;
 mod list;
+mod looks;
+mod menus;
 mod power;
 mod progress;
+#[cfg(target_os = "linux")]
+mod queue;
+#[cfg(not(target_os = "linux"))]
+mod queue {
+    pub fn start(_ctx: &std::rc::Rc<super::Ctx>) {}
+    pub fn update(_ctx: &super::Ctx) {}
+}
+mod refresh;
 mod scheduler;
 mod settings;
 mod sidebar;
@@ -25,11 +40,12 @@ mod tray {
 }
 mod update;
 mod window;
+mod youtube;
 
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 use turbodm::config::{self, Settings, APP_ID};
@@ -47,6 +63,10 @@ pub struct Ctx {
     pub tray: Cell<bool>, // a tray icon is showing (else closing minimizes)
     pub launching: Cell<usize>, // files being handed to the desktop: don't quit yet
     pub update: RefCell<Option<turbodm::update::Release>>, // found while hidden: shown on show()
+    pub refreshing: RefCell<Option<(String, gtk::Window)>>, // waiting for a fresh address from the browser
+    pub offered_refresh: RefCell<HashSet<String>>,          // expired links already offered a refresh
+    from_browser: RefCell<Option<(String, std::time::Instant)>>, // the extension's last link, and when
+    pub background: bool, // started by the browser: quit when idle and nothing is shown
 }
 
 impl Ctx {
@@ -75,17 +95,15 @@ impl Ctx {
 }
 
 /// Start the GUI. `messages` are handed to the already-running instance if there is one.
-pub fn run(messages: Vec<Message>, background: bool, _tray: bool) -> i32 { // (`--tray`: Windows only)
-    #[cfg(windows)]
-    // SAFETY: no other threads yet. Windows draws the title bars, as for its own apps.
-    unsafe { std::env::set_var("GTK_CSD", "0") };
+/// `tray`: started at login (Options → General), hidden in the notification area.
+pub fn run(messages: Vec<Message>, background: bool, tray: bool) -> i32 {
     let runtime = tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all()
         .build().expect("runtime"); // network-bound: a few threads are plenty
     let _enter = runtime.enter();
     let listener = match ipc::server::bind(&config::socket_path()) {
         Ok(listener) => listener,
         Err(_) => {
-            let messages = if messages.is_empty() && !background { vec![Message::Show] } else { messages };
+            let messages = if messages.is_empty() && !background && !tray { vec![Message::Show] } else { messages };
             for message in &messages {
                 let _ = ipc::client::send(message);
             }
@@ -116,29 +134,36 @@ pub fn run(messages: Vec<Message>, background: bool, _tray: bool) -> i32 { // (`
             return;
         }
         *hold.borrow_mut() = Some(app.hold()); // keep running while the window is hidden
-        style::load();
+        let settings = manager_for_app.settings();
+        style::apply(&settings.theme, &settings.theme_colors); // (before any window)
+        autostart::sync(settings.start_with_system);
         center::all_windows();
         let ctx = Rc::new(Ctx {
             app: app.clone(),
             manager: manager_for_app.clone(),
             rt: rt.clone(),
-            win: window::MainWindow::new(app),
+            win: window::MainWindow::new(app, &settings),
             progress: RefCell::new(HashMap::new()),
             on_done: RefCell::new(HashMap::new()),
             tray: Cell::new(false),
             launching: Cell::new(0),
             update: RefCell::new(None),
+            refreshing: RefCell::default(),
+            offered_refresh: RefCell::default(),
+            from_browser: RefCell::default(),
+            background,
         });
         window::setup(&ctx);
         actions::install(&ctx);
         tray::start(&ctx);
+        queue::start(&ctx);
         clipboard::start(&ctx);
         update::start(&ctx);
         listen_ipc(&ctx, from_ipc.clone());
         listen_events(&ctx, events.clone());
         if background {
             browsers::mark_offered(&ctx); // the browser started us: its extension works
-        } else {
+        } else if !tray {
             ctx.show_all();
             browsers::offer(&ctx);
         }
@@ -152,10 +177,6 @@ pub fn run(messages: Vec<Message>, background: bool, _tray: bool) -> i32 { // (`
             let (Ok(mut term), Ok(mut int)) = (signal(SignalKind::terminate()), signal(SignalKind::interrupt()))
                 else { return };
             tokio::select! { _ = term.recv() => {}, _ = int.recv() => {} }
-        }
-        #[cfg(windows)]
-        if tokio::signal::ctrl_c().await.is_err() {
-            return;
         }
         let _ = quit.send(Message::Quit).await;
     });
@@ -176,25 +197,34 @@ fn listen_ipc(ctx: &Rc<Ctx>, rx: async_channel::Receiver<Message>) {
                 Message::Download { url, filename, directory, referrer, cookies, user_agent, silent, .. } => {
                     if user_agent.is_some() {
                         browsers::mark_offered(&ctx); // from the extension
+                        // (the same link again at once: a second copy of the extension in the
+                        // browser, the one loaded by hand and the store's)
+                        let now = std::time::Instant::now();
+                        let last = ctx.from_browser.replace(Some((url.clone(), now)));
+                        if last.is_some_and(|(last, at)| last == url && now - at < std::time::Duration::from_secs(3)) {
+                            continue;
+                        }
                     }
                     let directory = directory.filter(|d| d.is_absolute());
                     let req = AddRequest { url, filename, directory, referrer, cookies, user_agent, ..Default::default() };
-                    ctx.handle_download(req, silent);
+                    // (a download waiting for a fresh address takes it: IDM's "Refresh download address")
+                    if !refresh::take(&ctx, &req) {
+                        ctx.handle_download(req, silent);
+                    }
                 }
                 Message::VideoPeek { url, referrer, cookies, user_agent } => {
                     let headers = turbodm::engine::http::Headers { user_agent, referrer, cookies, extra: vec![] };
                     turbodm::engine::video::look_ahead(&ctx.manager.shared, &ctx.rt, url, headers);
                 }
                 Message::VideoQualities { .. } => {} // (answered by the IPC server: the helpers are here)
-                Message::Video { url, referrer, cookies, user_agent, choice, .. } => {
-                    // no quality dialog here (yet): the one picked in the browser's menu, else the
-                    // usual quality, once the page is looked at
-                    let video = Some(turbodm::engine::video::VideoJob { choice: choice.unwrap_or_default(), ..Default::default() });
-                    let req = AddRequest { url, referrer, cookies, user_agent, start: true, video, ..Default::default() };
-                    let id = ctx.manager.add(req);
-                    if ctx.manager.settings().show_progress_window {
-                        progress::open(&ctx, &id);
+                Message::Video { url, referrer, cookies, user_agent, silent, choice } => {
+                    if user_agent.is_some() {
+                        browsers::mark_offered(&ctx); // from the extension
                     }
+                    // (a quality picked in the browser's menu: its dialog opens with it)
+                    let video = Some(turbodm::engine::video::VideoJob { choice: choice.unwrap_or_default(), ..Default::default() });
+                    let req = AddRequest { url, referrer, cookies, user_agent, video, ..Default::default() };
+                    add_dialog::handle_video(&ctx, req, silent);
                 }
             }
         }

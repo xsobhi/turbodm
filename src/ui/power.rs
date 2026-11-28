@@ -1,4 +1,4 @@
-//! "When done: sleep / shut down" (a download's, or the scheduled queue's), with a 30-second
+//! "When done: sleep / shut down", as on Windows (a download's, or the scheduled queue's), with a 30-second
 //! countdown that can be cancelled.
 
 use super::Ctx;
@@ -21,19 +21,17 @@ pub fn countdown(ctx: &Rc<Ctx>, power: Power, done: &str) {
     if others > 0 {
         detail.push_str(&format!(" {others} other download(s) will be paused and can be resumed later."));
     }
-    let title = gtk::Label::builder().xalign(0.0).css_classes(["title-3"]).build();
-    let body_text = gtk::Label::builder().label(&detail).xalign(0.0).wrap(true).max_width_chars(50).build();
-    let cancel = gtk::Button::builder().label("Cancel").css_classes(["suggested-action"]).build();
-    let go = gtk::Button::with_label(now);
-    let buttons = gtk::Box::builder().spacing(8).halign(gtk::Align::End).build();
-    buttons.append(&go);
-    buttons.append(&cancel);
-    let body = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(12)
-        .margin_top(18).margin_bottom(18).margin_start(18).margin_end(18).build();
-    body.append(&title);
-    body.append(&body_text);
-    body.append(&buttons);
-    let window = gtk::Window::builder().title(turbodm::config::APP_NAME).child(&body).build();
+    let d = super::frame::dialog_with(turbodm::config::APP_NAME, None, 420, ":close", (14, 16));
+    d.body.set_margin_bottom(14);
+    let title = super::frame::heading("");
+    d.body.append(&title);
+    let body_text = super::frame::note(&detail);
+    body_text.set_margin_top(super::frame::LINE_GAP);
+    d.body.append(&body_text);
+    let go = super::frame::button(now);
+    let cancel = super::frame::default_button(&d.window, "Cancel");
+    super::frame::buttons(&d.body, &[&go, &cancel], 14);
+    let window = d.window.clone();
 
     let left = Rc::new(Cell::new(SECONDS));
     let label = move |t: &gtk::Label, n: u32| t.set_text(&format!("The computer will {what} in {n} seconds"));

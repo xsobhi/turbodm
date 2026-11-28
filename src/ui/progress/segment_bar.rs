@@ -24,7 +24,10 @@ impl SegmentBar {
         area.set_draw_func(move |_, cr, width, height| {
             let data = d.borrow();
             let (w, h) = (width as f64, height as f64);
-            cr.set_source_rgba(0.5, 0.5, 0.5, 0.22);
+            let p = crate::ui::style::current().palette;
+            let rgb = crate::ui::style::rgb;
+            let (r, g, b) = rgb(p.track);
+            cr.set_source_rgb(r, g, b);
             cr.rectangle(0.0, 0.0, w, h);
             let _ = cr.fill();
             let Some(size) = data.size.filter(|&s| s > 0) else { return };
@@ -32,16 +35,18 @@ impl SegmentBar {
             for seg in &data.segments {
                 let x = seg.start as f64 * scale;
                 let done = (seg.got() as f64 * scale).max(if seg.got() > 0 { 1.0 } else { 0.0 }); // what arrived, written yet or not
-                let (r, g, b) = crate::ui::style::accent().unwrap_or((0.21, 0.52, 0.89));
-                cr.set_source_rgb(r, g, b); // downloaded: blue, or Windows' accent colour
+                let (r, g, b) = rgb(p.accent);
+                cr.set_source_rgb(r, g, b); // downloaded: the accent colour
                 cr.rectangle(x, 0.0, done, h);
                 let _ = cr.fill();
                 if seg.active && !seg.finished() {
-                    cr.set_source_rgb(0.2, 0.82, 0.48); // live connection head: green
+                    let (r, g, b) = rgb(p.green);
+                    cr.set_source_rgb(r, g, b); // live connection head: green
                     cr.rectangle(x + done - 2.0, 0.0, 3.0, h);
                     let _ = cr.fill();
                 }
-                cr.set_source_rgba(1.0, 1.0, 1.0, 0.5); // segment boundary
+                let (r, g, b) = rgb(p.view);
+                cr.set_source_rgb(r, g, b); // segment boundary
                 cr.rectangle(x, 0.0, 1.0, h);
                 let _ = cr.fill();
             }

@@ -43,6 +43,12 @@ mod imp {
         pub bytes: Cell<u64>,
         #[property(get, set)]
         pub added_at: Cell<u64>,
+        #[property(get, set)]
+        pub rate: Cell<u64>, // bytes a second, for sorting
+        #[property(get, set)]
+        pub left: Cell<u64>, // seconds to go (none: the most), for sorting
+        #[property(get, set)]
+        pub missing: Cell<bool>, // finished, but its file was moved or deleted outside TurboDM
     }
 
     #[glib::object_subclass]
@@ -61,7 +67,7 @@ glib::wrapper! {
 
 fn format_time(secs: u64) -> String {
     glib::DateTime::from_unix_local(secs as i64)
-        .and_then(|d| d.format("%b %e, %H:%M"))
+        .and_then(|d| d.format("%b %-d, %H:%M"))
         .map(|s| s.to_string())
         .unwrap_or_default()
 }
@@ -91,6 +97,16 @@ impl DownloadItem {
         let progress = snap.progress.unwrap_or(0.0).clamp(0.0, 1.0);
         if (self.progress() - progress).abs() > 1e-4 {
             self.set_progress(progress);
+        }
+        let (rate, left) = (snap.speed.max(0.0) as u64, snap.eta.map_or(u64::MAX, |e| e.max(0.0) as u64));
+        if self.rate() != rate {
+            self.set_rate(rate);
+        }
+        if self.left() != left {
+            self.set_left(left);
+        }
+        if self.missing() != snap.missing {
+            self.set_missing(snap.missing);
         }
         if self.bytes() != snap.size.unwrap_or(0) {
             self.set_bytes(snap.size.unwrap_or(0));

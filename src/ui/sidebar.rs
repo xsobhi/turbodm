@@ -1,4 +1,4 @@
-//! The main window's sidebar, like IDM's category tree: downloads by state and by file type,
+//! The main window's sidebar, as on Windows (and like IDM's category tree): downloads by state and by file type,
 //! with counts, and the free space where downloads are saved.
 
 use gtk::prelude::*;
@@ -66,14 +66,14 @@ pub struct Sidebar {
 }
 
 fn heading(text: &str) -> gtk::ListBoxRow {
-    let label = gtk::Label::builder().label(text).xalign(0.0).margin_start(6).margin_top(10)
+    let label = gtk::Label::builder().label(text).xalign(0.0).yalign(0.0).margin_start(4).margin_top(10)
         .css_classes(["dim-label", "caption-heading"]).build();
-    gtk::ListBoxRow::builder().child(&label).selectable(false).activatable(false).build()
+    gtk::ListBoxRow::builder().child(&label).selectable(false).activatable(false).css_classes(["heading-row"]).build()
 }
 
 fn entry(name: &str, picture: &str) -> (gtk::ListBoxRow, gtk::Label) {
     let count = gtk::Label::builder().css_classes(["dim-label", "numeric"]).build();
-    let row = gtk::Box::builder().spacing(10).margin_start(4).margin_end(4).margin_top(3).margin_bottom(3).build();
+    let row = gtk::Box::builder().spacing(10).build();
     row.append(&super::style::picture(picture, 20)); // its 3D icon, as on Windows
     row.append(&gtk::Label::builder().label(name).xalign(0.0).hexpand(true).build());
     row.append(&count);
@@ -114,15 +114,22 @@ impl Sidebar {
         let disk_bar = gtk::LevelBar::builder().min_value(0.0).max_value(1.0).build();
         disk_bar.remove_offset_value(Some(gtk::LEVEL_BAR_OFFSET_LOW)); // a full disk is the "bad" end
         disk_bar.add_offset_value("used", 0.9);
-        let footer = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(4)
-            .margin_start(12).margin_end(12).margin_top(8).margin_bottom(10).build();
+        // the footer: the disk's free space over a 4-pixel bar (red when almost full)
+        disk.set_margin_start(14);
+        disk.set_margin_end(14);
+        disk.set_margin_top(10);
+        disk_bar.set_margin_start(14);
+        disk_bar.set_margin_end(14);
+        disk_bar.set_margin_top(10);
+        disk_bar.set_margin_bottom(14);
+        let footer = gtk::Box::builder().orientation(gtk::Orientation::Vertical).css_classes(["sidebar-footer"]).build();
         footer.append(&disk);
         footer.append(&disk_bar);
-        let scroller = gtk::ScrolledWindow::builder().child(&list).vexpand(true)
+        let scroller = gtk::ScrolledWindow::builder().child(&list).vexpand(true).margin_top(4)
             .hscrollbar_policy(gtk::PolicyType::Never).build();
-        let widget = gtk::Box::builder().orientation(gtk::Orientation::Vertical).width_request(200).build();
+        let widget = gtk::Box::builder().orientation(gtk::Orientation::Vertical).width_request(160)
+            .css_classes(["sidebar"]).build();
         widget.append(&scroller);
-        widget.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         widget.append(&footer);
         Sidebar { widget, counts, disk, disk_bar }
     }

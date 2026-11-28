@@ -1,5 +1,5 @@
-//! Windows 11's icons, from Microsoft's Fluent UI System Icons (MIT, see icons/LICENSE), standing
-//! in for the GTK icon theme's with the Windows look. They're symbolic: drawn in the text colour.
+//! Symbolic icons from Microsoft's Fluent UI System Icons (MIT, see icons/LICENSE), as Windows'
+//! icon font draws them in TurboDM there, standing in for the icon theme's: drawn in the text colour.
 
 use gtk::gdk;
 use std::path::Path;

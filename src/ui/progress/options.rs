@@ -1,6 +1,7 @@
-//! The "Speed limiter" and "Options on completion" tabs of the progress window.
+//! The "Speed limiter" and "Options on completion" tabs of the progress window, as on Windows.
 
 use super::super::finish::OnDone;
+use super::super::frame;
 use super::super::power::Power;
 use super::Ctx;
 use gtk::prelude::*;
@@ -8,24 +9,34 @@ use std::rc::Rc;
 use turbodm::engine::Snapshot;
 
 fn note(text: &str) -> gtk::Label {
-    gtk::Label::builder().label(text).xalign(0.0).wrap(true).css_classes(["dim-label"]).build()
+    let label = frame::note(text);
+    label.add_css_class("dim-label");
+    label
 }
 
 pub fn speed_limiter(ctx: &Rc<Ctx>, snap: &Snapshot) -> gtk::Box {
     let limited = snap.speed_limit_kib > 0;
-    let enable = gtk::CheckButton::builder().label("Use speed limiter").active(limited).build();
+    let torrent = snap.torrent.is_some();
+    // (librqbit can't change one torrent's limit while it runs)
+    let enable = gtk::CheckButton::builder().label("Use speed limiter").active(limited).sensitive(!torrent).build();
     let speed = gtk::SpinButton::with_range(1.0, 10_000_000.0, 64.0);
     speed.set_value(if limited { snap.speed_limit_kib as f64 } else { 1024.0 });
     speed.set_sensitive(limited);
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    row.append(&gtk::Label::new(Some("Maximum download speed")));
+    speed.set_size_request(130, frame::FIELD);
+    let row = gtk::Box::builder().spacing(5).margin_top(16).build();
+    row.append(&gtk::Label::builder().label("Maximum download speed").width_request(170).xalign(0.0).build());
     row.append(&speed);
-    row.append(&gtk::Label::new(Some("KiB/s")));
-    let body = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    row.append(&gtk::Label::builder().label("KiB/s").margin_start(5).build());
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
     body.append(&enable);
     body.append(&row);
-    body.append(&note("Applies to this download only, right away. The limit for all downloads \
-                       together is in Preferences."));
+    let text = note(if torrent {
+        "A torrent goes by the limit for all downloads together, in Preferences."
+    } else {
+        "Applies to this download only, right away. The limit for all downloads together is in Preferences."
+    });
+    text.set_margin_top(16);
+    body.append(&text);
     let apply = {
         let (c, id, enable, speed) = (ctx.clone(), snap.id.clone(), enable.clone(), speed.clone());
         move || {
@@ -44,17 +55,19 @@ pub fn on_completion(ctx: &Rc<Ctx>, id: &str) -> gtk::Box {
     let todo = ctx.on_done.borrow().get(id).copied().unwrap_or_default();
     let dialog = gtk::CheckButton::builder().label("Show download complete dialog")
         .active(ctx.manager.settings().show_complete_dialog).build();
-    let open = gtk::CheckButton::builder().label("Open the file when done").active(todo.open_file).build();
-    let power = gtk::DropDown::from_strings(&["Do nothing", "Sleep", "Shut down"]);
-    power.set_selected(todo.power as u32);
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    row.append(&gtk::Label::new(Some("When done, the computer should")));
+    let open = gtk::CheckButton::builder().label("Open the file when done").active(todo.open_file).margin_top(6).build();
+    let power = frame::choice(&["Do nothing", "Sleep", "Shut down"], todo.power as u32);
+    power.set_size_request(160, frame::FIELD);
+    let row = gtk::Box::builder().spacing(5).margin_top(18).build();
+    row.append(&gtk::Label::builder().label("When done, the computer should").width_request(210).xalign(0.0).build());
     row.append(&power);
-    let body = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 0);
     body.append(&dialog);
     body.append(&open);
     body.append(&row);
-    body.append(&note("Sleep and shut down wait 30 seconds first, so you can still cancel."));
+    let text = note("Sleep and shut down wait 30 seconds first, so you can still cancel.");
+    text.set_margin_top(16);
+    body.append(&text);
 
     let c = ctx.clone();
     dialog.connect_toggled(move |b| {

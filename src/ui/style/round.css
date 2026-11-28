@@ -1,0 +1,15 @@
+/* Round title bar buttons (Mint's, GTK's): circles, close in the accent colour */
+windowcontrols { border-spacing: 0; margin: 0 4px; }
+windowcontrols > button, headerbar windowcontrols button {
+  min-width: 28px; min-height: 28px; padding: 0; margin: 0 6px; border-radius: 50%;
+  border: none; background: transparent; box-shadow: none; color: @tdm_text;
+}
+windowcontrols > button > image { -gtk-icon-size: 12px; background: none; padding: 0; }
+windowcontrols > button:hover { background: @tdm_menubar_hover; }
+windowcontrols > button:active { background: @tdm_pressed_chrome; }
+windowcontrols > button.close {
+  min-width: 22px; min-height: 22px; margin: 0 9px; background: @tdm_accent; color: @tdm_on_accent;
+}
+windowcontrols > button.close:hover { background: @tdm_accent_hover; }
+windowcontrols > button.close:active { background: @tdm_accent_pressed; }
+window:backdrop windowcontrols > button.close { background: @tdm_menubar_hover; color: @tdm_text; }

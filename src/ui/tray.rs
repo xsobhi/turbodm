@@ -1,4 +1,5 @@
-//! Tray icon (StatusNotifierItem, shown by Cinnamon/KDE/most panels).
+//! TurboDM's icon in the notification area (StatusNotifierItem, shown by Cinnamon, KDE and most
+//! panels), with the same menu as on Windows.
 
 use super::Ctx;
 use gtk::glib;
@@ -11,6 +12,7 @@ use std::rc::Rc;
 enum Cmd {
     Available(bool), // did a tray host accept our icon?
     Show,
+    Add,
     PauseAll,
     ResumeAll,
     Quit,
@@ -46,10 +48,11 @@ impl ksni::Tray for Tray {
         };
         vec![
             item("Show TurboDM", Cmd::Show),
+            item("Add new download...", Cmd::Add),
             item("Resume all", Cmd::ResumeAll),
             item("Pause all", Cmd::PauseAll),
             ksni::MenuItem::Separator,
-            item("Quit", Cmd::Quit),
+            item("Exit", Cmd::Quit),
         ]
     }
 }
@@ -75,6 +78,10 @@ pub fn start(ctx: &Rc<Ctx>) {
             match cmd {
                 Cmd::Available(ok) => ctx.tray.set(ok),
                 Cmd::Show => ctx.show_all(),
+                Cmd::Add => {
+                    ctx.show_all();
+                    super::add_dialog::open_from_menu(&ctx, turbodm::engine::AddRequest::default());
+                }
                 Cmd::PauseAll => ctx.manager.pause_all(),
                 Cmd::ResumeAll => ctx.manager.resume_all(),
                 Cmd::Quit => ctx.app.quit(),

@@ -1,0 +1,5 @@
+/* Windows' looks: what's chosen is tinted with the accent; a bar marks the sidebar's */
+list.navigation-sidebar > row:selected {
+  background-image: linear-gradient(@tdm_accent, @tdm_accent);
+  background-size: 3px 16px; background-position: 3px center; background-repeat: no-repeat;
+}

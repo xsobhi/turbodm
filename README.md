@@ -121,8 +121,12 @@ work while you're logged in keep working.
   dialog follows: *Open*, *Open with…*, *Open folder* and *Close*, the file to drag anywhere.
 - Optional **clipboard catching** of download links, **desktop notifications**, **tray icon**
   (on Linux panels with a tray; otherwise closing the window minimizes it while downloading).
-- On Windows, the installed TurboDM **starts with Windows in the notification area**, with no window
-  (`turbodm --tray`; Options → General → *Start with Windows*, on by default).
+- The installed TurboDM **starts with the computer in the notification area**, with no window
+  (`turbodm --tray`; Options → General, on by default: *Start with Windows*, or on Linux *Start when
+  you log in*).
+- **The same on Linux and Windows**: the same windows, menus (Tasks, File, Downloads, View, Help) and
+  dialogs, and the same looks (Options → Look: Mint-Y, Windows 11 and 10, Ubuntu, GNOME, KDE,
+  Nord, Dracula… light and dark, and your own colours).
 - Servers that reject a browser user-agent (anti-bot checks comparing it with the TLS fingerprint)
   are retried with TurboDM's own honest one.
 - **Command line**: `turbodm get URL -c 16 -d ~/Downloads` (also `-o NAME`, `--sha256 HASH`,

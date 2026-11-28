@@ -9,11 +9,11 @@ macro_rules! tile {
     };
 }
 
-const TILES: [(&str, &[u8]); 20] = [
+const TILES: [(&str, &[u8]); 21] = [
     tile!("add"), tile!("resume"), tile!("pause"), tile!("resume-all"), tile!("pause-all"),
     tile!("delete"), tile!("clear"), tile!("folder"), tile!("options"), tile!("all"),
     tile!("downloading"), tile!("unfinished"), tile!("completed"), tile!("video"), tile!("music"),
-    tile!("documents"), tile!("compressed"), tile!("programs"), tile!("images"), tile!("other"),
+    tile!("documents"), tile!("compressed"), tile!("programs"), tile!("images"), tile!("other"), tile!("drag"),
 ];
 
 /// The picture called `name` (data/icons/<name>.png), `size` pixels square.

@@ -1,6 +1,6 @@
 //! Every window opens in the middle of the screen, and resizing a shown window to fit its
 //! content. GTK 4 can't position windows and window managers mostly put new ones in a corner,
-//! so it's done for the platform: Xlib on X11, Win32 on Windows. On Wayland the compositor
+//! so it's done with Xlib on X11. On Wayland the compositor
 //! decides (nothing happens here).
 
 use gtk::glib;
@@ -13,11 +13,7 @@ use std::time::Duration;
 mod x11;
 #[cfg(target_os = "linux")]
 use x11 as platform;
-#[cfg(windows)]
-mod win32;
-#[cfg(windows)]
-use win32 as platform;
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(target_os = "linux"))]
 mod platform {
     pub fn realized(_: &gtk::Window) {}
     pub fn placed(_: &gtk::Window) {}

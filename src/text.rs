@@ -3,6 +3,7 @@
 use crate::categories::{category_for, is_downloadable};
 use crate::engine::segments::Segment;
 use crate::engine::torrent::{is_magnet, is_torrent};
+use crate::engine::video::{tools, Output, Plan, VideoInfo, Want};
 use crate::engine::{Snapshot, Status};
 use crate::util::{filename_from_url, human_eta, human_size, human_speed};
 
@@ -161,6 +162,46 @@ pub fn looks_like_file_link(text: &str) -> bool {
     (web && (is_downloadable(&filename_from_url(text)) || is_torrent(text, None))) || is_magnet(text)
 }
 
+/// A video found on a page, under the Add dialog's fields: "Caminandes 2  ·  2:26  ·  YouTube".
+pub fn video_title_line(found: &VideoInfo) -> String {
+    let mut parts = vec![found.title.clone()];
+    if let Some(d) = found.duration.map(|d| d.round() as u64) {
+        parts.push(if d >= 3600 { format!("{}:{:02}:{:02}", d / 3600, d / 60 % 60, d % 60) }
+                   else { format!("{}:{:02}", d / 60, d % 60) });
+    }
+    if !found.site.is_empty() {
+        parts.push(found.site.clone());
+    }
+    parts.join("  ·  ")
+}
+
+/// Under a video's title: what the quality picked takes.
+pub fn video_hint(plan: &Plan) -> String {
+    let size = plan.size.map(|s| format!("about {}", human_size(Some(s)))).unwrap_or_else(|| "not known yet".into());
+    if plan.needs_ffmpeg() && tools::ffmpeg().is_none() {
+        return if tools::CAN_FETCH_FFMPEG { format!("Size: {size}  ·  needs FFmpeg, got when you start") }
+               else { tools::NO_FFMPEG.into() };
+    }
+    match plan.output {
+        Output::Mp3 => format!("Size: {size}  ·  the sound, converted to MP3"),
+        Output::Single if plan.sources.len() == 1 && matches!(plan.want, Want::Sound(_)) => {
+            format!("Size: {size}  ·  the sound as the site sends it")
+        }
+        Output::Single => format!("Size: {size}"),
+        _ => format!("Size: {size}  ·  video and sound joined into one file"),
+    }
+}
+
+/// `name` with `ext` instead of its media extension ("a.mp4" → "a.m4a"; "a.b" → "a.b.m4a").
+pub fn with_ext(name: &str, ext: &str) -> String {
+    const MEDIA: [&str; 11] = ["mp4", "m4a", "webm", "mkv", "mp3", "opus", "ogg", "flv", "3gp", "mov", "aac"];
+    let stem = match name.rsplit_once('.') {
+        Some((stem, e)) if MEDIA.contains(&e.to_ascii_lowercase().as_str()) => stem,
+        _ => name,
+    };
+    format!("{stem}.{ext}")
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -172,5 +213,12 @@ mod tests {
         assert!(super::looks_like_file_link("https://x.org/ubuntu.iso.torrent"));
         assert!(super::looks_like_file_link("magnet:?xt=urn:btih:dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c&dn=Sintel"));
         assert!(!super::looks_like_file_link(r"C:\Users\me\sintel.torrent")); // a copied path isn't a link
+    }
+
+    #[test]
+    fn keeps_the_name_changes_the_extension() {
+        assert_eq!(super::with_ext("My clip.mp4", "m4a"), "My clip.m4a");
+        assert_eq!(super::with_ext("My clip", "mp4"), "My clip.mp4");
+        assert_eq!(super::with_ext("v1.2 final", "mp4"), "v1.2 final.mp4");
     }
 }

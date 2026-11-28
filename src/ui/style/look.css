@@ -1,0 +1,320 @@
+/* TurboDM's look, the same as on Windows (src/win/theme): flat greys around the content, crisp
+   1-pixel lines, small corners, the accent colour for what's chosen. Colours come from the look in
+   use (@tdm_*, style/mod.rs); FONT, RADIUS and ROUND2 are filled in from it too. */
+
+* { outline-color: alpha(@tdm_accent, 0.6); }
+
+window, window.background, dialog, window.dialog {
+  background-color: @tdm_chrome;
+  color: @tdm_text;
+  font-family: FONT;
+  font-size: 13px;
+}
+window.csd, window.csd.maximized { border-radius: 0; }
+window.csd { box-shadow: 0 2px 10px alpha(black, 0.25), 0 0 0 1px @tdm_edge; }
+window.csd.maximized, window.csd.fullscreen { box-shadow: none; }
+
+label { color: inherit; }
+label.dim-label, .dim-label { color: @tdm_dim; opacity: 1; }
+label:disabled { color: @tdm_disabled; }
+.caption { font-size: 12px; }
+.caption-heading { font-size: 12px; font-weight: bold; }
+.heading { font-weight: bold; }
+.title-1, .title-2, .title-3, .heading-title { font-size: 19px; font-weight: bold; }
+.danger { color: @tdm_danger; }
+.accent { color: @tdm_accent; }
+.view { background-color: @tdm_view; }
+.chrome { background-color: @tdm_chrome; }
+
+separator { background: @tdm_border; min-width: 1px; min-height: 1px; }
+.rule { background: @tdm_border; min-height: 1px; min-width: 1px; }
+
+/* The title bar: 46 pixels, on the window's colour */
+headerbar, .titlebar {
+  min-height: 46px;
+  padding: 0 4px;
+  background: @tdm_chrome;
+  color: @tdm_text;
+  border: none;
+  box-shadow: none;
+}
+headerbar:backdrop { background: @tdm_chrome; }
+headerbar .title { font-weight: bold; color: @tdm_text; }
+headerbar:backdrop .title, window:backdrop headerbar .title { color: @tdm_dim; }
+headerbar entry { min-height: 30px; }
+
+/* The menu bar under it (Tasks, File, Downloads, View, Help) */
+.menubar-row { background: @tdm_chrome; }
+popovermenubar, menubar {
+  background: transparent; min-height: 28px; padding: 0 6px; box-shadow: none; border: none;
+}
+popovermenubar > item, menubar > item {
+  min-height: 22px; padding: 0 10px; margin: 3px 1px; border-radius: RADIUS; color: @tdm_text;
+}
+popovermenubar > item:hover, menubar > item:hover { background: @tdm_menubar_hover; }
+popovermenubar > item:selected, menubar > item:selected { background: @tdm_selected; color: @tdm_on_selected; }
+
+/* The toolbar: icons with their names, flat */
+.toolbar { background: @tdm_chrome; }
+.toolbar > button, .toolbar button.tool {
+  padding: 4px 0 2px 0; min-width: 0; border: none; background: transparent; border-radius: RADIUS;
+  box-shadow: none; color: @tdm_text;
+}
+.toolbar button.tool:hover { background: @tdm_hover_chrome; }
+.toolbar button.tool:active { background: @tdm_pressed_chrome; }
+.toolbar button.tool:disabled { background: transparent; color: @tdm_disabled; }
+.toolbar button.tool:disabled image { opacity: 0.4; }
+.toolbar separator { background: @tdm_border; }
+
+/* The status line */
+.statusbar { background: @tdm_chrome; color: @tdm_text; min-height: 30px; }
+
+/* Push buttons */
+button {
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: RADIUS;
+  border: 1px solid @tdm_button_border;
+  background: @tdm_button;
+  background-image: none;
+  color: @tdm_text;
+  box-shadow: none;
+  text-shadow: none;
+  -gtk-icon-shadow: none;
+  font-weight: normal;
+  outline: none;
+}
+button:hover { background: @tdm_button_hover; }
+button:active, button:checked { background: @tdm_button_pressed; }
+button:disabled { background: @tdm_button; color: @tdm_disabled; border-color: alpha(@tdm_button_border, 0.6); }
+button:disabled label { color: @tdm_disabled; }
+button:focus-visible { box-shadow: inset 0 0 0 1px @tdm_accent; }
+button.suggested-action, button.default {
+  background: @tdm_accent; color: @tdm_on_accent; border-color: @tdm_accent_border;
+}
+button.suggested-action label { color: @tdm_on_accent; }
+button.suggested-action:hover { background: @tdm_accent_hover; }
+button.suggested-action:active { background: @tdm_accent_pressed; }
+button.suggested-action:disabled { background: @tdm_button; color: @tdm_disabled; border-color: @tdm_button_border; }
+button.suggested-action:disabled label { color: @tdm_disabled; }
+button.flat, button.image-button.flat, menubutton > button.flat {
+  background: transparent; border-color: transparent;
+}
+button.flat:hover { background: @tdm_hover_chrome; }
+button.flat:active { background: @tdm_pressed_chrome; }
+button.flat:disabled { background: transparent; }
+/* an icon button inside a text field (the folder to save in, a .torrent file) */
+entry > button.field-button, button.field-button {
+  min-height: 22px; min-width: 22px; padding: 0; margin: 0; border: none; background: transparent;
+  border-radius: RADIUS; color: @tdm_dim;
+}
+button.field-button:hover { background: @tdm_hover_view; color: @tdm_text; }
+
+/* Text fields */
+entry, spinbutton, searchbar entry, textview.framed, .field-frame {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: RADIUS;
+  border: 1px solid @tdm_entry_border;
+  background: @tdm_view;
+  color: @tdm_text;
+  box-shadow: none;
+  outline: none;
+  caret-color: @tdm_text;
+}
+entry:focus-within, spinbutton:focus-within, .field-frame:focus-within {
+  border-color: @tdm_accent;
+  box-shadow: inset 0 0 0 1px @tdm_focus_inner;
+  outline: none;
+}
+entry:disabled, spinbutton:disabled { color: @tdm_disabled; background: @tdm_chrome; }
+entry > text > placeholder, text > placeholder { color: @tdm_disabled; }
+entry > text > selection, text selection, label > selection, textview > text > selection {
+  background: @tdm_accent; color: @tdm_on_accent;
+}
+entry image { color: @tdm_dim; }
+entry image:hover { color: @tdm_text; }
+spinbutton { padding: 0 0 0 10px; }
+spinbutton > text { min-width: 40px; }
+spinbutton > button, spinbutton > button.up, spinbutton > button.down {
+  min-height: 22px; min-width: 22px; margin: 3px 3px 3px 0; padding: 0;
+  border: none; border-radius: RADIUS; background: transparent; color: @tdm_dim;
+}
+spinbutton > button:hover { background: @tdm_hover_view; color: @tdm_text; }
+spinbutton > button:disabled { color: @tdm_disabled; }
+textview, textview > text { background: @tdm_view; color: @tdm_text; }
+.field-frame { padding: 4px 6px; }
+.field-frame > scrolledwindow, .field-frame textview { background: transparent; }
+
+/* Drop-downs: a button with the item and a chevron, the menu with ticks */
+dropdown > button, combobox > button { padding: 0 8px 0 10px; }
+dropdown arrow, combobox arrow { color: @tdm_dim; -gtk-icon-size: 12px; }
+dropdown popover listview { background: transparent; }
+dropdown popover listview > row {
+  min-height: 28px; padding: 0 10px; border-radius: 0; color: @tdm_text; background: transparent;
+}
+dropdown popover listview > row:hover, dropdown popover listview > row:selected { background: @tdm_selected; color: @tdm_on_selected; }
+dropdown popover listview > row:selected image, dropdown popover listview > row:hover image { color: @tdm_on_selected; }
+
+/* Check boxes and radio buttons: a 16-pixel box, the accent with a tick when on */
+checkbutton { padding: 2px 0; border-spacing: 8px; color: @tdm_text; }
+checkbutton check, checkbutton radio {
+  min-width: 14px; min-height: 14px; margin: 0; padding: 0;
+  border: 1px solid @tdm_entry_border;
+  background: @tdm_view;
+  color: transparent;
+  box-shadow: none;
+  -gtk-icon-size: 12px;
+  -gtk-icon-source: none;
+}
+checkbutton check { border-radius: RADIUS; }
+checkbutton radio { border-radius: 50%; }
+checkbutton:hover check, checkbutton:hover radio { border-color: @tdm_accent; }
+checkbutton check:checked {
+  background: @tdm_accent; border-color: @tdm_accent; color: @tdm_on_accent;
+  -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
+}
+checkbutton radio:checked { background: @tdm_view; border: 4px solid @tdm_accent; }
+checkbutton:disabled check, checkbutton:disabled radio { border-color: alpha(@tdm_entry_border, 0.5); background: @tdm_chrome; }
+checkbutton:disabled label { color: @tdm_disabled; }
+
+/* Switches, as GTK's: a 40×22 pill, a white knob, the accent when on */
+switch {
+  min-width: 38px; min-height: 20px; padding: 0; margin: 0;
+  border-radius: 11px; border: 1px solid @tdm_button_border;
+  background: @tdm_track; box-shadow: none; outline: none; color: transparent;
+}
+switch image { opacity: 0; }
+switch > slider {
+  min-width: 16px; min-height: 16px; margin: 2px;
+  border-radius: 50%; border: none; box-shadow: 0 1px 2px alpha(black, 0.25);
+  background: white;
+}
+switch:checked { background: @tdm_accent; border-color: @tdm_accent; }
+switch:disabled { opacity: 0.5; }
+
+/* Progress: the status text over a 4-pixel bar */
+progressbar > trough {
+  min-height: 4px; border-radius: 2px; border: none; background: @tdm_track; box-shadow: none;
+}
+progressbar > trough > progress {
+  min-height: 4px; min-width: 0; margin: 0; border-radius: 2px; background: @tdm_accent; border: none;
+}
+progressbar > text { color: @tdm_dim; font-size: 12px; margin-bottom: 1px; }
+progressbar.missing > trough > progress { background: mix(@tdm_accent, @tdm_track, 0.7); }
+levelbar > trough { padding: 0; border: none; background: transparent; }
+levelbar block { min-height: 4px; border-radius: 2px; border: none; box-shadow: none; }
+levelbar block.filled, levelbar block.low, levelbar block.high, levelbar block.used { background: @tdm_accent; }
+levelbar block.full { background: @tdm_danger; }
+levelbar block.empty { background: @tdm_track; }
+
+/* The downloads list */
+.list-area, .list-area > scrolledwindow { background: @tdm_view; }
+columnview, columnview > listview { background: @tdm_view; color: @tdm_text; }
+columnview > header { background: @tdm_view; border-bottom: 1px solid @tdm_border; }
+columnview > header > button {
+  min-height: 30px; padding: 0 6px; border: none; border-radius: 0; background: @tdm_view;
+  color: @tdm_text; font-weight: normal; box-shadow: inset -1px 0 alpha(@tdm_border, 0.9);
+}
+columnview > header > button:hover { background: @tdm_hover_view; }
+columnview > header > button sort-indicator { color: @tdm_dim; min-height: 10px; -gtk-icon-size: 10px; }
+columnview > listview > row {
+  min-height: 37px; border-radius: 0; margin: 0; padding: 0; background: @tdm_view;
+  border-bottom: 1px solid @tdm_separator; color: @tdm_text;
+}
+columnview > listview > row:hover { background: @tdm_hover_view; }
+columnview > listview > row:selected { background: @tdm_selected; color: @tdm_on_selected; border-bottom-color: @tdm_selected; }
+columnview > listview > row:selected label { color: @tdm_on_selected; }
+columnview > listview > row:selected progressbar > text { color: @tdm_on_selected_dim; }
+columnview > listview > row:selected progressbar > trough { background: @tdm_track_on_selected; }
+columnview > listview > row:selected progressbar > trough > progress { background: @tdm_bar_on_selected; }
+columnview > listview > row > cell { padding: 0 6px 0 10px; }
+columnview.column-separators > listview > row > cell { border: none; }
+columnview > listview > row:focus-visible { outline: none; }
+.list-empty { background: @tdm_view; color: @tdm_dim; }
+
+/* The sidebar: Downloads and Categories, the disk's free space under them */
+.sidebar, .sidebar > scrolledwindow, list.navigation-sidebar { background: @tdm_view; }
+list.navigation-sidebar > row {
+  min-height: 38px; margin: 0; padding: 0 14px 0 10px; border-radius: 0;
+  background: transparent; color: @tdm_text; outline: none;
+}
+list.navigation-sidebar > row.heading-row { min-height: 32px; }
+list.navigation-sidebar > row:hover { background: @tdm_hover_view; }
+list.navigation-sidebar > row.heading-row:hover { background: transparent; }
+list.navigation-sidebar > row:selected { background: @tdm_selected; color: @tdm_on_selected; }
+list.navigation-sidebar > row:selected label { color: @tdm_on_selected; }
+list.navigation-sidebar > row:selected label.dim-label { color: @tdm_on_selected_dim; }
+.sidebar-footer { background: @tdm_view; border-top: 1px solid @tdm_border; }
+
+/* Menus: white, a thin line round them, what the mouse is on in the accent colour */
+popover > contents, popover.menu > contents {
+  background: @tdm_view; color: @tdm_text;
+  border: 1px solid @tdm_border; border-radius: RADIUS; padding: 6px 0;
+  box-shadow: 0 4px 14px alpha(black, 0.18);
+}
+popover > arrow { background: @tdm_view; border: 1px solid @tdm_border; }
+popover.menu modelbutton {
+  min-height: 28px; padding: 0 20px 0 14px; border-radius: 0; margin: 0; color: @tdm_text;
+}
+popover.menu modelbutton:hover, popover.menu modelbutton:focus, popover.menu modelbutton:selected {
+  background: @tdm_selected; color: @tdm_on_selected;
+}
+popover.menu modelbutton:hover accelerator, popover.menu modelbutton:hover arrow { color: @tdm_on_selected_dim; }
+popover.menu modelbutton:disabled { color: @tdm_disabled; }
+popover.menu modelbutton check, popover.menu modelbutton radio {
+  min-width: 14px; min-height: 14px; border: none; background: none; box-shadow: none; color: inherit;
+  -gtk-icon-source: none;
+}
+popover.menu modelbutton check:checked, popover.menu modelbutton radio:checked {
+  -gtk-icon-source: -gtk-icontheme("object-select-symbolic"); background: none; border: none;
+}
+popover.menu separator { margin: 4px 0; background: @tdm_menu_line; }
+popover.menu accelerator { color: @tdm_dim; margin-left: 32px; }
+tooltip, tooltip.background {
+  background: @tdm_view; color: @tdm_text; border: 1px solid @tdm_border; border-radius: RADIUS;
+  box-shadow: 0 2px 6px alpha(black, 0.14); padding: 5px 8px;
+}
+tooltip > box > label { color: @tdm_text; }
+
+/* Scroll bars: slim, as Mint-Y's */
+scrollbar { background: transparent; border: none; }
+scrollbar slider {
+  background: alpha(@tdm_text, 0.35); border-radius: 5px; border: none; min-width: 6px; min-height: 6px; margin: 3px;
+}
+scrollbar:hover slider { min-width: 10px; min-height: 10px; background: alpha(@tdm_text, 0.5); }
+scrollbar.vertical slider { min-height: 28px; }
+scrollbar.horizontal slider { min-width: 28px; }
+
+/* Tabs: a 44-pixel row on the window's colour, the picked one underlined in the accent colour,
+   the pages on the content's colour */
+notebook { background: transparent; }
+notebook > header {
+  background: @tdm_chrome; border: none; box-shadow: none; padding: 0 12px;
+  border-bottom: 1px solid @tdm_border;
+}
+notebook > header > tabs { margin: 0; }
+notebook > header tab {
+  min-height: 41px; padding: 0 12px; margin: 0 2px; border-radius: 0; border: none;
+  color: @tdm_dim; box-shadow: none; background: transparent;
+}
+notebook > header tab label { color: inherit; }
+notebook > header tab:hover { color: @tdm_text; box-shadow: inset 0 -2px @tdm_border; }
+notebook > header tab:checked { color: @tdm_text; box-shadow: inset 0 -3px @tdm_accent; background: transparent; }
+notebook > stack { background: @tdm_view; }
+
+/* Dialogs: their content, a line, and their buttons */
+.dialog-body { background: @tdm_chrome; }
+.page { background: @tdm_view; }
+.card {
+  background: @tdm_card; border: 1px solid @tdm_border; border-radius: ROUND2;
+}
+.dialog-footer { background: @tdm_chrome; border-top: 1px solid @tdm_border; }
+.swatch { border-radius: RADIUS; border: 1px solid @tdm_button_border; min-height: 28px; }
+.swatch:hover { border-color: @tdm_accent; }
+.drag-square { border: 1px solid @tdm_border; border-radius: RADIUS; background: @tdm_view; padding: 0; min-height: 14px; min-width: 22px; }
+.drag-square:hover { border-color: @tdm_accent; }
+.guide-picture { border: 1px solid @tdm_border; }
+
+/* The connections' map in the progress window */
+.segment-bar { background: @tdm_track; }

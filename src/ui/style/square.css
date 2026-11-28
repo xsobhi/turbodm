@@ -1,0 +1,12 @@
+/* Windows' square title bar buttons: 46 pixels wide, close red under the mouse */
+headerbar { padding-right: 0; }
+windowcontrols { border-spacing: 0; margin: 0; }
+windowcontrols > button, headerbar windowcontrols button {
+  min-width: 46px; min-height: 46px; padding: 0; margin: 0; border-radius: 0;
+  border: none; background: transparent; box-shadow: none; color: @tdm_text;
+}
+windowcontrols > button > image { -gtk-icon-size: 12px; background: none; padding: 0; }
+windowcontrols > button:hover { background: @tdm_hover_chrome; }
+windowcontrols > button:active { background: @tdm_pressed_chrome; }
+windowcontrols > button.close:hover { background: #c42b1c; color: white; }
+windowcontrols > button.close:active { background: #b0271a; color: white; }

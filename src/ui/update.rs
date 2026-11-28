@@ -41,16 +41,15 @@ pub fn check(ctx: &Rc<Ctx>, manual: bool) {
                     show_pending(&ctx);
                 }
             }
-            Ok(_) if manual => tell(&ctx, "TurboDM is up to date", &format!("You have the latest version, {}.", turbodm::config::VERSION)),
-            Err(err) if manual => tell(&ctx, "Couldn't check for updates", &err),
+            Ok(_) if manual => tell(&ctx, "TurboDM is up to date", &format!("You have the latest version, {}.", turbodm::config::VERSION), false),
+            Err(err) if manual => tell(&ctx, "Couldn't check for updates", &err, true),
             _ => {}
         }
     });
 }
 
-fn tell(ctx: &Ctx, message: &str, detail: &str) {
-    let dialog = gtk::AlertDialog::builder().message(message).detail(detail).build();
-    dialog.show(Some(&ctx.win.window).filter(|w| w.is_visible()));
+fn tell(ctx: &Ctx, title: &str, detail: &str, error: bool) {
+    super::frame::message(Some(ctx.win.window.upcast_ref()), title, detail, error);
 }
 
 /// Show the update found earlier (it waits while the window is hidden in the tray).
@@ -64,26 +63,19 @@ pub fn show_pending(ctx: &Rc<Ctx>) {
     if updated_by_apt() {
         text.push_str("\n\nIt will arrive with your system updates.");
     }
-    let heading = gtk::Label::builder().label(format!("{} {} is available", turbodm::config::APP_NAME, release.version))
-        .xalign(0.0).css_classes(["title-3"]).build();
-    let body = gtk::Label::builder().label(&text).xalign(0.0).wrap(true).max_width_chars(60).build();
+    let d = super::frame::dialog_with(&format!("{} update", turbodm::config::APP_NAME), None, 480, ":close", (14, 16));
+    d.body.set_margin_bottom(14);
+    d.body.append(&super::frame::heading(&format!("{} {} is available", turbodm::config::APP_NAME, release.version)));
+    let body = super::frame::note(&text);
+    body.set_margin_top(super::frame::LINE_GAP);
+    d.body.append(&body);
     let status = gtk::Label::builder().xalign(0.0).css_classes(["dim-label"]).build();
-    let skip = gtk::Button::with_label("Skip this version");
-    let later = gtk::Button::with_label("Later");
-    let go = gtk::Button::builder().label(if can_install { "Update now" } else { "Download" })
-        .css_classes(["suggested-action"]).build();
-    let buttons = gtk::Box::builder().spacing(8).halign(gtk::Align::End).build();
-    for b in [&skip, &later, &go] {
-        buttons.append(b);
-    }
-    let content = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(12)
-        .margin_top(18).margin_bottom(18).margin_start(18).margin_end(18).build();
-    for w in [heading.upcast_ref::<gtk::Widget>(), body.upcast_ref(), status.upcast_ref(), buttons.upcast_ref()] {
-        content.append(w);
-    }
-    let window = gtk::Window::builder().title(format!("{} update", turbodm::config::APP_NAME)).default_width(460).child(&content).build();
-    window.set_default_widget(Some(&go));
-
+    d.body.append(&status);
+    let skip = super::frame::button("Skip this version");
+    let later = super::frame::button("Later");
+    let go = super::frame::default_button(&d.window, if can_install { "Update now" } else { "Download" });
+    super::frame::buttons(&d.body, &[&skip, &later, &go], 12);
+    let window = d.window.clone();
     let w = window.clone();
     later.connect_clicked(move |_| w.close());
     let (c, w, version) = (ctx.clone(), window.clone(), release.version.clone());
@@ -104,8 +96,7 @@ pub fn show_pending(ctx: &Rc<Ctx>) {
             }
         }
     });
-    window.present();
-    go.grab_focus(); // Enter = the main action, not "Skip this version"
+    window.present(); // (Enter: the main action, not "Skip this version")
 }
 
 /// Windows: fetch the installer, run it (it asks for admin rights, replaces this version and
