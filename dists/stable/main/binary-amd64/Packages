@@ -220,6 +220,28 @@ Description: Fast multi-connection download manager with browser integration
 
 Package: turbodm
 Architecture: amd64
+Version: 1.14.0-1
+Priority: optional
+Section: net
+Maintainer: xsobhi <59281574+xsobhi@users.noreply.github.com>
+Installed-Size: 19975
+Provides: tdm
+Depends: libc6 (>= 2.39), libcairo2 (>= 1.2.4), libfontconfig1 (>= 2.12.6), libglib2.0-0t64 (>= 2.54.0), libgraphene-1.0-0 (>= 1.5.4), libgtk-4-1 (>= 4.12.0), libpango-1.0-0 (>= 1.36.0)
+Filename: pool/main/t/turbodm/turbodm_1.14.0-1_amd64.deb
+Size: 5460488
+MD5sum: 8e6933cd62bd3c9e0bec464d643a76ed
+SHA1: d1959eba5b41b00b6d9f1ab664e598b041954381
+SHA256: 4967bf005088c91b905c2ea8d641f462879b13f0c36da2ae9bb4fc4c11e49b7f
+SHA512: 05642ec8a1dda550b61dd8b4a1ef40b1b4d20e7c77f59c58f78309fd9a17a7ba7fbc66c35759b56cf67feeeb6f0ac9c98996ef28e34ce6af513558ec19d411fd
+Homepage: https://github.com/xsobhi/turbodm
+Description: Fast multi-connection download manager with browser integration
+ TurboDM downloads files over up to 32 connections at once, in the spirit of
+ Internet Download Manager, with pause/resume that survives restarts and a
+ browser extension for Firefox, Chrome, Brave and Chromium that hands downloads
+ over with their cookies.
+
+Package: turbodm
+Architecture: amd64
 Version: 1.4.0-1
 Priority: optional
 Section: net
